@@ -4,6 +4,18 @@ A small, strongly-typed, embeddable scripting language inspired by Starlark, imp
 
 ---
 
+## 0. Design Principles — No Surprises, No Hidden Control
+
+1. **Explicit over implicit** — No implicit type coercions, no implicit returns from ambiguous syntax, no hidden side effects.
+2. **One syntax, one meaning** — `.field` is always a host struct access. `["key"]` is always a dict lookup. `#{ }` is always a dict. `{ }` is always a block.
+3. **No hidden panics** — No `unwrap()`. Every value extraction is visible: `?`, `unwrap_or`, `expect`, `match`, `if let`.
+4. **Immutable by default** — `let` bindings and all collection methods return new values. Mutation requires explicit `let mut` and reassignment.
+5. **Errors are values** — No exceptions. `Result` and `Option` are the only error paths. `?` is the only propagation mechanism.
+6. **What you see is what runs** — No operator overloading, no implicit conversions, no magic methods, no inheritance. The behavior of code is determined by reading it top-to-bottom.
+7. **Host boundary is clear** — Structs/enums come from Rust. Scripts use dicts for ad-hoc data. You always know which is which.
+
+---
+
 ## 1. Type System — Strong, Inferred
 
 No type annotations in syntax. The interpreter tracks and enforces types at runtime. No implicit coercions — `1 + "2"` is a type error.
@@ -21,11 +33,11 @@ string    — UTF-8, immutable
 ### Composite Types
 
 ```
-list<T>       — [1, 2, 3];  heterogeneous allowed, type checked on use
-dict<K, V>    — {"key": value};  insertion-ordered
+list<T>       — [1, 2, 3];  homogeneous, all elements must be same type
+dict<K, V>    — #{"key": value};  insertion-ordered, #{ } literal syntax
 Option<T>     — Some(x) / None
 Result<T, E>  — Ok(x) / Err(e)
-tuple         — (1, "a", true)
+tuple         — (1, "a", true);  heterogeneous, fixed-size
 ```
 
 ### Host-Injected Types
@@ -50,8 +62,67 @@ x = 5;                // runtime error: cannot assign to immutable variable
 ```ion
 let (a, b) = (1, 2);
 let Point { x, y } = point;
-let {"host": h, "port": p} = config;
+let #{"host": h, "port": p} = config;
 let [first, ...rest] = items;
+```
+
+### Scoping — Lexical, Block-Based
+
+Every `{}` block creates a new scope. Variables are visible from their declaration to the end of their enclosing block. Inner scopes can access outer scopes. Closures capture by value.
+
+```ion
+let x = 1;
+{
+    let y = 2;
+    x + y;  // ok — x visible from outer scope
+}
+y;  // ERROR: y not in scope
+```
+
+### Shadowing
+
+A new `let` binding in the same or inner scope can shadow a previous binding. The original value is untouched — shadowing creates a new variable that hides the old one. Shadowing can change both type and mutability.
+
+```ion
+let x = 10;
+let x = "now a string";  // ok — shadows previous x
+
+{
+    let x = true;   // shadows outer x within this block
+    print(x);       // true
+}
+print(x);           // "now a string" — outer x unchanged
+```
+
+Shadowing can freeze or unfreeze a binding:
+
+```ion
+let mut x = 10;
+x = 20;            // ok — mutable
+let x = x;         // shadows with immutable binding, "freezes" the value
+x = 30;            // ERROR: x is now immutable
+
+let y = 5;
+let mut y = y;     // shadows with mutable binding
+y = 10;            // ok
+```
+
+Function parameters can be shadowed:
+
+```ion
+fn process(x) {
+    let x = x + 1;  // ok — shadows parameter
+    x
+}
+```
+
+Closures capture the binding at time of capture, not affected by later shadowing:
+
+```ion
+let x = 1;
+let f = || x + 1;  // captures x = 1
+let x = 100;       // shadows x
+f();                // returns 2, not 101
 ```
 
 ---
@@ -131,8 +202,10 @@ fn connect(host, port = 8080) {
 
 ### Named arguments at call site
 
+Named arguments use `:` (not `=`) to avoid ambiguity with assignment expressions:
+
 ```ion
-connect(host = "localhost", port = 9090);
+connect(host: "localhost", port: 9090);
 ```
 
 ---
@@ -149,21 +222,37 @@ fn load_config(path) {
 }
 ```
 
-- If the function's return is `Result`, `?` on `Err` returns early with that error.
-- If the function's return is `Option`, `?` on `None` returns early with `None`.
-- Using `?` on a mismatched type (e.g., `?` on Option in a Result-returning fn) is a type error.
+The `?` operator's behavior is determined by the **value it's applied to**, not the function's return type:
+
+- `Result` value + `?` → unwraps `Ok`, early-returns `Err`
+- `Option` value + `?` → unwraps `Some`, early-returns `None`
+- Anything else + `?` → runtime error: "`?` applied to non-Result/Option"
+
+Return type consistency is checked when the function actually returns — you cannot return `Ok(x)` in one branch and `None` in another.
 
 ### Combinators
 
 ```ion
 let name = user
     .get("name")              // Option
-    .unwrap_or("anonymous");
+    .unwrap_or("anonymous");  // safe — always returns a value
 
 let result = parse(input)
     .map(|v| v * 2)
     .map_err(|e| f"parse failed: {e}");
 ```
+
+### No `unwrap()` — Explicit Handling Only
+
+There is no `unwrap()` method. Extracting a value from `Result`/`Option` requires explicit handling:
+
+- `?` — propagate the error/None to caller
+- `unwrap_or(default)` — provide a fallback value
+- `unwrap_or_else(|| compute())` — provide a fallback computation
+- `match` / `if let` — handle each case explicitly
+- `expect("reason")` — crash with a documented reason (for truly impossible cases)
+
+This prevents hidden panics. Every value extraction is visible and intentional.
 
 ---
 
@@ -176,7 +265,7 @@ for item in list {
     print(item);
 }
 
-for (key, value) in dict {
+for (key, value) in my_dict {
     print(f"{key}: {value}");
 }
 
@@ -207,25 +296,47 @@ let result = loop {
 
 ### Functional
 
+All collection methods return **new collections**. Nothing is mutated in place.
+
 ```ion
 let evens = numbers
     .filter(|x| x % 2 == 0)
-    .map(|x| x * 2)
-    .collect();
+    .map(|x| x * 2);          // returns new list
 
 let sum = numbers.fold(0, |acc, x| acc + x);
 
-// any, all
 let has_negative = numbers.any(|x| x < 0);
+
+// push/pop return new collections — explicit reassignment required
+let items = [1, 2, 3];
+let items2 = items.push(4);    // [1, 2, 3, 4] — items is unchanged
+
+let mut buf = [];
+buf = buf.push(1);             // explicit reassignment on mut binding
+buf = buf.push(2);
 ```
 
 ### Pipe operator
+
+`a |> f(b, c)` is always `f(a, b, c)` — left side becomes the **first argument**.
 
 ```ion
 let result = data
     |> filter(|x| x > 0)
     |> map(|x| x * 2)
     |> sum();
+```
+
+### Compound assignment requires `mut`
+
+`+=`, `-=`, `*=`, `/=` are sugar for `x = x + ...` and therefore require `let mut`:
+
+```ion
+let mut count = 0;
+count += 1;          // ok — sugar for count = count + 1
+
+let total = 0;
+total += 1;          // ERROR: cannot assign to immutable variable
 ```
 
 ---
@@ -246,39 +357,44 @@ let raw = "hello {name}";  // literal text "{name}"
 
 ## 8. JSON / Dict — First-Class
 
-### Literal syntax mirrors JSON
+Dict literals use `#{ }` to distinguish from block expressions. No ambiguity with `{ }`.
+
+### Literal syntax
 
 ```ion
-let config = {
+let config = #{
     "host": "localhost",
     "port": 8080,
     "features": ["auth", "logging"],
-    "db": {
+    "db": #{
         "url": "postgres://...",
         "pool_size": 5,
     },
 };
 ```
 
-### Access
+### Access — brackets only, no dot sugar
+
+Dict access always uses `["key"]`. Dot syntax (`.field`) is reserved exclusively for host-injected struct fields. This removes ambiguity — you always know what you're looking at.
 
 ```ion
-config["host"];       // bracket access → Option<T>
-config.host;          // dot sugar for string keys (compile-time known)
-config.db.pool_size;  // chained
+config["host"];             // dict access → Option<T>
+config["db"]["pool_size"];  // chained dict access
+
+point.x;                    // host struct field — never a dict
 ```
 
 ### Spread & merge
 
 ```ion
-let updated = { ...config, "port": 9090 };
-let merged = { ...defaults, ...overrides };
+let updated = #{ ...config, "port": 9090 };
+let merged = #{ ...defaults, ...overrides };
 ```
 
 ### Dict comprehension
 
 ```ion
-let squares = { f"{i}": i * i for i in 0..10 };
+let squares = #{ f"{i}": i * i for i in 0..10 };
 ```
 
 ### List comprehension
@@ -366,7 +482,7 @@ while let Some(item) = queue.pop() {
 
 ---
 
-## 11. Structured Concurrency
+## 10. Structured Concurrency
 
 Inspired by Kotlin coroutines / Swift structured concurrency / Trio. All spawned tasks are scoped — they must complete before the parent scope exits. No fire-and-forget.
 
@@ -408,30 +524,75 @@ let winner = select {
 ```ion
 let (tx, rx) = channel(10);
 
-spawn {
-    for item in items {
-        tx.send(item).await;
+async {
+    spawn {
+        for item in items {
+            tx.send(item).await;
+        }
+    };
+
+    for msg in rx {
+        process(msg);
     }
 };
-
-for msg in rx {
-    process(msg);
-}
 ```
+
+`spawn` is only valid inside `async {}` blocks — no exceptions.
 
 ---
 
-## 12. Rust Embedding API
+## 11. Rust Embedding API
 
-### Basic evaluation
+### Evaluation — running scripts
 
 ```rust
 use ion_core::Engine;
 
 let mut engine = Engine::new();
+
+// Run script, discard return value
 engine.eval("let x = 1 + 2;")?;
+
+// Run script, deserialize last expression as return value
+// (script without trailing semicolon = returns that expression, like blocks)
 let result: i64 = engine.eval_as("x * 10")?;
 assert_eq!(result, 30);
+```
+
+### Getting values out — script → Rust
+
+A script's last expression (without trailing semicolon) is its return value, consistent with how blocks work. The host can also read any top-level variable by name.
+
+```rust
+// Method 1: Last expression as return value
+let script = r#"
+    let data = json.decode(input)?;
+    let filtered = data.filter(|x| x["score"] > 80);
+    filtered
+"#;
+let results: Vec<Record> = engine.eval_as(script)?;
+
+// Method 2: Read specific variables by name
+engine.eval(script)?;
+let filtered: Vec<Record> = engine.get("filtered")?;
+let data: Vec<Record> = engine.get("data")?;
+
+// Method 3: Try-get (None if variable doesn't exist, Err if wrong type)
+let maybe: Option<Vec<Record>> = engine.try_get("filtered")?;
+
+// Method 4: Get all top-level bindings
+let all: HashMap<String, ion_core::Value> = engine.get_all()?;
+```
+
+No special export syntax in the script. The script computes values; the host decides what to extract.
+
+### Setting values in — Rust → script
+
+```rust
+// Inject Rust values into script scope
+engine.set("config", &my_config)?;
+engine.set("threshold", &80)?;
+engine.set("names", &vec!["alice", "bob"])?;
 ```
 
 ### Registering Rust functions
@@ -489,26 +650,26 @@ let engine = Engine::builder()
 
 ---
 
-## 13. Standard Library (ion-std)
+## 12. Standard Library (ion-std)
 
 Minimal, focused on embedding use cases.
 
 | Module   | Functions |
 |----------|-----------|
 | `string` | `len`, `split`, `join`, `trim`, `contains`, `replace`, `starts_with`, `ends_with`, `to_upper`, `to_lower` |
-| `list`   | `len`, `push`, `pop`, `map`, `filter`, `fold`, `any`, `all`, `sort`, `reverse`, `flatten`, `zip` |
-| `dict`   | `len`, `keys`, `values`, `entries`, `contains_key`, `get`, `remove`, `merge` |
+| `list`   | `len`, `push`, `pop`, `map`, `filter`, `fold`, `any`, `all`, `sort`, `reverse`, `flatten`, `zip` (all return new lists) |
+| `dict`   | `len`, `keys`, `values`, `entries`, `contains_key`, `get`, `insert`, `remove`, `merge` (all return new dicts) |
 | `json`   | `encode`, `decode`, `encode_pretty` |
 | `math`   | `abs`, `min`, `max`, `floor`, `ceil`, `round`, `pow`, `sqrt` |
 | `io`     | `print`, `println`, `eprint` (host can override/redirect) |
-| `option` | `Some`, `None`, `is_some`, `is_none`, `unwrap`, `unwrap_or`, `map` |
-| `result` | `Ok`, `Err`, `is_ok`, `is_err`, `unwrap`, `unwrap_or`, `map`, `map_err` |
+| `option` | `Some`, `None`, `is_some`, `is_none`, `unwrap_or`, `unwrap_or_else`, `expect`, `map`, `and_then`, `or_else` |
+| `result` | `Ok`, `Err`, `is_ok`, `is_err`, `unwrap_or`, `unwrap_or_else`, `expect`, `map`, `map_err`, `and_then`, `or_else` |
 
 All modules are host-configurable — the embedder chooses what to expose.
 
 ---
 
-## 14. Operator Summary
+## 13. Operator Summary
 
 | Category    | Operators |
 |-------------|-----------|
@@ -524,7 +685,7 @@ All modules are host-configurable — the embedder chooses what to expose.
 
 ---
 
-## 15. Keywords
+## 14. Keywords
 
 ```
 let mut fn match if else for while loop
@@ -534,7 +695,7 @@ in as spawn await async select channel
 
 ---
 
-## 16. Implementation Phases
+## 15. Implementation Phases
 
 ### Phase 1 — Core (Tree-Walk Interpreter)
 1. Lexer (hand-written, zero-copy with logos or manual)
@@ -573,7 +734,7 @@ in as spawn await async select channel
 
 ---
 
-## 17. Project Structure
+## 16. Project Structure
 
 ```
 ion-lang/
@@ -603,7 +764,7 @@ ion-lang/
 
 ---
 
-## 18. Example: Complete Script
+## 17. Example: Complete Script
 
 ```ion
 // Todo struct and its methods are injected by the Rust host:
