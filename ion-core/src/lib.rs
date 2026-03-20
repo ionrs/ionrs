@@ -35,6 +35,9 @@ pub mod interpreter;
 pub mod host_types;
 #[cfg(feature = "concurrency")]
 pub mod async_rt;
+pub mod bytecode;
+pub mod compiler;
+pub mod vm;
 pub mod engine;
 
 #[cfg(feature = "derive")]

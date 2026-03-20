@@ -80,6 +80,45 @@ impl Interpreter {
         }
     }
 
+    /// Create an interpreter with a pre-existing environment (for VM hybrid mode).
+    pub fn with_env(env: Env) -> Self {
+        Self {
+            env,
+            limits: Limits::default(),
+            types: TypeRegistry::new(),
+            call_depth: 0,
+            #[cfg(feature = "concurrency")]
+            nursery: None,
+        }
+    }
+
+    /// Take ownership of the environment (for VM hybrid mode).
+    pub fn take_env(self) -> Env {
+        self.env
+    }
+
+    /// Evaluate a block of statements, returning the last value (public for VM).
+    pub fn eval_block(&mut self, stmts: &[Stmt]) -> IonResult {
+        match self.eval_stmts(stmts) {
+            Ok(v) => Ok(v),
+            Err(SignalOrError::Error(e)) => Err(e),
+            Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
+            Err(SignalOrError::Signal(Signal::Break(v))) => Ok(v),
+            Err(SignalOrError::Signal(Signal::Continue)) => Ok(Value::Unit),
+        }
+    }
+
+    /// Evaluate a single expression (public for VM).
+    pub fn eval_single_expr(&mut self, expr: &Expr) -> IonResult {
+        match self.eval_expr(expr) {
+            Ok(v) => Ok(v),
+            Err(SignalOrError::Error(e)) => Err(e),
+            Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
+            Err(SignalOrError::Signal(Signal::Break(v))) => Ok(v),
+            Err(SignalOrError::Signal(Signal::Continue)) => Ok(Value::Unit),
+        }
+    }
+
     fn eval_stmts(&mut self, stmts: &[Stmt]) -> SignalResult {
         let mut last = Value::Unit;
         for (i, stmt) in stmts.iter().enumerate() {
@@ -1603,7 +1642,7 @@ impl Interpreter {
     }
 }
 
-fn register_builtins(env: &mut Env) {
+pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("print").to_string(),
         Value::BuiltinFn(ion_str!("print").to_string(), |args| {

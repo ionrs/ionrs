@@ -89,6 +89,35 @@ impl Engine {
             .ok_or_else(|| format!("variable '{}' not found", name))?;
         T::from_ion(val)
     }
+
+    /// Evaluate a script via the bytecode VM. Falls back to tree-walk for
+    /// unsupported features (match, comprehensions, host types, concurrency).
+    pub fn vm_eval(&mut self, source: &str) -> Result<Value, IonError> {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize()?;
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse_program()?;
+
+        // Try the bytecode path first
+        let compiler = crate::compiler::Compiler::new();
+        match compiler.compile_program(&program) {
+            Ok(chunk) => {
+                let mut vm = crate::vm::Vm::with_env(
+                    std::mem::replace(&mut self.interpreter.env, crate::env::Env::new())
+                );
+                // Register builtins in VM env
+                crate::interpreter::register_builtins(vm.env_mut());
+                let result = vm.execute(&chunk);
+                // Restore env back to interpreter
+                self.interpreter.env = std::mem::replace(vm.env_mut(), crate::env::Env::new());
+                result
+            }
+            Err(_) => {
+                // Compilation failed (unsupported feature) — fall back to tree-walk
+                self.interpreter.eval_program(&program)
+            }
+        }
+    }
 }
 
 impl Default for Engine {
