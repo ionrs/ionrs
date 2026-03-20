@@ -97,10 +97,14 @@ pub enum ExprKind {
     // Collections
     /// `[a, b, c]`
     List(Vec<Expr>),
-    /// `#{ "key": val, ... }`
-    Dict(Vec<(Expr, Expr)>),
+    /// `#{ "key": val, ... }` with optional spread entries
+    Dict(Vec<DictEntry>),
     /// `(a, b, c)`
     Tuple(Vec<Expr>),
+    /// `[expr for pattern in iter if cond]`
+    ListComp { expr: Box<Expr>, pattern: Pattern, iter: Box<Expr>, cond: Option<Box<Expr>> },
+    /// `#{ key: val for pattern in iter if cond }`
+    DictComp { key: Box<Expr>, value: Box<Expr>, pattern: Pattern, iter: Box<Expr>, cond: Option<Box<Expr>> },
 
     // Operations
     BinOp { left: Box<Expr>, op: BinOp, right: Box<Expr> },
@@ -145,6 +149,13 @@ pub enum ExprKind {
 
     // Range
     Range { start: Box<Expr>, end: Box<Expr>, inclusive: bool },
+}
+
+/// A dict entry: either a key-value pair or a spread `...expr`.
+#[derive(Debug, Clone)]
+pub enum DictEntry {
+    KeyValue(Expr, Expr),
+    Spread(Expr),
 }
 
 #[derive(Debug, Clone)]

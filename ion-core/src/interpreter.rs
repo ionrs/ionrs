@@ -27,15 +27,31 @@ impl From<Signal> for SignalOrError {
     fn from(s: Signal) -> Self { SignalOrError::Signal(s) }
 }
 
+pub struct Limits {
+    pub max_call_depth: usize,
+    pub max_loop_iters: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_call_depth: 512,
+            max_loop_iters: 1_000_000,
+        }
+    }
+}
+
 pub struct Interpreter {
     pub env: Env,
+    pub limits: Limits,
+    call_depth: usize,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         let mut env = Env::new();
         register_builtins(&mut env);
-        Self { env }
+        Self { env, limits: Limits::default(), call_depth: 0 }
     }
 
     pub fn eval_program(&mut self, program: &Program) -> IonResult {
@@ -122,9 +138,17 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             StmtKind::While { cond, body } => {
+                let mut iters = 0usize;
                 loop {
                     let c = self.eval_expr(cond)?;
                     if !c.is_truthy() { break; }
+                    iters += 1;
+                    if iters > self.limits.max_loop_iters {
+                        return Err(IonError::runtime(
+                            ion_str!("maximum loop iterations exceeded").to_string(),
+                            stmt.span.line, stmt.span.col,
+                        ).into());
+                    }
                     self.env.push_scope();
                     match self.eval_stmts(body) {
                         Ok(_) => {}
@@ -146,9 +170,17 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             StmtKind::WhileLet { pattern, expr, body } => {
+                let mut iters = 0usize;
                 loop {
                     let val = self.eval_expr(expr)?;
                     if !self.pattern_matches(pattern, &val) { break; }
+                    iters += 1;
+                    if iters > self.limits.max_loop_iters {
+                        return Err(IonError::runtime(
+                            ion_str!("maximum loop iterations exceeded").to_string(),
+                            stmt.span.line, stmt.span.col,
+                        ).into());
+                    }
                     self.env.push_scope();
                     self.bind_pattern(pattern, &val, false, expr.span)?;
                     match self.eval_stmts(body) {
@@ -171,7 +203,15 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             StmtKind::Loop { body } => {
+                let mut iters = 0usize;
                 let result = loop {
+                    iters += 1;
+                    if iters > self.limits.max_loop_iters {
+                        return Err(IonError::runtime(
+                            ion_str!("maximum loop iterations exceeded").to_string(),
+                            stmt.span.line, stmt.span.col,
+                        ).into());
+                    }
                     self.env.push_scope();
                     match self.eval_stmts(body) {
                         Ok(_) => {}
@@ -296,17 +336,35 @@ impl Interpreter {
             }
             ExprKind::Dict(entries) => {
                 let mut map = IndexMap::new();
-                for (k, v) in entries {
-                    let key = self.eval_expr(k)?;
-                    let key_str = match key {
-                        Value::Str(s) => s,
-                        _ => return Err(IonError::type_err(
-                            ion_str!("dict keys must be strings").to_string(),
-                            span.line, span.col,
-                        ).into()),
-                    };
-                    let val = self.eval_expr(v)?;
-                    map.insert(key_str, val);
+                for entry in entries {
+                    match entry {
+                        DictEntry::KeyValue(k, v) => {
+                            let key = self.eval_expr(k)?;
+                            let key_str = match key {
+                                Value::Str(s) => s,
+                                _ => return Err(IonError::type_err(
+                                    ion_str!("dict keys must be strings").to_string(),
+                                    span.line, span.col,
+                                ).into()),
+                            };
+                            let val = self.eval_expr(v)?;
+                            map.insert(key_str, val);
+                        }
+                        DictEntry::Spread(expr) => {
+                            let val = self.eval_expr(expr)?;
+                            match val {
+                                Value::Dict(other) => {
+                                    for (k, v) in other {
+                                        map.insert(k, v);
+                                    }
+                                }
+                                _ => return Err(IonError::type_err(
+                                    ion_str!("spread requires a dict").to_string(),
+                                    span.line, span.col,
+                                ).into()),
+                            }
+                        }
+                    }
                 }
                 Ok(Value::Dict(map))
             }
@@ -316,6 +374,56 @@ impl Interpreter {
                     vals.push(self.eval_expr(item)?);
                 }
                 Ok(Value::Tuple(vals))
+            }
+
+            ExprKind::ListComp { expr, pattern, iter, cond } => {
+                let iter_val = self.eval_expr(iter)?;
+                let items = self.value_to_iter(&iter_val, span)?;
+                let mut result = Vec::new();
+                for item in items {
+                    self.env.push_scope();
+                    self.bind_pattern(pattern, &item, false, span)?;
+                    let include = if let Some(c) = cond {
+                        let v = self.eval_expr(c)?;
+                        v.is_truthy()
+                    } else {
+                        true
+                    };
+                    if include {
+                        result.push(self.eval_expr(expr)?);
+                    }
+                    self.env.pop_scope();
+                }
+                Ok(Value::List(result))
+            }
+            ExprKind::DictComp { key, value, pattern, iter, cond } => {
+                let iter_val = self.eval_expr(iter)?;
+                let items = self.value_to_iter(&iter_val, span)?;
+                let mut map = IndexMap::new();
+                for item in items {
+                    self.env.push_scope();
+                    self.bind_pattern(pattern, &item, false, span)?;
+                    let include = if let Some(c) = cond {
+                        let v = self.eval_expr(c)?;
+                        v.is_truthy()
+                    } else {
+                        true
+                    };
+                    if include {
+                        let k = self.eval_expr(key)?;
+                        let k_str = match k {
+                            Value::Str(s) => s,
+                            _ => return Err(IonError::type_err(
+                                ion_str!("dict comp keys must be strings").to_string(),
+                                span.line, span.col,
+                            ).into()),
+                        };
+                        let v = self.eval_expr(value)?;
+                        map.insert(k_str, v);
+                    }
+                    self.env.pop_scope();
+                }
+                Ok(Value::Dict(map))
             }
 
             ExprKind::BinOp { left, op, right } => {
@@ -1022,6 +1130,13 @@ impl Interpreter {
     fn call_value(&mut self, func: &Value, args: &[Value], span: Span) -> SignalResult {
         match func {
             Value::Fn(ion_fn) => {
+                if self.call_depth >= self.limits.max_call_depth {
+                    return Err(IonError::runtime(
+                        ion_str!("maximum call depth exceeded").to_string(),
+                        span.line, span.col,
+                    ).into());
+                }
+                self.call_depth += 1;
                 self.env.push_scope();
                 // Load captures
                 for (name, val) in &ion_fn.captures {
@@ -1051,6 +1166,7 @@ impl Interpreter {
                 }
                 let result = self.eval_stmts(&ion_fn.body);
                 self.env.pop_scope();
+                self.call_depth -= 1;
                 match result {
                     Ok(v) => Ok(v),
                     Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
@@ -1218,6 +1334,114 @@ fn register_builtins(env: &mut Env) {
         ion_str!("type_of").to_string(),
         Value::BuiltinFn(ion_str!("type_of").to_string(), |args| {
             Ok(Value::Str(args[0].type_name().to_string()))
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("json_encode").to_string(),
+        Value::BuiltinFn(ion_str!("json_encode").to_string(), |args| {
+            if args.len() != 1 {
+                return Err(ion_str!("json_encode takes 1 argument"));
+            }
+            let json = args[0].to_json();
+            Ok(Value::Str(json.to_string()))
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("json_decode").to_string(),
+        Value::BuiltinFn(ion_str!("json_decode").to_string(), |args| {
+            if args.len() != 1 {
+                return Err(ion_str!("json_decode takes 1 argument"));
+            }
+            let s = args[0].as_str().ok_or_else(|| ion_str!("json_decode requires a string"))?;
+            let json: serde_json::Value = serde_json::from_str(s)
+                .map_err(|e| format!("{}{}", ion_str!("json_decode error: "), e))?;
+            Ok(Value::from_json(json))
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("abs").to_string(),
+        Value::BuiltinFn(ion_str!("abs").to_string(), |args| {
+            match &args[0] {
+                Value::Int(n) => Ok(Value::Int(n.abs())),
+                Value::Float(n) => Ok(Value::Float(n.abs())),
+                _ => Err(format!("{}{}", ion_str!("abs() not supported for "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("min").to_string(),
+        Value::BuiltinFn(ion_str!("min").to_string(), |args| {
+            if args.len() < 2 { return Err(ion_str!("min requires at least 2 arguments")); }
+            let mut best = args[0].clone();
+            for arg in &args[1..] {
+                match (&best, arg) {
+                    (Value::Int(a), Value::Int(b)) => { if b < a { best = arg.clone(); } }
+                    (Value::Float(a), Value::Float(b)) => { if b < a { best = arg.clone(); } }
+                    (Value::Int(a), Value::Float(b)) => { if *b < (*a as f64) { best = arg.clone(); } }
+                    (Value::Float(a), Value::Int(b)) => { if (*b as f64) < *a { best = arg.clone(); } }
+                    _ => return Err(ion_str!("min requires numeric arguments")),
+                }
+            }
+            Ok(best)
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("max").to_string(),
+        Value::BuiltinFn(ion_str!("max").to_string(), |args| {
+            if args.len() < 2 { return Err(ion_str!("max requires at least 2 arguments")); }
+            let mut best = args[0].clone();
+            for arg in &args[1..] {
+                match (&best, arg) {
+                    (Value::Int(a), Value::Int(b)) => { if b > a { best = arg.clone(); } }
+                    (Value::Float(a), Value::Float(b)) => { if b > a { best = arg.clone(); } }
+                    (Value::Int(a), Value::Float(b)) => { if *b > (*a as f64) { best = arg.clone(); } }
+                    (Value::Float(a), Value::Int(b)) => { if (*b as f64) > *a { best = arg.clone(); } }
+                    _ => return Err(ion_str!("max requires numeric arguments")),
+                }
+            }
+            Ok(best)
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("str").to_string(),
+        Value::BuiltinFn(ion_str!("str").to_string(), |args| {
+            if args.len() != 1 { return Err(ion_str!("str takes 1 argument")); }
+            Ok(Value::Str(args[0].to_string()))
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("int").to_string(),
+        Value::BuiltinFn(ion_str!("int").to_string(), |args| {
+            if args.len() != 1 { return Err(ion_str!("int takes 1 argument")); }
+            match &args[0] {
+                Value::Int(n) => Ok(Value::Int(*n)),
+                Value::Float(n) => Ok(Value::Int(*n as i64)),
+                Value::Str(s) => s.parse::<i64>().map(Value::Int)
+                    .map_err(|_| format!("{}{}{}", ion_str!("cannot convert '"), s, ion_str!("' to int"))),
+                Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
+                _ => Err(format!("{}{}", ion_str!("cannot convert "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("float").to_string(),
+        Value::BuiltinFn(ion_str!("float").to_string(), |args| {
+            if args.len() != 1 { return Err(ion_str!("float takes 1 argument")); }
+            match &args[0] {
+                Value::Float(n) => Ok(Value::Float(*n)),
+                Value::Int(n) => Ok(Value::Float(*n as f64)),
+                Value::Str(s) => s.parse::<f64>().map(Value::Float)
+                    .map_err(|_| format!("{}{}{}", ion_str!("cannot convert '"), s, ion_str!("' to float"))),
+                _ => Err(format!("{}{}", ion_str!("cannot convert "), args[0].type_name())),
+            }
         }),
         false,
     );

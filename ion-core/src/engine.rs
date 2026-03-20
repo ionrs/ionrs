@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::IonError;
-use crate::interpreter::Interpreter;
+use crate::interpreter::{Interpreter, Limits};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::value::Value;
@@ -43,6 +43,11 @@ impl Engine {
     /// Get all top-level bindings.
     pub fn get_all(&self) -> HashMap<String, Value> {
         self.interpreter.env.top_level()
+    }
+
+    /// Set execution limits.
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.interpreter.limits = limits;
     }
 
     /// Register a built-in function.

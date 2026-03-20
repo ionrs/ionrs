@@ -1,4 +1,5 @@
 use ion_core::engine::Engine;
+use ion_core::interpreter::Limits;
 use ion_core::value::Value;
 
 fn eval(src: &str) -> Value {
@@ -1015,4 +1016,276 @@ fn test_list_of_dicts() {
         Value::Option(Some(Box::new(Value::Str("Alice".into())))),
         Value::Option(Some(Box::new(Value::Str("Bob".into())))),
     ]));
+}
+
+// ============================================================
+// Section 22: List Comprehensions
+// ============================================================
+
+#[test]
+fn test_list_comp_basic() {
+    assert_eq!(eval("[x * 2 for x in [1, 2, 3]]"),
+        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+}
+
+#[test]
+fn test_list_comp_with_filter() {
+    assert_eq!(eval("[x for x in [1, 2, 3, 4, 5] if x > 3]"),
+        Value::List(vec![Value::Int(4), Value::Int(5)]));
+}
+
+#[test]
+fn test_list_comp_with_transform_and_filter() {
+    assert_eq!(eval("[x * x for x in [1, 2, 3, 4, 5] if x % 2 == 0]"),
+        Value::List(vec![Value::Int(4), Value::Int(16)]));
+}
+
+#[test]
+fn test_list_comp_tuple_pattern() {
+    assert_eq!(eval(r#"
+        let pairs = [(1, "a"), (2, "b"), (3, "c")];
+        [n for (n, _s) in pairs if n > 1]
+    "#), Value::List(vec![Value::Int(2), Value::Int(3)]));
+}
+
+#[test]
+fn test_list_comp_over_range() {
+    assert_eq!(eval("[x * x for x in range(5)]"),
+        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(4), Value::Int(9), Value::Int(16)]));
+}
+
+// ============================================================
+// Section 23: Dict Comprehensions
+// ============================================================
+
+#[test]
+fn test_dict_comp_basic() {
+    let val = eval(r#"#{ f"key_{x}": x * 10 for x in [1, 2, 3] }"#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map.len(), 3);
+        assert_eq!(map["key_1"], Value::Int(10));
+        assert_eq!(map["key_2"], Value::Int(20));
+        assert_eq!(map["key_3"], Value::Int(30));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_dict_comp_with_filter() {
+    let val = eval(r#"#{ f"n_{x}": x for x in [1, 2, 3, 4] if x % 2 == 0 }"#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map.len(), 2);
+        assert_eq!(map["n_2"], Value::Int(2));
+        assert_eq!(map["n_4"], Value::Int(4));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+// ============================================================
+// Section 24: Dict Spread
+// ============================================================
+
+#[test]
+fn test_dict_spread_basic() {
+    let val = eval(r#"
+        let base = #{ "a": 1, "b": 2 };
+        #{ ...base, "c": 3 }
+    "#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map.len(), 3);
+        assert_eq!(map["a"], Value::Int(1));
+        assert_eq!(map["b"], Value::Int(2));
+        assert_eq!(map["c"], Value::Int(3));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_dict_spread_override() {
+    let val = eval(r#"
+        let base = #{ "a": 1, "b": 2 };
+        #{ ...base, "b": 99 }
+    "#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map.len(), 2);
+        assert_eq!(map["a"], Value::Int(1));
+        assert_eq!(map["b"], Value::Int(99));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_dict_spread_multiple() {
+    let val = eval(r#"
+        let a = #{ "x": 1 };
+        let b = #{ "y": 2 };
+        #{ ...a, ...b, "z": 3 }
+    "#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map.len(), 3);
+        assert_eq!(map["x"], Value::Int(1));
+        assert_eq!(map["y"], Value::Int(2));
+        assert_eq!(map["z"], Value::Int(3));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_dict_spread_non_dict_error() {
+    let err = eval_err(r#"#{ ...[1, 2, 3] }"#);
+    assert!(err.contains("spread requires a dict"), "got: {}", err);
+}
+
+// ============================================================
+// Section 25: JSON Encode / Decode
+// ============================================================
+
+#[test]
+fn test_json_encode_int() {
+    assert_eq!(eval("json_encode(42)"), Value::Str("42".into()));
+}
+
+#[test]
+fn test_json_encode_dict() {
+    let val = eval(r#"json_encode(#{ "name": "Ion", "version": 1 })"#);
+    if let Value::Str(s) = val {
+        assert!(s.contains("\"name\""));
+        assert!(s.contains("\"Ion\""));
+        assert!(s.contains("\"version\""));
+    } else {
+        panic!("expected string");
+    }
+}
+
+#[test]
+fn test_json_encode_list() {
+    assert_eq!(eval("json_encode([1, 2, 3])"), Value::Str("[1,2,3]".into()));
+}
+
+#[test]
+fn test_json_decode_object() {
+    let val = eval(r#"json_decode("{\"a\": 1, \"b\": 2}")"#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map["a"], Value::Int(1));
+        assert_eq!(map["b"], Value::Int(2));
+    } else {
+        panic!("expected dict, got: {:?}", val);
+    }
+}
+
+#[test]
+fn test_json_decode_array() {
+    assert_eq!(eval(r#"json_decode("[1, 2, 3]")"#),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+}
+
+#[test]
+fn test_json_roundtrip() {
+    let val = eval(r#"
+        let data = #{ "name": "test", "values": [1, 2, 3] };
+        let encoded = json_encode(data);
+        json_decode(encoded)
+    "#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map["name"], Value::Str("test".into()));
+        assert_eq!(map["values"], Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_json_decode_invalid() {
+    let err = eval_err(r#"json_decode("not json")"#);
+    assert!(err.contains("json_decode error"), "got: {}", err);
+}
+
+// ============================================================
+// Section 26: Execution Limits (Sandboxing)
+// ============================================================
+
+#[test]
+fn test_max_call_depth() {
+    let mut engine = Engine::new();
+    engine.set_limits(Limits { max_call_depth: 10, max_loop_iters: 1_000_000 });
+    let err = engine.eval("
+        fn recurse(n) { recurse(n + 1) }
+        recurse(0)
+    ").unwrap_err();
+    assert!(err.message.contains("maximum call depth"), "got: {}", err.message);
+}
+
+#[test]
+fn test_max_loop_iters() {
+    let mut engine = Engine::new();
+    engine.set_limits(Limits { max_call_depth: 512, max_loop_iters: 100 });
+    let err = engine.eval("
+        let mut i = 0;
+        while true { i = i + 1; }
+    ").unwrap_err();
+    assert!(err.message.contains("maximum loop iterations"), "got: {}", err.message);
+}
+
+#[test]
+fn test_loop_within_limit() {
+    let mut engine = Engine::new();
+    engine.set_limits(Limits { max_call_depth: 512, max_loop_iters: 100 });
+    let result = engine.eval("
+        let mut sum = 0;
+        let mut i = 0;
+        while i < 50 { sum = sum + i; i = i + 1; }
+        sum
+    ").unwrap();
+    assert_eq!(result, Value::Int(1225));
+}
+
+// ============================================================
+// Section 27: Stdlib Builtins
+// ============================================================
+
+#[test]
+fn test_abs() {
+    assert_eq!(eval("abs(-5)"), Value::Int(5));
+    assert_eq!(eval("abs(5)"), Value::Int(5));
+    assert_eq!(eval("abs(-3.14)"), Value::Float(3.14));
+}
+
+#[test]
+fn test_min_max() {
+    assert_eq!(eval("min(3, 1, 2)"), Value::Int(1));
+    assert_eq!(eval("max(3, 1, 2)"), Value::Int(3));
+    assert_eq!(eval("min(1.5, 2.5)"), Value::Float(1.5));
+    assert_eq!(eval("max(1, 2.5)"), Value::Float(2.5));
+}
+
+#[test]
+fn test_str_conversion() {
+    assert_eq!(eval("str(42)"), Value::Str("42".into()));
+    assert_eq!(eval("str(true)"), Value::Str("true".into()));
+    assert_eq!(eval("str([1, 2])"), Value::Str("[1, 2]".into()));
+}
+
+#[test]
+fn test_int_conversion() {
+    assert_eq!(eval("int(3.7)"), Value::Int(3));
+    assert_eq!(eval(r#"int("42")"#), Value::Int(42));
+    assert_eq!(eval("int(true)"), Value::Int(1));
+    assert_eq!(eval("int(false)"), Value::Int(0));
+}
+
+#[test]
+fn test_float_conversion() {
+    assert_eq!(eval("float(42)"), Value::Float(42.0));
+    assert_eq!(eval(r#"float("3.14")"#), Value::Float(3.14));
+}
+
+#[test]
+fn test_int_parse_error() {
+    let err = eval_err(r#"int("abc")"#);
+    assert!(err.contains("cannot convert"), "got: {}", err);
 }

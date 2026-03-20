@@ -603,26 +603,80 @@ impl Parser {
             }
             Token::LBracket => {
                 self.advance();
-                let mut items = Vec::new();
-                while !self.check(&Token::RBracket) && !self.is_at_end() {
+                if self.check(&Token::RBracket) {
+                    self.advance();
+                    return Ok(Expr { kind: ExprKind::List(vec![]), span });
+                }
+                let first = self.parse_expr()?;
+                // Check for list comprehension: [expr for pattern in iter]
+                if self.check(&Token::For) {
+                    self.advance();
+                    let pattern = self.parse_pattern()?;
+                    self.eat(&Token::In)?;
+                    let iter = self.parse_expr()?;
+                    let cond = if self.check(&Token::If) {
+                        self.advance();
+                        Some(Box::new(self.parse_expr()?))
+                    } else {
+                        None
+                    };
+                    self.eat(&Token::RBracket)?;
+                    return Ok(Expr { kind: ExprKind::ListComp {
+                        expr: Box::new(first), pattern, iter: Box::new(iter), cond,
+                    }, span });
+                }
+                let mut items = vec![first];
+                while self.check(&Token::Comma) {
+                    self.advance();
+                    if self.check(&Token::RBracket) { break; }
                     items.push(self.parse_expr()?);
-                    if !self.check(&Token::RBracket) {
-                        self.eat(&Token::Comma)?;
-                    }
                 }
                 self.eat(&Token::RBracket)?;
                 Ok(Expr { kind: ExprKind::List(items), span })
             }
             Token::HashBrace => {
                 self.advance();
-                let mut entries = Vec::new();
-                while !self.check(&Token::RBrace) && !self.is_at_end() {
-                    let key = self.parse_expr()?;
-                    self.eat(&Token::Colon)?;
-                    let value = self.parse_expr()?;
-                    entries.push((key, value));
-                    if !self.check(&Token::RBrace) {
-                        self.eat(&Token::Comma)?;
+                if self.check(&Token::RBrace) {
+                    self.advance();
+                    return Ok(Expr { kind: ExprKind::Dict(vec![]), span });
+                }
+                // Check for spread first entry
+                if self.check(&Token::DotDotDot) {
+                    return self.parse_dict_entries(span);
+                }
+                let first_key = self.parse_expr()?;
+                self.eat(&Token::Colon)?;
+                let first_val = self.parse_expr()?;
+                // Check for dict comprehension: #{ key: val for pat in iter }
+                if self.check(&Token::For) {
+                    self.advance();
+                    let pattern = self.parse_pattern()?;
+                    self.eat(&Token::In)?;
+                    let iter = self.parse_expr()?;
+                    let cond = if self.check(&Token::If) {
+                        self.advance();
+                        Some(Box::new(self.parse_expr()?))
+                    } else {
+                        None
+                    };
+                    self.eat(&Token::RBrace)?;
+                    return Ok(Expr { kind: ExprKind::DictComp {
+                        key: Box::new(first_key), value: Box::new(first_val),
+                        pattern, iter: Box::new(iter), cond,
+                    }, span });
+                }
+                let mut entries = vec![DictEntry::KeyValue(first_key, first_val)];
+                while self.check(&Token::Comma) {
+                    self.advance();
+                    if self.check(&Token::RBrace) { break; }
+                    if self.check(&Token::DotDotDot) {
+                        self.advance();
+                        entries.push(DictEntry::Spread(self.parse_expr()?));
+                    } else {
+                        let key = self.parse_expr()?;
+                        self.eat(&Token::Colon)?;
+                        let value = self.parse_expr()?;
+                        entries.push(DictEntry::KeyValue(key, value));
                     }
                 }
                 self.eat(&Token::RBrace)?;
@@ -741,6 +795,29 @@ impl Parser {
                 ))
             }
         }
+    }
+
+    /// Parse dict entries when the first token is `...` (spread).
+    fn parse_dict_entries(&mut self, span: Span) -> Result<Expr, IonError> {
+        let mut entries = Vec::new();
+        // First entry is a spread
+        self.advance(); // consume `...`
+        entries.push(DictEntry::Spread(self.parse_expr()?));
+        while self.check(&Token::Comma) {
+            self.advance();
+            if self.check(&Token::RBrace) { break; }
+            if self.check(&Token::DotDotDot) {
+                self.advance();
+                entries.push(DictEntry::Spread(self.parse_expr()?));
+            } else {
+                let key = self.parse_expr()?;
+                self.eat(&Token::Colon)?;
+                let value = self.parse_expr()?;
+                entries.push(DictEntry::KeyValue(key, value));
+            }
+        }
+        self.eat(&Token::RBrace)?;
+        Ok(Expr { kind: ExprKind::Dict(entries), span })
     }
 
     fn parse_if_expr(&mut self) -> Result<Expr, IonError> {

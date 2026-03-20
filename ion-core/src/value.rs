@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use indexmap::IndexMap;
+use serde_json;
 
 use crate::ast::{Param, Stmt};
 
@@ -153,6 +154,70 @@ impl PartialEq for Value {
             (Value::Unit, Value::Unit) => true,
             (Value::Option(None), Value::Unit) => false,
             _ => false,
+        }
+    }
+}
+
+// ---- Serde JSON conversions ----
+
+impl Value {
+    /// Convert an Ion Value to a serde_json::Value.
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            Value::Int(n) => serde_json::Value::Number((*n).into()),
+            Value::Float(n) => serde_json::Number::from_f64(*n)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            Value::Bool(b) => serde_json::Value::Bool(*b),
+            Value::Str(s) => serde_json::Value::String(s.clone()),
+            Value::List(items) => serde_json::Value::Array(
+                items.iter().map(|v| v.to_json()).collect()
+            ),
+            Value::Dict(map) => {
+                let obj: serde_json::Map<String, serde_json::Value> = map.iter()
+                    .map(|(k, v)| (k.clone(), v.to_json()))
+                    .collect();
+                serde_json::Value::Object(obj)
+            }
+            Value::Tuple(items) => serde_json::Value::Array(
+                items.iter().map(|v| v.to_json()).collect()
+            ),
+            Value::Option(Some(v)) => v.to_json(),
+            Value::Option(None) | Value::Unit => serde_json::Value::Null,
+            Value::Result(Ok(v)) => v.to_json(),
+            Value::Result(Err(v)) => {
+                let mut map = serde_json::Map::new();
+                map.insert("error".to_string(), v.to_json());
+                serde_json::Value::Object(map)
+            }
+            Value::Fn(_) | Value::BuiltinFn(_, _) => serde_json::Value::Null,
+        }
+    }
+
+    /// Convert a serde_json::Value to an Ion Value.
+    pub fn from_json(json: serde_json::Value) -> Value {
+        match json {
+            serde_json::Value::Null => Value::Option(None),
+            serde_json::Value::Bool(b) => Value::Bool(b),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Value::Int(i)
+                } else if let Some(f) = n.as_f64() {
+                    Value::Float(f)
+                } else {
+                    Value::Int(0)
+                }
+            }
+            serde_json::Value::String(s) => Value::Str(s),
+            serde_json::Value::Array(arr) => {
+                Value::List(arr.into_iter().map(Value::from_json).collect())
+            }
+            serde_json::Value::Object(map) => {
+                let dict: IndexMap<String, Value> = map.into_iter()
+                    .map(|(k, v)| (k, Value::from_json(v)))
+                    .collect();
+                Value::Dict(dict)
+            }
         }
     }
 }
