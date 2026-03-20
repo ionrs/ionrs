@@ -1,0 +1,3 @@
+[workspace]
+members = ["ion-core", "ion-cli"]
+resolver = "2"

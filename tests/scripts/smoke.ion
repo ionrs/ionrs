@@ -1,0 +1,58 @@
+// Smoke test for Ion language
+let name = "Ion";
+let version = 1;
+
+// Arithmetic
+let x = 10 + 20 * 2;
+
+// Functions
+fn greet(who) {
+    f"Hello, {who}!"
+}
+
+// Closures & higher-order
+let nums = [1, 2, 3, 4, 5];
+let doubled = nums.map(|n| n * 2);
+let sum = doubled.fold(0, |acc, n| acc + n);
+
+// Pattern matching
+let result = match sum {
+    s if s > 20 => Ok(s),
+    _ => Err("too small"),
+};
+
+// ? operator
+fn extract(r) {
+    let val = r?;
+    Ok(val * 10)
+}
+
+let final_result = extract(result);
+
+// Dict
+let config = #{
+    "name": name,
+    "version": version,
+    "result": sum,
+};
+
+// Control flow
+let status = if sum > 20 { "good" } else { "bad" };
+
+// Loop with break value
+let found = loop {
+    break 42;
+};
+
+// Print results
+println(f"Language: {name} v{version}");
+println(f"x = {x}");
+println(greet("world"));
+println(f"nums = {nums}");
+println(f"doubled = {doubled}");
+println(f"sum = {sum}");
+println(f"result = {result}");
+println(f"final = {final_result}");
+println(f"config = {config}");
+println(f"status = {status}");
+println(f"found = {found}");

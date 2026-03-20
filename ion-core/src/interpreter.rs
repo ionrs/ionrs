@@ -1,0 +1,1224 @@
+use crate::ast::*;
+use crate::env::Env;
+use crate::error::{ErrorKind, IonError};
+use crate::value::{IonFn, Value};
+use indexmap::IndexMap;
+
+/// Control flow signals that escape normal evaluation.
+enum Signal {
+    Return(Value),
+    Break(Value),
+    Continue,
+}
+
+type IonResult = Result<Value, IonError>;
+type SignalResult = Result<Value, SignalOrError>;
+
+enum SignalOrError {
+    Signal(Signal),
+    Error(IonError),
+}
+
+impl From<IonError> for SignalOrError {
+    fn from(e: IonError) -> Self { SignalOrError::Error(e) }
+}
+
+impl From<Signal> for SignalOrError {
+    fn from(s: Signal) -> Self { SignalOrError::Signal(s) }
+}
+
+pub struct Interpreter {
+    pub env: Env,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        let mut env = Env::new();
+        register_builtins(&mut env);
+        Self { env }
+    }
+
+    pub fn eval_program(&mut self, program: &Program) -> IonResult {
+        match self.eval_stmts(&program.stmts) {
+            Ok(v) => Ok(v),
+            Err(SignalOrError::Error(e)) => Err(e),
+            Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
+            Err(SignalOrError::Signal(Signal::Break(_))) => {
+                Err(IonError::runtime(ion_str!("break outside of loop").to_string(), 0, 0))
+            }
+            Err(SignalOrError::Signal(Signal::Continue)) => {
+                Err(IonError::runtime(ion_str!("continue outside of loop").to_string(), 0, 0))
+            }
+        }
+    }
+
+    fn eval_stmts(&mut self, stmts: &[Stmt]) -> SignalResult {
+        let mut last = Value::Unit;
+        for (i, stmt) in stmts.iter().enumerate() {
+            let is_last = i == stmts.len() - 1;
+            match &stmt.kind {
+                StmtKind::ExprStmt { expr, has_semi } => {
+                    let val = self.eval_expr(expr)?;
+                    if is_last && !has_semi {
+                        last = val;
+                    } else {
+                        last = Value::Unit;
+                    }
+                }
+                _ => {
+                    self.eval_stmt(stmt)?;
+                    last = Value::Unit;
+                }
+            }
+        }
+        Ok(last)
+    }
+
+    fn eval_stmt(&mut self, stmt: &Stmt) -> SignalResult {
+        match &stmt.kind {
+            StmtKind::Let { mutable, pattern, value } => {
+                let val = self.eval_expr(value)?;
+                self.bind_pattern(pattern, &val, *mutable, stmt.span)?;
+                Ok(Value::Unit)
+            }
+            StmtKind::FnDecl { name, params, body } => {
+                let captures = self.env.capture();
+                let func = Value::Fn(IonFn {
+                    name: name.clone(),
+                    params: params.clone(),
+                    body: body.clone(),
+                    captures,
+                });
+                self.env.define(name.clone(), func, false);
+                Ok(Value::Unit)
+            }
+            StmtKind::ExprStmt { expr, .. } => {
+                self.eval_expr(expr)?;
+                Ok(Value::Unit)
+            }
+            StmtKind::For { pattern, iter, body } => {
+                let iter_val = self.eval_expr(iter)?;
+                let items = self.value_to_iter(&iter_val, iter.span)?;
+                for item in items {
+                    self.env.push_scope();
+                    self.bind_pattern(pattern, &item, false, iter.span)?;
+                    match self.eval_stmts(body) {
+                        Ok(_) => {}
+                        Err(SignalOrError::Signal(Signal::Break(_))) => {
+                            self.env.pop_scope();
+                            break;
+                        }
+                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                            self.env.pop_scope();
+                            continue;
+                        }
+                        Err(e) => {
+                            self.env.pop_scope();
+                            return Err(e);
+                        }
+                    }
+                    self.env.pop_scope();
+                }
+                Ok(Value::Unit)
+            }
+            StmtKind::While { cond, body } => {
+                loop {
+                    let c = self.eval_expr(cond)?;
+                    if !c.is_truthy() { break; }
+                    self.env.push_scope();
+                    match self.eval_stmts(body) {
+                        Ok(_) => {}
+                        Err(SignalOrError::Signal(Signal::Break(_))) => {
+                            self.env.pop_scope();
+                            break;
+                        }
+                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                            self.env.pop_scope();
+                            continue;
+                        }
+                        Err(e) => {
+                            self.env.pop_scope();
+                            return Err(e);
+                        }
+                    }
+                    self.env.pop_scope();
+                }
+                Ok(Value::Unit)
+            }
+            StmtKind::WhileLet { pattern, expr, body } => {
+                loop {
+                    let val = self.eval_expr(expr)?;
+                    if !self.pattern_matches(pattern, &val) { break; }
+                    self.env.push_scope();
+                    self.bind_pattern(pattern, &val, false, expr.span)?;
+                    match self.eval_stmts(body) {
+                        Ok(_) => {}
+                        Err(SignalOrError::Signal(Signal::Break(_))) => {
+                            self.env.pop_scope();
+                            break;
+                        }
+                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                            self.env.pop_scope();
+                            continue;
+                        }
+                        Err(e) => {
+                            self.env.pop_scope();
+                            return Err(e);
+                        }
+                    }
+                    self.env.pop_scope();
+                }
+                Ok(Value::Unit)
+            }
+            StmtKind::Loop { body } => {
+                let result = loop {
+                    self.env.push_scope();
+                    match self.eval_stmts(body) {
+                        Ok(_) => {}
+                        Err(SignalOrError::Signal(Signal::Break(v))) => {
+                            self.env.pop_scope();
+                            break v;
+                        }
+                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                            self.env.pop_scope();
+                            continue;
+                        }
+                        Err(e) => {
+                            self.env.pop_scope();
+                            return Err(e);
+                        }
+                    }
+                    self.env.pop_scope();
+                };
+                Ok(result)
+            }
+            StmtKind::Break { value } => {
+                let v = match value {
+                    Some(expr) => self.eval_expr(expr)?,
+                    None => Value::Unit,
+                };
+                Err(Signal::Break(v).into())
+            }
+            StmtKind::Continue => {
+                Err(Signal::Continue.into())
+            }
+            StmtKind::Return { value } => {
+                let v = match value {
+                    Some(expr) => self.eval_expr(expr)?,
+                    None => Value::Unit,
+                };
+                Err(Signal::Return(v).into())
+            }
+            StmtKind::Assign { target, op, value } => {
+                let rhs = self.eval_expr(value)?;
+                match target {
+                    AssignTarget::Ident(name) => {
+                        let final_val = match op {
+                            AssignOp::Eq => rhs,
+                            _ => {
+                                let lhs = self.env.get(name).ok_or_else(|| {
+                                    IonError::name(
+                                        format!("{}{}", ion_str!("undefined variable: "), name),
+                                        stmt.span.line, stmt.span.col,
+                                    )
+                                })?.clone();
+                                self.apply_compound_op(*op, &lhs, &rhs, stmt.span)?
+                            }
+                        };
+                        self.env.set(name, final_val).map_err(|msg| {
+                            IonError::runtime(msg, stmt.span.line, stmt.span.col)
+                        })?;
+                    }
+                    AssignTarget::Index(_, _) | AssignTarget::Field(_, _) => {
+                        return Err(IonError::runtime(
+                            ion_str!("index/field assignment not yet supported").to_string(),
+                            stmt.span.line, stmt.span.col,
+                        ).into());
+                    }
+                }
+                Ok(Value::Unit)
+            }
+        }
+    }
+
+    fn eval_expr(&mut self, expr: &Expr) -> SignalResult {
+        let span = expr.span;
+        match &expr.kind {
+            ExprKind::Int(n) => Ok(Value::Int(*n)),
+            ExprKind::Float(n) => Ok(Value::Float(*n)),
+            ExprKind::Bool(b) => Ok(Value::Bool(*b)),
+            ExprKind::Str(s) => Ok(Value::Str(s.clone())),
+            ExprKind::None => Ok(Value::Option(None)),
+            ExprKind::Unit => Ok(Value::Unit),
+
+            ExprKind::FStr(parts) => {
+                let mut result = String::new();
+                for part in parts {
+                    match part {
+                        FStrPart::Literal(s) => result.push_str(s),
+                        FStrPart::Expr(e) => {
+                            let val = self.eval_expr(e)?;
+                            result.push_str(&val.to_string());
+                        }
+                    }
+                }
+                Ok(Value::Str(result))
+            }
+
+            ExprKind::Ident(name) => {
+                self.env.get(name).cloned().ok_or_else(|| {
+                    IonError::name(
+                        format!("{}{}", ion_str!("undefined variable: "), name),
+                        span.line, span.col,
+                    ).into()
+                })
+            }
+
+            ExprKind::SomeExpr(e) => {
+                let val = self.eval_expr(e)?;
+                Ok(Value::Option(Some(Box::new(val))))
+            }
+            ExprKind::OkExpr(e) => {
+                let val = self.eval_expr(e)?;
+                Ok(Value::Result(Ok(Box::new(val))))
+            }
+            ExprKind::ErrExpr(e) => {
+                let val = self.eval_expr(e)?;
+                Ok(Value::Result(Err(Box::new(val))))
+            }
+
+            ExprKind::List(items) => {
+                let mut vals = Vec::new();
+                for item in items {
+                    vals.push(self.eval_expr(item)?);
+                }
+                Ok(Value::List(vals))
+            }
+            ExprKind::Dict(entries) => {
+                let mut map = IndexMap::new();
+                for (k, v) in entries {
+                    let key = self.eval_expr(k)?;
+                    let key_str = match key {
+                        Value::Str(s) => s,
+                        _ => return Err(IonError::type_err(
+                            ion_str!("dict keys must be strings").to_string(),
+                            span.line, span.col,
+                        ).into()),
+                    };
+                    let val = self.eval_expr(v)?;
+                    map.insert(key_str, val);
+                }
+                Ok(Value::Dict(map))
+            }
+            ExprKind::Tuple(items) => {
+                let mut vals = Vec::new();
+                for item in items {
+                    vals.push(self.eval_expr(item)?);
+                }
+                Ok(Value::Tuple(vals))
+            }
+
+            ExprKind::BinOp { left, op, right } => {
+                // Short-circuit for && and ||
+                if matches!(op, BinOp::And) {
+                    let l = self.eval_expr(left)?;
+                    if !l.is_truthy() { return Ok(Value::Bool(false)); }
+                    let r = self.eval_expr(right)?;
+                    return Ok(Value::Bool(r.is_truthy()));
+                }
+                if matches!(op, BinOp::Or) {
+                    let l = self.eval_expr(left)?;
+                    if l.is_truthy() { return Ok(Value::Bool(true)); }
+                    let r = self.eval_expr(right)?;
+                    return Ok(Value::Bool(r.is_truthy()));
+                }
+                let l = self.eval_expr(left)?;
+                let r = self.eval_expr(right)?;
+                self.eval_binop(*op, &l, &r, span)
+            }
+
+            ExprKind::UnaryOp { op, expr } => {
+                let val = self.eval_expr(expr)?;
+                match op {
+                    UnaryOp::Neg => match val {
+                        Value::Int(n) => Ok(Value::Int(-n)),
+                        Value::Float(n) => Ok(Value::Float(-n)),
+                        _ => Err(IonError::type_err(
+                            format!("{}{}", ion_str!("cannot negate "), val.type_name()),
+                            span.line, span.col,
+                        ).into()),
+                    },
+                    UnaryOp::Not => Ok(Value::Bool(!val.is_truthy())),
+                }
+            }
+
+            ExprKind::Try(inner) => {
+                let val = self.eval_expr(inner)?;
+                match val {
+                    Value::Result(Ok(v)) => Ok(*v),
+                    Value::Result(Err(e)) => {
+                        Err(IonError::propagated_err(e.to_string(), span.line, span.col).into())
+                    }
+                    Value::Option(Some(v)) => Ok(*v),
+                    Value::Option(None) => {
+                        Err(IonError::propagated_none(span.line, span.col).into())
+                    }
+                    _ => Err(IonError::type_err(
+                        format!("{}{}", ion_str!("? applied to non-Result/Option: "), val.type_name()),
+                        span.line, span.col,
+                    ).into()),
+                }
+            }
+
+            ExprKind::PipeOp { left, right } => {
+                let lval = self.eval_expr(left)?;
+                // right should be a Call — insert lval as first argument
+                match &right.kind {
+                    ExprKind::Call { func, args } => {
+                        let mut new_args = vec![CallArg { name: None, value: Expr {
+                            kind: ExprKind::Int(0), span, // placeholder
+                        }}];
+                        new_args.extend(args.iter().cloned());
+                        let func_val = self.eval_expr(func)?;
+                        let mut arg_vals = vec![lval];
+                        for arg in args {
+                            arg_vals.push(self.eval_expr(&arg.value)?);
+                        }
+                        self.call_value(&func_val, &arg_vals, span)
+                    }
+                    ExprKind::Ident(_) => {
+                        // Bare function name, call with lval as only arg
+                        let func_val = self.eval_expr(right)?;
+                        self.call_value(&func_val, &[lval], span)
+                    }
+                    _ => Err(IonError::runtime(
+                        ion_str!("right side of |> must be a function call").to_string(),
+                        span.line, span.col,
+                    ).into()),
+                }
+            }
+
+            ExprKind::FieldAccess { expr, field } => {
+                let val = self.eval_expr(expr)?;
+                self.field_access(&val, field, span)
+            }
+
+            ExprKind::Index { expr, index } => {
+                let val = self.eval_expr(expr)?;
+                let idx = self.eval_expr(index)?;
+                self.index_access(&val, &idx, span)
+            }
+
+            ExprKind::MethodCall { expr, method, args } => {
+                let receiver = self.eval_expr(expr)?;
+                let mut arg_vals = Vec::new();
+                for arg in args {
+                    arg_vals.push(self.eval_expr(&arg.value)?);
+                }
+                self.method_call(&receiver, method, &arg_vals, span)
+            }
+
+            ExprKind::Call { func, args } => {
+                let func_val = self.eval_expr(func)?;
+                let mut arg_vals = Vec::new();
+                for arg in args {
+                    arg_vals.push(self.eval_expr(&arg.value)?);
+                }
+                self.call_value(&func_val, &arg_vals, span)
+            }
+
+            ExprKind::Lambda { params, body } => {
+                let captures = self.env.capture();
+                let fn_params: Vec<Param> = params.iter().map(|p| Param {
+                    name: p.clone(),
+                    default: None,
+                }).collect();
+                // Wrap body expr into a block with one ExprStmt
+                let body_stmts = vec![Stmt {
+                    kind: StmtKind::ExprStmt { expr: (**body).clone(), has_semi: false },
+                    span,
+                }];
+                Ok(Value::Fn(IonFn {
+                    name: ion_str!("<lambda>").to_string(),
+                    params: fn_params,
+                    body: body_stmts,
+                    captures,
+                }))
+            }
+
+            ExprKind::If { cond, then_body, else_body } => {
+                let c = self.eval_expr(cond)?;
+                self.env.push_scope();
+                let result = if c.is_truthy() {
+                    self.eval_stmts(then_body)
+                } else if let Some(else_stmts) = else_body {
+                    self.eval_stmts(else_stmts)
+                } else {
+                    Ok(Value::Unit)
+                };
+                self.env.pop_scope();
+                result
+            }
+
+            ExprKind::IfLet { pattern, expr, then_body, else_body } => {
+                let val = self.eval_expr(expr)?;
+                if self.pattern_matches(pattern, &val) {
+                    self.env.push_scope();
+                    self.bind_pattern(pattern, &val, false, span)?;
+                    let result = self.eval_stmts(then_body);
+                    self.env.pop_scope();
+                    result
+                } else if let Some(else_stmts) = else_body {
+                    self.env.push_scope();
+                    let result = self.eval_stmts(else_stmts);
+                    self.env.pop_scope();
+                    result
+                } else {
+                    Ok(Value::Unit)
+                }
+            }
+
+            ExprKind::Match { expr, arms } => {
+                let val = self.eval_expr(expr)?;
+                for arm in arms {
+                    if self.pattern_matches(&arm.pattern, &val) {
+                        self.env.push_scope();
+                        self.bind_pattern(&arm.pattern, &val, false, span)?;
+                        if let Some(guard) = &arm.guard {
+                            let guard_val = self.eval_expr(guard)?;
+                            if !guard_val.is_truthy() {
+                                self.env.pop_scope();
+                                continue;
+                            }
+                        }
+                        let result = self.eval_expr(&arm.body);
+                        self.env.pop_scope();
+                        return result;
+                    }
+                }
+                Err(IonError::runtime(
+                    ion_str!("non-exhaustive match").to_string(),
+                    span.line, span.col,
+                ).into())
+            }
+
+            ExprKind::Block(stmts) => {
+                self.env.push_scope();
+                let result = self.eval_stmts(stmts);
+                self.env.pop_scope();
+                result
+            }
+
+            ExprKind::LoopExpr(body) => {
+                let result = loop {
+                    self.env.push_scope();
+                    match self.eval_stmts(body) {
+                        Ok(_) => {}
+                        Err(SignalOrError::Signal(Signal::Break(v))) => {
+                            self.env.pop_scope();
+                            break v;
+                        }
+                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                            self.env.pop_scope();
+                            continue;
+                        }
+                        Err(e) => {
+                            self.env.pop_scope();
+                            return Err(e);
+                        }
+                    }
+                    self.env.pop_scope();
+                };
+                Ok(result)
+            }
+
+            ExprKind::Range { start, end, inclusive } => {
+                let s = self.eval_expr(start)?;
+                let e = self.eval_expr(end)?;
+                match (&s, &e) {
+                    (Value::Int(a), Value::Int(b)) => {
+                        let range: Vec<Value> = if *inclusive {
+                            (*a..=*b).map(Value::Int).collect()
+                        } else {
+                            (*a..*b).map(Value::Int).collect()
+                        };
+                        Ok(Value::List(range))
+                    }
+                    _ => Err(IonError::type_err(
+                        ion_str!("range requires integer bounds").to_string(),
+                        span.line, span.col,
+                    ).into()),
+                }
+            }
+
+            ExprKind::StructConstruct { .. } | ExprKind::EnumVariant { .. } | ExprKind::EnumVariantCall { .. } => {
+                Err(IonError::runtime(
+                    ion_str!("host types not available in standalone interpreter").to_string(),
+                    span.line, span.col,
+                ).into())
+            }
+        }
+    }
+
+    // --- Helpers ---
+
+    fn eval_binop(&self, op: BinOp, l: &Value, r: &Value, span: Span) -> SignalResult {
+        match op {
+            BinOp::Add => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
+                (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
+                (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + *b as f64)),
+                (Value::Str(a), Value::Str(b)) => Ok(Value::Str(format!("{}{}", a, b))),
+                _ => Err(self.type_mismatch_err(ion_str!("+"), l, r, span)),
+            },
+            BinOp::Sub => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
+                (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
+                (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - *b as f64)),
+                _ => Err(self.type_mismatch_err(ion_str!("-"), l, r, span)),
+            },
+            BinOp::Mul => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
+                (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
+                (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * *b as f64)),
+                _ => Err(self.type_mismatch_err(ion_str!("*"), l, r, span)),
+            },
+            BinOp::Div => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => {
+                    if *b == 0 {
+                        Err(IonError::runtime(
+                            ion_str!("division by zero").to_string(),
+                            span.line, span.col,
+                        ).into())
+                    } else {
+                        Ok(Value::Int(a / b))
+                    }
+                }
+                (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
+                (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 / b)),
+                (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a / *b as f64)),
+                _ => Err(self.type_mismatch_err(ion_str!("/"), l, r, span)),
+            },
+            BinOp::Mod => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
+                _ => Err(self.type_mismatch_err(ion_str!("%"), l, r, span)),
+            },
+            BinOp::Eq => Ok(Value::Bool(l == r)),
+            BinOp::Ne => Ok(Value::Bool(l != r)),
+            BinOp::Lt => self.compare_values(l, r, span, |o| o == std::cmp::Ordering::Less),
+            BinOp::Gt => self.compare_values(l, r, span, |o| o == std::cmp::Ordering::Greater),
+            BinOp::Le => self.compare_values(l, r, span, |o| o != std::cmp::Ordering::Greater),
+            BinOp::Ge => self.compare_values(l, r, span, |o| o != std::cmp::Ordering::Less),
+            BinOp::And | BinOp::Or => unreachable!(), // handled in eval_expr
+        }
+    }
+
+    fn compare_values(&self, l: &Value, r: &Value, span: Span, f: impl Fn(std::cmp::Ordering) -> bool) -> SignalResult {
+        let ord = match (l, r) {
+            (Value::Int(a), Value::Int(b)) => a.cmp(b),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Str(a), Value::Str(b)) => a.cmp(b),
+            _ => return Err(self.type_mismatch_err(ion_str!("compare"), l, r, span)),
+        };
+        Ok(Value::Bool(f(ord)))
+    }
+
+    fn type_mismatch_err(&self, op: impl std::fmt::Display, l: &Value, r: &Value, span: Span) -> SignalOrError {
+        IonError::type_err(
+            format!(
+                "cannot apply '{}' to {} and {}",
+                op,
+                l.type_name(),
+                r.type_name(),
+            ),
+            span.line, span.col,
+        ).into()
+    }
+
+    fn apply_compound_op(&self, op: AssignOp, lhs: &Value, rhs: &Value, span: Span) -> SignalResult {
+        match op {
+            AssignOp::PlusEq => self.eval_binop(BinOp::Add, lhs, rhs, span),
+            AssignOp::MinusEq => self.eval_binop(BinOp::Sub, lhs, rhs, span),
+            AssignOp::StarEq => self.eval_binop(BinOp::Mul, lhs, rhs, span),
+            AssignOp::SlashEq => self.eval_binop(BinOp::Div, lhs, rhs, span),
+            AssignOp::Eq => unreachable!(),
+        }
+    }
+
+    fn field_access(&self, val: &Value, field: &str, span: Span) -> SignalResult {
+        match val {
+            Value::Dict(map) => {
+                Ok(match map.get(field) {
+                    Some(v) => v.clone(),
+                    None => Value::Option(None),
+                })
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}", ion_str!("cannot access field on "), val.type_name()),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn index_access(&self, val: &Value, idx: &Value, span: Span) -> SignalResult {
+        match (val, idx) {
+            (Value::List(items), Value::Int(i)) => {
+                let index = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
+                Ok(items.get(index)
+                    .cloned()
+                    .map(|v| Value::Option(Some(Box::new(v))))
+                    .unwrap_or(Value::Option(None)))
+            }
+            (Value::Dict(map), Value::Str(key)) => {
+                Ok(match map.get(key.as_str()) {
+                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    None => Value::Option(None),
+                })
+            }
+            (Value::Tuple(items), Value::Int(i)) => {
+                let index = *i as usize;
+                items.get(index)
+                    .cloned()
+                    .ok_or_else(|| IonError::runtime(
+                        ion_str!("tuple index out of bounds").to_string(),
+                        span.line, span.col,
+                    ).into())
+            }
+            _ => Err(IonError::type_err(
+                format!(
+                    "{}{}{}{}",
+                    ion_str!("cannot index "),
+                    val.type_name(),
+                    ion_str!(" with "),
+                    idx.type_name(),
+                ),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn method_call(&mut self, receiver: &Value, method: &str, args: &[Value], span: Span) -> SignalResult {
+        match receiver {
+            Value::List(items) => self.list_method(items, method, args, span),
+            Value::Str(s) => self.string_method(s, method, args, span),
+            Value::Dict(map) => self.dict_method(map, method, args, span),
+            Value::Option(opt) => self.option_method(opt, method, args, span),
+            Value::Result(res) => self.result_method(res, method, args, span),
+            _ => Err(IonError::type_err(
+                format!(
+                    "{}{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on "),
+                    receiver.type_name(),
+                ),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn list_method(&mut self, items: &[Value], method: &str, args: &[Value], span: Span) -> SignalResult {
+        match method {
+            "len" => Ok(Value::Int(items.len() as i64)),
+            "push" => {
+                let mut new_list = items.to_vec();
+                new_list.push(args[0].clone());
+                Ok(Value::List(new_list))
+            }
+            "pop" => {
+                if items.is_empty() {
+                    Ok(Value::Tuple(vec![Value::List(vec![]), Value::Option(None)]))
+                } else {
+                    let mut new_list = items.to_vec();
+                    let popped = new_list.pop().unwrap();
+                    Ok(Value::Tuple(vec![Value::List(new_list), Value::Option(Some(Box::new(popped)))]))
+                }
+            }
+            "map" => {
+                let func = &args[0];
+                let mut result = Vec::new();
+                for item in items {
+                    result.push(self.call_value(func, &[item.clone()], span)?);
+                }
+                Ok(Value::List(result))
+            }
+            "filter" => {
+                let func = &args[0];
+                let mut result = Vec::new();
+                for item in items {
+                    let keep = self.call_value(func, &[item.clone()], span)?;
+                    if keep.is_truthy() {
+                        result.push(item.clone());
+                    }
+                }
+                Ok(Value::List(result))
+            }
+            "fold" => {
+                let mut acc = args[0].clone();
+                let func = &args[1];
+                for item in items {
+                    acc = self.call_value(func, &[acc, item.clone()], span)?;
+                }
+                Ok(acc)
+            }
+            "any" => {
+                let func = &args[0];
+                for item in items {
+                    let v = self.call_value(func, &[item.clone()], span)?;
+                    if v.is_truthy() { return Ok(Value::Bool(true)); }
+                }
+                Ok(Value::Bool(false))
+            }
+            "all" => {
+                let func = &args[0];
+                for item in items {
+                    let v = self.call_value(func, &[item.clone()], span)?;
+                    if !v.is_truthy() { return Ok(Value::Bool(false)); }
+                }
+                Ok(Value::Bool(true))
+            }
+            "first" => {
+                Ok(match items.first() {
+                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    None => Value::Option(None),
+                })
+            }
+            "last" => {
+                Ok(match items.last() {
+                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    None => Value::Option(None),
+                })
+            }
+            "reverse" => {
+                let mut rev = items.to_vec();
+                rev.reverse();
+                Ok(Value::List(rev))
+            }
+            "sort" => {
+                let mut sorted = items.to_vec();
+                sorted.sort_by(|a, b| {
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                        _ => std::cmp::Ordering::Equal,
+                    }
+                });
+                Ok(Value::List(sorted))
+            }
+            "flatten" => {
+                let mut result = Vec::new();
+                for item in items {
+                    if let Value::List(inner) = item {
+                        result.extend(inner.iter().cloned());
+                    } else {
+                        result.push(item.clone());
+                    }
+                }
+                Ok(Value::List(result))
+            }
+            "zip" => {
+                if let Value::List(other) = &args[0] {
+                    let result: Vec<Value> = items.iter().zip(other.iter())
+                        .map(|(a, b)| Value::Tuple(vec![a.clone(), b.clone()]))
+                        .collect();
+                    Ok(Value::List(result))
+                } else {
+                    Err(IonError::type_err(
+                        ion_str!("zip requires a list argument").to_string(),
+                        span.line, span.col,
+                    ).into())
+                }
+            }
+            "contains" => {
+                let target = &args[0];
+                Ok(Value::Bool(items.iter().any(|v| v == target)))
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on list")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn string_method(&self, s: &str, method: &str, args: &[Value], span: Span) -> SignalResult {
+        match method {
+            "len" => Ok(Value::Int(s.len() as i64)),
+            "contains" => {
+                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("contains requires string argument").to_string(), span.line, span.col,
+                ))?;
+                Ok(Value::Bool(s.contains(sub)))
+            }
+            "starts_with" => {
+                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("starts_with requires string argument").to_string(), span.line, span.col,
+                ))?;
+                Ok(Value::Bool(s.starts_with(sub)))
+            }
+            "ends_with" => {
+                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("ends_with requires string argument").to_string(), span.line, span.col,
+                ))?;
+                Ok(Value::Bool(s.ends_with(sub)))
+            }
+            "trim" => Ok(Value::Str(s.trim().to_string())),
+            "to_upper" => Ok(Value::Str(s.to_uppercase())),
+            "to_lower" => Ok(Value::Str(s.to_lowercase())),
+            "split" => {
+                let delim = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("split requires string argument").to_string(), span.line, span.col,
+                ))?;
+                let parts: Vec<Value> = s.split(delim).map(|p| Value::Str(p.to_string())).collect();
+                Ok(Value::List(parts))
+            }
+            "replace" => {
+                let from = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("replace requires string arguments").to_string(), span.line, span.col,
+                ))?;
+                let to = args[1].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("replace requires string arguments").to_string(), span.line, span.col,
+                ))?;
+                Ok(Value::Str(s.replace(from, to)))
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on string")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn dict_method(&self, map: &IndexMap<String, Value>, method: &str, args: &[Value], span: Span) -> SignalResult {
+        match method {
+            "len" => Ok(Value::Int(map.len() as i64)),
+            "keys" => Ok(Value::List(map.keys().map(|k| Value::Str(k.clone())).collect())),
+            "values" => Ok(Value::List(map.values().cloned().collect())),
+            "entries" => Ok(Value::List(
+                map.iter().map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()])).collect()
+            )),
+            "contains_key" => {
+                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("contains_key requires string argument").to_string(), span.line, span.col,
+                ))?;
+                Ok(Value::Bool(map.contains_key(key)))
+            }
+            "get" => {
+                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("get requires string argument").to_string(), span.line, span.col,
+                ))?;
+                Ok(match map.get(key) {
+                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    None => Value::Option(None),
+                })
+            }
+            "insert" => {
+                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("insert requires string key").to_string(), span.line, span.col,
+                ))?;
+                let mut new_map = map.clone();
+                new_map.insert(key.to_string(), args[1].clone());
+                Ok(Value::Dict(new_map))
+            }
+            "remove" => {
+                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("remove requires string key").to_string(), span.line, span.col,
+                ))?;
+                let mut new_map = map.clone();
+                new_map.shift_remove(key);
+                Ok(Value::Dict(new_map))
+            }
+            "merge" => {
+                if let Value::Dict(other) = &args[0] {
+                    let mut new_map = map.clone();
+                    for (k, v) in other {
+                        new_map.insert(k.clone(), v.clone());
+                    }
+                    Ok(Value::Dict(new_map))
+                } else {
+                    Err(IonError::type_err(
+                        ion_str!("merge requires a dict argument").to_string(),
+                        span.line, span.col,
+                    ).into())
+                }
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on dict")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn option_method(&self, opt: &Option<Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
+        match method {
+            "is_some" => Ok(Value::Bool(opt.is_some())),
+            "is_none" => Ok(Value::Bool(opt.is_none())),
+            "unwrap_or" => match opt {
+                Some(v) => Ok(*v.clone()),
+                None => Ok(args[0].clone()),
+            },
+            "expect" => match opt {
+                Some(v) => Ok(*v.clone()),
+                None => {
+                    let default_msg = ion_str!("expect failed");
+                    let msg = args[0].as_str().unwrap_or(&default_msg);
+                    Err(IonError::runtime(msg.to_string(), span.line, span.col).into())
+                }
+            },
+            "map" => match opt {
+                Some(_v) => {
+                    Err(IonError::runtime(
+                        ion_str!("Option.map requires interpreter context; use match instead").to_string(),
+                        span.line, span.col,
+                    ).into())
+                }
+                None => Ok(Value::Option(None)),
+            },
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Option")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn result_method(&self, res: &Result<Box<Value>, Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
+        match method {
+            "is_ok" => Ok(Value::Bool(res.is_ok())),
+            "is_err" => Ok(Value::Bool(res.is_err())),
+            "unwrap_or" => match res {
+                Ok(v) => Ok(*v.clone()),
+                Err(_) => Ok(args[0].clone()),
+            },
+            "expect" => match res {
+                Ok(v) => Ok(*v.clone()),
+                Err(e) => {
+                    let default_msg = ion_str!("expect failed");
+                    let msg = args[0].as_str().unwrap_or(&default_msg);
+                    Err(IonError::runtime(
+                        format!("{}: {}", msg, e), span.line, span.col,
+                    ).into())
+                }
+            },
+            "map_err" => match res {
+                Ok(v) => Ok(Value::Result(Ok(v.clone()))),
+                Err(_) => {
+                    Err(IonError::runtime(
+                        ion_str!("Result.map_err requires interpreter context").to_string(),
+                        span.line, span.col,
+                    ).into())
+                }
+            },
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Result")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn call_value(&mut self, func: &Value, args: &[Value], span: Span) -> SignalResult {
+        match func {
+            Value::Fn(ion_fn) => {
+                self.env.push_scope();
+                // Load captures
+                for (name, val) in &ion_fn.captures {
+                    self.env.define(name.clone(), val.clone(), false);
+                }
+                // Bind parameters
+                for (i, param) in ion_fn.params.iter().enumerate() {
+                    let val = if i < args.len() {
+                        args[i].clone()
+                    } else if let Some(default) = &param.default {
+                        self.eval_expr(default)?
+                    } else {
+                        return Err(IonError::runtime(
+                            format!(
+                                "{}{}{}{}{}{}",
+                                ion_str!("function '"),
+                                ion_fn.name,
+                                ion_str!("' expected "),
+                                ion_fn.params.len(),
+                                ion_str!(" arguments, got "),
+                                args.len(),
+                            ),
+                            span.line, span.col,
+                        ).into());
+                    };
+                    self.env.define(param.name.clone(), val, false);
+                }
+                let result = self.eval_stmts(&ion_fn.body);
+                self.env.pop_scope();
+                match result {
+                    Ok(v) => Ok(v),
+                    Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
+                    Err(SignalOrError::Signal(Signal::Break(_))) => {
+                        Err(IonError::runtime(
+                            ion_str!("break outside of loop").to_string(),
+                            span.line, span.col,
+                        ).into())
+                    }
+                    Err(SignalOrError::Signal(Signal::Continue)) => {
+                        Err(IonError::runtime(
+                            ion_str!("continue outside of loop").to_string(),
+                            span.line, span.col,
+                        ).into())
+                    }
+                    Err(SignalOrError::Error(e)) => {
+                        // Propagate ? errors as Results
+                        if e.kind == ErrorKind::PropagatedErr {
+                            Err(e.into())
+                        } else if e.kind == ErrorKind::PropagatedNone {
+                            Err(e.into())
+                        } else {
+                            Err(e.into())
+                        }
+                    }
+                }
+            }
+            Value::BuiltinFn(_, func) => {
+                func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}", ion_str!("not callable: "), func.type_name()),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn value_to_iter(&self, val: &Value, span: Span) -> Result<Vec<Value>, SignalOrError> {
+        match val {
+            Value::List(items) => Ok(items.clone()),
+            Value::Dict(map) => Ok(map.iter()
+                .map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()]))
+                .collect()),
+            Value::Str(s) => Ok(s.chars().map(|c| Value::Str(c.to_string())).collect()),
+            _ => Err(IonError::type_err(
+                format!("{}{}", ion_str!("cannot iterate over "), val.type_name()),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    // --- Pattern Matching ---
+
+    fn pattern_matches(&self, pattern: &Pattern, val: &Value) -> bool {
+        match (pattern, val) {
+            (Pattern::Wildcard, _) => true,
+            (Pattern::Ident(_), _) => true,
+            (Pattern::Int(a), Value::Int(b)) => a == b,
+            (Pattern::Float(a), Value::Float(b)) => a == b,
+            (Pattern::Bool(a), Value::Bool(b)) => a == b,
+            (Pattern::Str(a), Value::Str(b)) => a == b,
+            (Pattern::None, Value::Option(None)) => true,
+            (Pattern::Some(p), Value::Option(Some(v))) => self.pattern_matches(p, v),
+            (Pattern::Ok(p), Value::Result(Ok(v))) => self.pattern_matches(p, v),
+            (Pattern::Err(p), Value::Result(Err(v))) => self.pattern_matches(p, v),
+            (Pattern::Tuple(pats), Value::Tuple(vals)) => {
+                pats.len() == vals.len() && pats.iter().zip(vals).all(|(p, v)| self.pattern_matches(p, v))
+            }
+            (Pattern::List(pats, rest), Value::List(vals)) => {
+                if rest.is_some() {
+                    vals.len() >= pats.len() && pats.iter().zip(vals).all(|(p, v)| self.pattern_matches(p, v))
+                } else {
+                    pats.len() == vals.len() && pats.iter().zip(vals).all(|(p, v)| self.pattern_matches(p, v))
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn bind_pattern(&mut self, pattern: &Pattern, val: &Value, mutable: bool, span: Span) -> Result<(), SignalOrError> {
+        match (pattern, val) {
+            (Pattern::Wildcard, _) => Ok(()),
+            (Pattern::Ident(name), _) => {
+                self.env.define(name.clone(), val.clone(), mutable);
+                Ok(())
+            }
+            (Pattern::Int(_) | Pattern::Float(_) | Pattern::Bool(_) | Pattern::Str(_) | Pattern::None, _) => Ok(()),
+            (Pattern::Some(p), Value::Option(Some(v))) => self.bind_pattern(p, v, mutable, span),
+            (Pattern::Ok(p), Value::Result(Ok(v))) => self.bind_pattern(p, v, mutable, span),
+            (Pattern::Err(p), Value::Result(Err(v))) => self.bind_pattern(p, v, mutable, span),
+            (Pattern::Tuple(pats), Value::Tuple(vals)) => {
+                for (p, v) in pats.iter().zip(vals) {
+                    self.bind_pattern(p, v, mutable, span)?;
+                }
+                Ok(())
+            }
+            (Pattern::List(pats, rest), Value::List(vals)) => {
+                for (p, v) in pats.iter().zip(vals) {
+                    self.bind_pattern(p, v, mutable, span)?;
+                }
+                if let Some(rest_pat) = rest {
+                    let rest_vals = vals[pats.len()..].to_vec();
+                    self.bind_pattern(rest_pat, &Value::List(rest_vals), mutable, span)?;
+                }
+                Ok(())
+            }
+            _ => Err(IonError::runtime(
+                ion_str!("pattern match failed in binding").to_string(),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+}
+
+fn register_builtins(env: &mut Env) {
+    env.define(
+        ion_str!("print").to_string(),
+        Value::BuiltinFn(ion_str!("print").to_string(), |args| {
+            let parts: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+            print!("{}", parts.join(" "));
+            Ok(Value::Unit)
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("println").to_string(),
+        Value::BuiltinFn(ion_str!("println").to_string(), |args| {
+            let parts: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+            println!("{}", parts.join(" "));
+            Ok(Value::Unit)
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("len").to_string(),
+        Value::BuiltinFn(ion_str!("len").to_string(), |args| {
+            match &args[0] {
+                Value::List(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Str(s) => Ok(Value::Int(s.len() as i64)),
+                Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
+                _ => Err(format!("{}{}", ion_str!("len() not supported for "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("range").to_string(),
+        Value::BuiltinFn(ion_str!("range").to_string(), |args| {
+            match args.len() {
+                1 => {
+                    let n = args[0].as_int().ok_or(ion_str!("range requires int"))?;
+                    Ok(Value::List((0..n).map(Value::Int).collect()))
+                }
+                2 => {
+                    let start = args[0].as_int().ok_or(ion_str!("range requires int"))?;
+                    let end = args[1].as_int().ok_or(ion_str!("range requires int"))?;
+                    Ok(Value::List((start..end).map(Value::Int).collect()))
+                }
+                _ => Err(ion_str!("range takes 1 or 2 arguments").to_string()),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("type_of").to_string(),
+        Value::BuiltinFn(ion_str!("type_of").to_string(), |args| {
+            Ok(Value::Str(args[0].type_name().to_string()))
+        }),
+        false,
+    );
+}
