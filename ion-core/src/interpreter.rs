@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::env::Env;
 use crate::error::{ErrorKind, IonError};
+use crate::host_types::TypeRegistry;
 use crate::value::{IonFn, Value};
 use indexmap::IndexMap;
 
@@ -44,6 +45,7 @@ impl Default for Limits {
 pub struct Interpreter {
     pub env: Env,
     pub limits: Limits,
+    pub types: TypeRegistry,
     call_depth: usize,
 }
 
@@ -51,7 +53,7 @@ impl Interpreter {
     pub fn new() -> Self {
         let mut env = Env::new();
         register_builtins(&mut env);
-        Self { env, limits: Limits::default(), call_depth: 0 }
+        Self { env, limits: Limits::default(), types: TypeRegistry::new(), call_depth: 0 }
     }
 
     pub fn eval_program(&mut self, program: &Program) -> IonResult {
@@ -659,11 +661,40 @@ impl Interpreter {
                 }
             }
 
-            ExprKind::StructConstruct { .. } | ExprKind::EnumVariant { .. } | ExprKind::EnumVariantCall { .. } => {
-                Err(IonError::runtime(
-                    ion_str!("host types not available in standalone interpreter").to_string(),
-                    span.line, span.col,
-                ).into())
+            ExprKind::StructConstruct { name, fields, spread } => {
+                let mut field_map = IndexMap::new();
+                if let Some(spread_expr) = spread {
+                    let spread_val = self.eval_expr(spread_expr)?;
+                    match spread_val {
+                        Value::HostStruct { fields: sf, .. } => {
+                            for (k, v) in sf {
+                                field_map.insert(k, v);
+                            }
+                        }
+                        _ => return Err(IonError::type_err(
+                            ion_str!("spread in struct constructor requires a struct").to_string(),
+                            span.line, span.col,
+                        ).into()),
+                    }
+                }
+                for (fname, fexpr) in fields {
+                    let val = self.eval_expr(fexpr)?;
+                    field_map.insert(fname.clone(), val);
+                }
+                self.types.construct_struct(name, field_map)
+                    .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            }
+            ExprKind::EnumVariant { enum_name, variant } => {
+                self.types.construct_enum(enum_name, variant, vec![])
+                    .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            }
+            ExprKind::EnumVariantCall { enum_name, variant, args } => {
+                let mut vals = Vec::new();
+                for arg in args {
+                    vals.push(self.eval_expr(arg)?);
+                }
+                self.types.construct_enum(enum_name, variant, vals)
+                    .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
         }
     }
@@ -764,6 +795,15 @@ impl Interpreter {
                 Ok(match map.get(field) {
                     Some(v) => v.clone(),
                     None => Value::Option(None),
+                })
+            }
+            Value::HostStruct { fields, .. } => {
+                Ok(match fields.get(field) {
+                    Some(v) => v.clone(),
+                    None => return Err(IonError::type_err(
+                        format!("{}{}", ion_str!("no field '"), format!("{}'{}", field, ion_str!(" on struct"))),
+                        span.line, span.col,
+                    ).into()),
                 })
             }
             _ => Err(IonError::type_err(
@@ -946,6 +986,25 @@ impl Interpreter {
             "contains" => {
                 let target = &args[0];
                 Ok(Value::Bool(items.iter().any(|v| v == target)))
+            }
+            "join" => {
+                let sep = if args.is_empty() {
+                    String::new()
+                } else {
+                    args[0].as_str().ok_or_else(|| IonError::type_err(
+                        ion_str!("join separator must be a string").to_string(),
+                        span.line, span.col,
+                    ))?.to_string()
+                };
+                let parts: Vec<String> = items.iter().map(|v| v.to_string()).collect();
+                Ok(Value::Str(parts.join(&sep)))
+            }
+            "enumerate" => {
+                Ok(Value::List(
+                    items.iter().enumerate()
+                        .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
+                        .collect()
+                ))
             }
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on list")),
@@ -1242,6 +1301,30 @@ impl Interpreter {
                     pats.len() == vals.len() && pats.iter().zip(vals).all(|(p, v)| self.pattern_matches(p, v))
                 }
             }
+            (Pattern::EnumVariant { enum_name, variant, fields },
+             Value::HostEnum { enum_name: en, variant: v, data }) => {
+                if enum_name != en || variant != v { return false; }
+                match fields {
+                    EnumPatternFields::None => data.is_empty(),
+                    EnumPatternFields::Positional(pats) => {
+                        pats.len() == data.len() && pats.iter().zip(data).all(|(p, v)| self.pattern_matches(p, v))
+                    }
+                    EnumPatternFields::Named(_) => false, // named fields not applicable to enum data
+                }
+            }
+            (Pattern::Struct { name, fields },
+             Value::HostStruct { type_name, fields: val_fields }) => {
+                if name != type_name { return false; }
+                fields.iter().all(|(fname, fpat)| {
+                    match val_fields.get(fname) {
+                        Some(v) => match fpat {
+                            Some(p) => self.pattern_matches(p, v),
+                            None => true, // just binding, always matches
+                        },
+                        None => false,
+                    }
+                })
+            }
             _ => false,
         }
     }
@@ -1270,6 +1353,31 @@ impl Interpreter {
                 if let Some(rest_pat) = rest {
                     let rest_vals = vals[pats.len()..].to_vec();
                     self.bind_pattern(rest_pat, &Value::List(rest_vals), mutable, span)?;
+                }
+                Ok(())
+            }
+            (Pattern::EnumVariant { fields, .. },
+             Value::HostEnum { data, .. }) => {
+                match fields {
+                    EnumPatternFields::None => Ok(()),
+                    EnumPatternFields::Positional(pats) => {
+                        for (p, v) in pats.iter().zip(data) {
+                            self.bind_pattern(p, v, mutable, span)?;
+                        }
+                        Ok(())
+                    }
+                    EnumPatternFields::Named(_) => Ok(()),
+                }
+            }
+            (Pattern::Struct { fields, .. },
+             Value::HostStruct { fields: val_fields, .. }) => {
+                for (fname, fpat) in fields {
+                    if let Some(v) = val_fields.get(fname) {
+                        match fpat {
+                            Some(p) => self.bind_pattern(p, v, mutable, span)?,
+                            None => self.env.define(fname.clone(), v.clone(), mutable),
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -1441,6 +1549,94 @@ fn register_builtins(env: &mut Env) {
                 Value::Str(s) => s.parse::<f64>().map(Value::Float)
                     .map_err(|_| format!("{}{}{}", ion_str!("cannot convert '"), s, ion_str!("' to float"))),
                 _ => Err(format!("{}{}", ion_str!("cannot convert "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("floor").to_string(),
+        Value::BuiltinFn(ion_str!("floor").to_string(), |args| {
+            match &args[0] {
+                Value::Float(n) => Ok(Value::Float(n.floor())),
+                Value::Int(n) => Ok(Value::Int(*n)),
+                _ => Err(format!("{}{}", ion_str!("floor() not supported for "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("ceil").to_string(),
+        Value::BuiltinFn(ion_str!("ceil").to_string(), |args| {
+            match &args[0] {
+                Value::Float(n) => Ok(Value::Float(n.ceil())),
+                Value::Int(n) => Ok(Value::Int(*n)),
+                _ => Err(format!("{}{}", ion_str!("ceil() not supported for "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("round").to_string(),
+        Value::BuiltinFn(ion_str!("round").to_string(), |args| {
+            match &args[0] {
+                Value::Float(n) => Ok(Value::Float(n.round())),
+                Value::Int(n) => Ok(Value::Int(*n)),
+                _ => Err(format!("{}{}", ion_str!("round() not supported for "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("pow").to_string(),
+        Value::BuiltinFn(ion_str!("pow").to_string(), |args| {
+            if args.len() != 2 { return Err(ion_str!("pow takes 2 arguments")); }
+            match (&args[0], &args[1]) {
+                (Value::Int(base), Value::Int(exp)) => {
+                    if *exp >= 0 {
+                        Ok(Value::Int(base.pow(*exp as u32)))
+                    } else {
+                        Ok(Value::Float((*base as f64).powi(*exp as i32)))
+                    }
+                }
+                _ => {
+                    let b = args[0].as_float().ok_or(ion_str!("pow requires numeric arguments"))?;
+                    let e = args[1].as_float().ok_or(ion_str!("pow requires numeric arguments"))?;
+                    Ok(Value::Float(b.powf(e)))
+                }
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("sqrt").to_string(),
+        Value::BuiltinFn(ion_str!("sqrt").to_string(), |args| {
+            let n = args[0].as_float().ok_or(ion_str!("sqrt requires a number"))?;
+            Ok(Value::Float(n.sqrt()))
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("json_encode_pretty").to_string(),
+        Value::BuiltinFn(ion_str!("json_encode_pretty").to_string(), |args| {
+            if args.len() != 1 { return Err(ion_str!("json_encode_pretty takes 1 argument")); }
+            let json = args[0].to_json();
+            serde_json::to_string_pretty(&json)
+                .map(Value::Str)
+                .map_err(|e| format!("{}{}", ion_str!("json_encode_pretty error: "), e))
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("enumerate").to_string(),
+        Value::BuiltinFn(ion_str!("enumerate").to_string(), |args| {
+            if args.len() != 1 { return Err(ion_str!("enumerate takes 1 argument")); }
+            match &args[0] {
+                Value::List(items) => Ok(Value::List(
+                    items.iter().enumerate()
+                        .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
+                        .collect()
+                )),
+                _ => Err(format!("{}{}", ion_str!("enumerate() not supported for "), args[0].type_name())),
             }
         }),
         false,

@@ -19,6 +19,10 @@ pub enum Value {
     Result(Result<Box<Value>, Box<Value>>),
     Fn(IonFn),
     BuiltinFn(String, BuiltinFn),
+    /// Host-injected struct: `TypeName { field: val, ... }`
+    HostStruct { type_name: String, fields: IndexMap<String, Value> },
+    /// Host-injected enum variant: `EnumName::Variant` or `EnumName::Variant(data)`
+    HostEnum { enum_name: String, variant: String, data: Vec<Value> },
     Unit,
 }
 
@@ -49,6 +53,8 @@ impl Value {
             Value::Result(_) => ion_static_str!("Result"),
             Value::Fn(_) => ion_static_str!("fn"),
             Value::BuiltinFn(_, _) => ion_static_str!("builtin_fn"),
+            Value::HostStruct { .. } => ion_static_str!("struct"),
+            Value::HostEnum { .. } => ion_static_str!("enum"),
             Value::Unit => ion_static_str!("()"),
         }
     }
@@ -132,6 +138,26 @@ impl fmt::Display for Value {
             },
             Value::Fn(func) => write!(f, "<fn {}>", func.name),
             Value::BuiltinFn(name, _) => write!(f, "<builtin {}>", name),
+            Value::HostStruct { type_name, fields } => {
+                write!(f, "{} {{ ", type_name)?;
+                for (i, (k, v)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", k, v)?;
+                }
+                write!(f, " }}")
+            }
+            Value::HostEnum { enum_name, variant, data } => {
+                write!(f, "{}::{}", enum_name, variant)?;
+                if !data.is_empty() {
+                    write!(f, "(")?;
+                    for (i, v) in data.iter().enumerate() {
+                        if i > 0 { write!(f, ", ")?; }
+                        write!(f, "{}", v)?;
+                    }
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }
             Value::Unit => write!(f, "()"),
         }
     }
@@ -151,6 +177,12 @@ impl PartialEq for Value {
             (Value::Option(a), Value::Option(b)) => a == b,
             (Value::Result(Ok(a)), Value::Result(Ok(b))) => a == b,
             (Value::Result(Err(a)), Value::Result(Err(b))) => a == b,
+            (Value::HostStruct { type_name: a_name, fields: a_fields },
+             Value::HostStruct { type_name: b_name, fields: b_fields }) =>
+                a_name == b_name && a_fields == b_fields,
+            (Value::HostEnum { enum_name: a_en, variant: a_v, data: a_d },
+             Value::HostEnum { enum_name: b_en, variant: b_v, data: b_d }) =>
+                a_en == b_en && a_v == b_v && a_d == b_d,
             (Value::Unit, Value::Unit) => true,
             (Value::Option(None), Value::Unit) => false,
             _ => false,
@@ -188,6 +220,20 @@ impl Value {
             Value::Result(Err(v)) => {
                 let mut map = serde_json::Map::new();
                 map.insert("error".to_string(), v.to_json());
+                serde_json::Value::Object(map)
+            }
+            Value::HostStruct { fields, .. } => {
+                let obj: serde_json::Map<String, serde_json::Value> = fields.iter()
+                    .map(|(k, v)| (k.clone(), v.to_json()))
+                    .collect();
+                serde_json::Value::Object(obj)
+            }
+            Value::HostEnum { enum_name, variant, data } => {
+                let mut map = serde_json::Map::new();
+                map.insert("_type".to_string(), serde_json::Value::String(format!("{}::{}", enum_name, variant)));
+                if !data.is_empty() {
+                    map.insert("data".to_string(), serde_json::Value::Array(data.iter().map(|v| v.to_json()).collect()));
+                }
                 serde_json::Value::Object(map)
             }
             Value::Fn(_) | Value::BuiltinFn(_, _) => serde_json::Value::Null,

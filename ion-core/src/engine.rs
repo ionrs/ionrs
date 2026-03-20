@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::IonError;
+use crate::host_types::{HostEnumDef, HostStructDef};
 use crate::interpreter::{Interpreter, Limits};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -57,6 +58,16 @@ impl Engine {
             Value::BuiltinFn(name.to_string(), func),
             false,
         );
+    }
+
+    /// Register a host struct type that scripts can construct and match on.
+    pub fn register_struct(&mut self, def: HostStructDef) {
+        self.interpreter.types.register_struct(def);
+    }
+
+    /// Register a host enum type that scripts can construct and match on.
+    pub fn register_enum(&mut self, def: HostEnumDef) {
+        self.interpreter.types.register_enum(def);
     }
 }
 

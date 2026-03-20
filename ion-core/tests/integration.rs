@@ -1,4 +1,5 @@
 use ion_core::engine::Engine;
+use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef};
 use ion_core::interpreter::Limits;
 use ion_core::value::Value;
 
@@ -1288,4 +1289,242 @@ fn test_float_conversion() {
 fn test_int_parse_error() {
     let err = eval_err(r#"int("abc")"#);
     assert!(err.contains("cannot convert"), "got: {}", err);
+}
+
+// ============================================================
+// Section 28: Host Types — Structs
+// ============================================================
+
+fn engine_with_types() -> Engine {
+    let mut engine = Engine::new();
+    engine.register_struct(HostStructDef {
+        name: "Config".into(),
+        fields: vec!["host".into(), "port".into(), "debug".into()],
+    });
+    engine.register_enum(HostEnumDef {
+        name: "Color".into(),
+        variants: vec![
+            HostVariantDef { name: "Red".into(), arity: 0 },
+            HostVariantDef { name: "Green".into(), arity: 0 },
+            HostVariantDef { name: "Blue".into(), arity: 0 },
+            HostVariantDef { name: "Custom".into(), arity: 3 },
+        ],
+    });
+    engine
+}
+
+#[test]
+fn test_host_struct_construct() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"Config { host: "localhost", port: 8080, debug: true }"#).unwrap();
+    if let Value::HostStruct { type_name, fields } = &val {
+        assert_eq!(type_name, "Config");
+        assert_eq!(fields["host"], Value::Str("localhost".into()));
+        assert_eq!(fields["port"], Value::Int(8080));
+        assert_eq!(fields["debug"], Value::Bool(true));
+    } else {
+        panic!("expected HostStruct, got: {:?}", val);
+    }
+}
+
+#[test]
+fn test_host_struct_field_access() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"
+        let cfg = Config { host: "localhost", port: 8080, debug: false };
+        cfg.host
+    "#).unwrap();
+    assert_eq!(val, Value::Str("localhost".into()));
+}
+
+#[test]
+fn test_host_struct_missing_field_error() {
+    let mut engine = engine_with_types();
+    let err = engine.eval(r#"Config { host: "localhost" }"#).unwrap_err();
+    assert!(err.message.contains("missing field"), "got: {}", err.message);
+}
+
+#[test]
+fn test_host_struct_unknown_field_error() {
+    let mut engine = engine_with_types();
+    let err = engine.eval(r#"Config { host: "x", port: 80, debug: true, extra: 1 }"#).unwrap_err();
+    assert!(err.message.contains("unknown field"), "got: {}", err.message);
+}
+
+#[test]
+fn test_host_struct_pattern_match() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"
+        let cfg = Config { host: "localhost", port: 8080, debug: true };
+        match cfg {
+            Config { host, port } => f"{host}:{port}",
+        }
+    "#).unwrap();
+    assert_eq!(val, Value::Str("localhost:8080".into()));
+}
+
+#[test]
+fn test_host_struct_spread() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"
+        let base = Config { host: "localhost", port: 8080, debug: false };
+        let updated = Config { ...base, debug: true };
+        updated.debug
+    "#).unwrap();
+    assert_eq!(val, Value::Bool(true));
+}
+
+// ============================================================
+// Section 29: Host Types — Enums
+// ============================================================
+
+#[test]
+fn test_host_enum_unit_variant() {
+    let mut engine = engine_with_types();
+    let val = engine.eval("Color::Red").unwrap();
+    assert_eq!(val, Value::HostEnum {
+        enum_name: "Color".into(),
+        variant: "Red".into(),
+        data: vec![],
+    });
+}
+
+#[test]
+fn test_host_enum_data_variant() {
+    let mut engine = engine_with_types();
+    let val = engine.eval("Color::Custom(255, 128, 0)").unwrap();
+    assert_eq!(val, Value::HostEnum {
+        enum_name: "Color".into(),
+        variant: "Custom".into(),
+        data: vec![Value::Int(255), Value::Int(128), Value::Int(0)],
+    });
+}
+
+#[test]
+fn test_host_enum_unknown_variant_error() {
+    let mut engine = engine_with_types();
+    let err = engine.eval("Color::Yellow").unwrap_err();
+    assert!(err.message.contains("unknown variant"), "got: {}", err.message);
+}
+
+#[test]
+fn test_host_enum_wrong_arity_error() {
+    let mut engine = engine_with_types();
+    let err = engine.eval("Color::Custom(255)").unwrap_err();
+    assert!(err.message.contains("expects 3"), "got: {}", err.message);
+}
+
+#[test]
+fn test_host_enum_pattern_match() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"
+        let c = Color::Custom(255, 128, 0);
+        match c {
+            Color::Red => "red",
+            Color::Custom(r, g, b) => f"rgb({r},{g},{b})",
+            _ => "other",
+        }
+    "#).unwrap();
+    assert_eq!(val, Value::Str("rgb(255,128,0)".into()));
+}
+
+#[test]
+fn test_host_enum_match_unit_variant() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"
+        let c = Color::Green;
+        match c {
+            Color::Red => "red",
+            Color::Green => "green",
+            Color::Blue => "blue",
+            _ => "other",
+        }
+    "#).unwrap();
+    assert_eq!(val, Value::Str("green".into()));
+}
+
+#[test]
+fn test_host_struct_display() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"
+        let cfg = Config { host: "localhost", port: 8080, debug: true };
+        f"{cfg}"
+    "#).unwrap();
+    if let Value::Str(s) = &val {
+        assert!(s.contains("Config"), "got: {}", s);
+        assert!(s.contains("localhost"), "got: {}", s);
+    } else {
+        panic!("expected string");
+    }
+}
+
+#[test]
+fn test_host_enum_display() {
+    let mut engine = engine_with_types();
+    let val = engine.eval(r#"f"{Color::Red}""#).unwrap();
+    assert_eq!(val, Value::Str("Color::Red".into()));
+}
+
+#[test]
+fn test_unregistered_type_error() {
+    let mut engine = Engine::new();
+    let err = engine.eval(r#"Unknown { field: 1 }"#).unwrap_err();
+    assert!(err.message.contains("unknown type"), "got: {}", err.message);
+}
+
+// ============================================================
+// Section 30: Extended Stdlib
+// ============================================================
+
+#[test]
+fn test_floor_ceil_round() {
+    assert_eq!(eval("floor(3.7)"), Value::Float(3.0));
+    assert_eq!(eval("ceil(3.2)"), Value::Float(4.0));
+    assert_eq!(eval("round(3.5)"), Value::Float(4.0));
+    assert_eq!(eval("round(3.4)"), Value::Float(3.0));
+    assert_eq!(eval("floor(5)"), Value::Int(5));
+}
+
+#[test]
+fn test_pow() {
+    assert_eq!(eval("pow(2, 10)"), Value::Int(1024));
+    assert_eq!(eval("pow(2.0, 0.5)"), Value::Float(2.0_f64.sqrt()));
+}
+
+#[test]
+fn test_sqrt() {
+    assert_eq!(eval("sqrt(16)"), Value::Float(4.0));
+    assert_eq!(eval("sqrt(2.0)"), Value::Float(2.0_f64.sqrt()));
+}
+
+#[test]
+fn test_list_join() {
+    assert_eq!(eval(r#"["a", "b", "c"].join(", ")"#), Value::Str("a, b, c".into()));
+    assert_eq!(eval(r#"[1, 2, 3].join("-")"#), Value::Str("1-2-3".into()));
+}
+
+#[test]
+fn test_list_enumerate() {
+    assert_eq!(eval(r#"["a", "b"].enumerate()"#), Value::List(vec![
+        Value::Tuple(vec![Value::Int(0), Value::Str("a".into())]),
+        Value::Tuple(vec![Value::Int(1), Value::Str("b".into())]),
+    ]));
+}
+
+#[test]
+fn test_enumerate_builtin() {
+    assert_eq!(eval(r#"enumerate(["x", "y"])"#), Value::List(vec![
+        Value::Tuple(vec![Value::Int(0), Value::Str("x".into())]),
+        Value::Tuple(vec![Value::Int(1), Value::Str("y".into())]),
+    ]));
+}
+
+#[test]
+fn test_json_encode_pretty() {
+    let val = eval(r#"json_encode_pretty(#{ "a": 1 })"#);
+    if let Value::Str(s) = val {
+        assert!(s.contains('\n'), "expected newlines in pretty JSON: {}", s);
+    } else {
+        panic!("expected string");
+    }
 }
