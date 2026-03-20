@@ -34,3 +34,6 @@ pub mod error;
 pub mod interpreter;
 pub mod host_types;
 pub mod engine;
+
+#[cfg(feature = "derive")]
+pub use ion_derive::IonType;

@@ -3,6 +3,23 @@ use indexmap::IndexMap;
 
 use crate::value::Value;
 
+/// Trait for Rust types that can be used in Ion scripts.
+/// Implemented manually or via `#[derive(IonType)]`.
+pub trait IonType: Sized {
+    /// Convert this Rust value to an Ion Value.
+    fn to_ion(&self) -> Value;
+    /// Convert an Ion Value back to this Rust type.
+    fn from_ion(val: &Value) -> Result<Self, String>;
+    /// Get the type definition for registration.
+    fn ion_type_def() -> IonTypeDef;
+}
+
+/// Describes what kind of type this is (struct or enum) for registration.
+pub enum IonTypeDef {
+    Struct(HostStructDef),
+    Enum(HostEnumDef),
+}
+
 /// Describes a host-injected struct type.
 #[derive(Debug, Clone)]
 pub struct HostStructDef {
@@ -77,6 +94,14 @@ impl TypeRegistry {
         Ok(Value::HostEnum { enum_name: enum_name.to_string(), variant: variant.to_string(), data })
     }
 
+    /// Register a type via the IonType trait.
+    pub fn register_ion_type<T: IonType>(&mut self) {
+        match T::ion_type_def() {
+            IonTypeDef::Struct(def) => self.register_struct(def),
+            IonTypeDef::Enum(def) => self.register_enum(def),
+        }
+    }
+
     pub fn get_field(&self, type_name: &str, val: &Value, field: &str) -> Result<Option<Value>, String> {
         if let Value::HostStruct { type_name: vt, fields } = val {
             if vt == type_name || type_name.is_empty() {
@@ -85,4 +110,116 @@ impl TypeRegistry {
         }
         Err(format!("cannot access field '{}' on {}", field, val.type_name()))
     }
+}
+
+// --- IonType impls for primitive types ---
+
+impl IonType for i64 {
+    fn to_ion(&self) -> Value { Value::Int(*self) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_int().ok_or_else(|| format!("expected int, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for i32 {
+    fn to_ion(&self) -> Value { Value::Int(*self as i64) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_int().map(|n| n as i32).ok_or_else(|| format!("expected int, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for u16 {
+    fn to_ion(&self) -> Value { Value::Int(*self as i64) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_int().map(|n| n as u16).ok_or_else(|| format!("expected int, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for u32 {
+    fn to_ion(&self) -> Value { Value::Int(*self as i64) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_int().map(|n| n as u32).ok_or_else(|| format!("expected int, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for u64 {
+    fn to_ion(&self) -> Value { Value::Int(*self as i64) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_int().map(|n| n as u64).ok_or_else(|| format!("expected int, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for usize {
+    fn to_ion(&self) -> Value { Value::Int(*self as i64) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_int().map(|n| n as usize).ok_or_else(|| format!("expected int, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for f64 {
+    fn to_ion(&self) -> Value { Value::Float(*self) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_float().ok_or_else(|| format!("expected float, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for f32 {
+    fn to_ion(&self) -> Value { Value::Float(*self as f64) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_float().map(|n| n as f32).ok_or_else(|| format!("expected float, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for bool {
+    fn to_ion(&self) -> Value { Value::Bool(*self) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_bool().ok_or_else(|| format!("expected bool, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl IonType for String {
+    fn to_ion(&self) -> Value { Value::Str(self.clone()) }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        val.as_str().map(|s| s.to_string()).ok_or_else(|| format!("expected string, got {}", val.type_name()))
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl<T: IonType> IonType for Vec<T> {
+    fn to_ion(&self) -> Value {
+        Value::List(self.iter().map(|v| v.to_ion()).collect())
+    }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        match val {
+            Value::List(items) => items.iter().map(T::from_ion).collect(),
+            _ => Err(format!("expected list, got {}", val.type_name())),
+        }
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
+}
+
+impl<T: IonType> IonType for Option<T> {
+    fn to_ion(&self) -> Value {
+        match self {
+            Some(v) => Value::Option(Some(Box::new(v.to_ion()))),
+            None => Value::Option(None),
+        }
+    }
+    fn from_ion(val: &Value) -> Result<Self, String> {
+        match val {
+            Value::Option(Some(v)) => Ok(Some(T::from_ion(v)?)),
+            Value::Option(None) => Ok(None),
+            _ => Err(format!("expected Option, got {}", val.type_name())),
+        }
+    }
+    fn ion_type_def() -> IonTypeDef { unreachable!("primitives are not registered") }
 }

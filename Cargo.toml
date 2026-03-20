@@ -1,3 +1,3 @@
 [workspace]
-members = ["ion-core", "ion-cli"]
+members = ["ion-core", "ion-cli", "ion-derive"]
 resolver = "2"

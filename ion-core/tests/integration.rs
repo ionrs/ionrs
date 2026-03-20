@@ -1,7 +1,8 @@
 use ion_core::engine::Engine;
-use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef};
+use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef, IonType};
 use ion_core::interpreter::Limits;
 use ion_core::value::Value;
+use ion_core::IonType;
 
 fn eval(src: &str) -> Value {
     let mut engine = Engine::new();
@@ -1527,4 +1528,144 @@ fn test_json_encode_pretty() {
     } else {
         panic!("expected string");
     }
+}
+
+// ============================================================
+// Section 31: #[derive(IonType)] Proc Macro
+// ============================================================
+
+#[derive(Debug, Clone, IonType)]
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Debug, Clone, IonType)]
+struct UserProfile {
+    name: String,
+    age: i64,
+    active: bool,
+}
+
+#[derive(Debug, Clone, IonType)]
+enum Shape {
+    Circle(f64),
+    Rect(f64, f64),
+    Empty,
+}
+
+#[test]
+fn test_derive_struct_to_ion() {
+    let p = Point { x: 1.0, y: 2.0 };
+    let val = p.to_ion();
+    if let Value::HostStruct { type_name, fields } = &val {
+        assert_eq!(type_name, "Point");
+        assert_eq!(fields["x"], Value::Float(1.0));
+        assert_eq!(fields["y"], Value::Float(2.0));
+    } else {
+        panic!("expected HostStruct");
+    }
+}
+
+#[test]
+fn test_derive_struct_from_ion() {
+    let p = Point { x: 3.0, y: 4.0 };
+    let val = p.to_ion();
+    let p2 = Point::from_ion(&val).unwrap();
+    assert_eq!(p2.x, 3.0);
+    assert_eq!(p2.y, 4.0);
+}
+
+#[test]
+fn test_derive_struct_in_script() {
+    let mut engine = Engine::new();
+    engine.register_type::<Point>();
+    let val = engine.eval("
+        let p = Point { x: 10.0, y: 20.0 };
+        p.x + p.y
+    ").unwrap();
+    assert_eq!(val, Value::Float(30.0));
+}
+
+#[test]
+fn test_derive_set_typed_get_typed() {
+    let mut engine = Engine::new();
+    engine.register_type::<UserProfile>();
+    let profile = UserProfile { name: "Alice".into(), age: 30, active: true };
+    engine.set_typed("user", &profile);
+    let val = engine.eval(r#"f"{user.name} is {user.age}""#).unwrap();
+    assert_eq!(val, Value::Str("Alice is 30".into()));
+
+    engine.eval("let result = UserProfile { name: \"Bob\", age: 25, active: false };").unwrap();
+    let result: UserProfile = engine.get_typed("result").unwrap();
+    assert_eq!(result.name, "Bob");
+    assert_eq!(result.age, 25);
+    assert_eq!(result.active, false);
+}
+
+#[test]
+fn test_derive_enum_to_ion() {
+    let s = Shape::Circle(5.0);
+    let val = s.to_ion();
+    assert_eq!(val, Value::HostEnum {
+        enum_name: "Shape".into(),
+        variant: "Circle".into(),
+        data: vec![Value::Float(5.0)],
+    });
+}
+
+#[test]
+fn test_derive_enum_from_ion() {
+    let val = Value::HostEnum {
+        enum_name: "Shape".into(),
+        variant: "Rect".into(),
+        data: vec![Value::Float(3.0), Value::Float(4.0)],
+    };
+    let s = Shape::from_ion(&val).unwrap();
+    match s {
+        Shape::Rect(w, h) => { assert_eq!(w, 3.0); assert_eq!(h, 4.0); }
+        _ => panic!("expected Rect"),
+    }
+}
+
+#[test]
+fn test_derive_enum_in_script() {
+    let mut engine = Engine::new();
+    engine.register_type::<Shape>();
+    let val = engine.eval(r#"
+        let s = Shape::Circle(5.0);
+        match s {
+            Shape::Circle(r) => r * r * 3.14,
+            Shape::Rect(w, h) => w * h,
+            Shape::Empty => 0.0,
+        }
+    "#).unwrap();
+    assert_eq!(val, Value::Float(78.5));
+}
+
+#[test]
+fn test_derive_enum_unit_variant_in_script() {
+    let mut engine = Engine::new();
+    engine.register_type::<Shape>();
+    let val = engine.eval(r#"
+        let s = Shape::Empty;
+        match s {
+            Shape::Circle(r) => r,
+            Shape::Empty => 0.0,
+            _ => -1.0,
+        }
+    "#).unwrap();
+    assert_eq!(val, Value::Float(0.0));
+}
+
+#[test]
+fn test_derive_roundtrip_typed() {
+    let mut engine = Engine::new();
+    engine.register_type::<Point>();
+    let original = Point { x: 42.0, y: 99.0 };
+    engine.set_typed("p", &original);
+    engine.eval("let p2 = Point { x: p.x * 2.0, y: p.y * 2.0 };").unwrap();
+    let result: Point = engine.get_typed("p2").unwrap();
+    assert_eq!(result.x, 84.0);
+    assert_eq!(result.y, 198.0);
 }

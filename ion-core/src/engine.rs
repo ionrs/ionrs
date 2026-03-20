@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::IonError;
-use crate::host_types::{HostEnumDef, HostStructDef};
+use crate::host_types::{HostEnumDef, HostStructDef, IonType, IonTypeDef};
 use crate::interpreter::{Interpreter, Limits};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -68,6 +68,26 @@ impl Engine {
     /// Register a host enum type that scripts can construct and match on.
     pub fn register_enum(&mut self, def: HostEnumDef) {
         self.interpreter.types.register_enum(def);
+    }
+
+    /// Register a type via the IonType trait (used with `#[derive(IonType)]`).
+    pub fn register_type<T: IonType>(&mut self) {
+        match T::ion_type_def() {
+            IonTypeDef::Struct(def) => self.interpreter.types.register_struct(def),
+            IonTypeDef::Enum(def) => self.interpreter.types.register_enum(def),
+        }
+    }
+
+    /// Inject a typed Rust value into the script scope.
+    pub fn set_typed<T: IonType>(&mut self, name: &str, value: &T) {
+        self.interpreter.env.define(name.to_string(), value.to_ion(), false);
+    }
+
+    /// Extract a typed Rust value from the script scope.
+    pub fn get_typed<T: IonType>(&self, name: &str) -> Result<T, String> {
+        let val = self.interpreter.env.get(name)
+            .ok_or_else(|| format!("variable '{}' not found", name))?;
+        T::from_ion(val)
     }
 }
 
