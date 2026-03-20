@@ -23,6 +23,12 @@ pub enum Value {
     HostStruct { type_name: String, fields: IndexMap<String, Value> },
     /// Host-injected enum variant: `EnumName::Variant` or `EnumName::Variant(data)`
     HostEnum { enum_name: String, variant: String, data: Vec<Value> },
+    /// Async task handle (concurrency feature)
+    #[cfg(feature = "concurrency")]
+    Task(std::sync::Arc<crate::async_rt::TaskHandle>),
+    /// Channel sender/receiver pair
+    #[cfg(feature = "concurrency")]
+    Channel(crate::async_rt::ChannelEnd),
     Unit,
 }
 
@@ -55,6 +61,10 @@ impl Value {
             Value::BuiltinFn(_, _) => ion_static_str!("builtin_fn"),
             Value::HostStruct { .. } => ion_static_str!("struct"),
             Value::HostEnum { .. } => ion_static_str!("enum"),
+            #[cfg(feature = "concurrency")]
+            Value::Task(_) => ion_static_str!("Task"),
+            #[cfg(feature = "concurrency")]
+            Value::Channel(_) => ion_static_str!("Channel"),
             Value::Unit => ion_static_str!("()"),
         }
     }
@@ -138,6 +148,13 @@ impl fmt::Display for Value {
             },
             Value::Fn(func) => write!(f, "<fn {}>", func.name),
             Value::BuiltinFn(name, _) => write!(f, "<builtin {}>", name),
+            #[cfg(feature = "concurrency")]
+            Value::Task(_) => write!(f, "<Task>"),
+            #[cfg(feature = "concurrency")]
+            Value::Channel(ch) => match ch {
+                crate::async_rt::ChannelEnd::Sender(_) => write!(f, "<ChannelTx>"),
+                crate::async_rt::ChannelEnd::Receiver(_) => write!(f, "<ChannelRx>"),
+            },
             Value::HostStruct { type_name, fields } => {
                 write!(f, "{} {{ ", type_name)?;
                 for (i, (k, v)) in fields.iter().enumerate() {
@@ -185,6 +202,7 @@ impl PartialEq for Value {
                 a_en == b_en && a_v == b_v && a_d == b_d,
             (Value::Unit, Value::Unit) => true,
             (Value::Option(None), Value::Unit) => false,
+            // Task and Channel are not comparable
             _ => false,
         }
     }
@@ -236,6 +254,8 @@ impl Value {
                 }
                 serde_json::Value::Object(map)
             }
+            #[cfg(feature = "concurrency")]
+            Value::Task(_) | Value::Channel(_) => serde_json::Value::Null,
             Value::Fn(_) | Value::BuiltinFn(_, _) => serde_json::Value::Null,
         }
     }

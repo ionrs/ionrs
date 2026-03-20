@@ -30,6 +30,10 @@ pub enum Token {
     Some,
     Ok,
     Err,
+    Async,
+    Spawn,
+    Await,
+    Select,
 
     // Delimiters
     LParen,   // (

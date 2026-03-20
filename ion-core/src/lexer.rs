@@ -355,6 +355,10 @@ impl<'a> Lexer<'a> {
             "Some" => Token::Some,
             "Ok" => Token::Ok,
             "Err" => Token::Err,
+            "async" => Token::Async,
+            "spawn" => Token::Spawn,
+            "await" => Token::Await,
+            "select" => Token::Select,
             _ => Token::Ident(text.to_string()),
         };
         Ok(self.spanned(token, line, col))

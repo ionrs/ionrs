@@ -33,6 +33,8 @@ pub mod env;
 pub mod error;
 pub mod interpreter;
 pub mod host_types;
+#[cfg(feature = "concurrency")]
+pub mod async_rt;
 pub mod engine;
 
 #[cfg(feature = "derive")]

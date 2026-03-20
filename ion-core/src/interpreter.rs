@@ -28,6 +28,7 @@ impl From<Signal> for SignalOrError {
     fn from(s: Signal) -> Self { SignalOrError::Signal(s) }
 }
 
+#[derive(Clone)]
 pub struct Limits {
     pub max_call_depth: usize,
     pub max_loop_iters: usize,
@@ -47,13 +48,22 @@ pub struct Interpreter {
     pub limits: Limits,
     pub types: TypeRegistry,
     call_depth: usize,
+    #[cfg(feature = "concurrency")]
+    nursery: Option<crate::async_rt::Nursery>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         let mut env = Env::new();
         register_builtins(&mut env);
-        Self { env, limits: Limits::default(), types: TypeRegistry::new(), call_depth: 0 }
+        Self {
+            env,
+            limits: Limits::default(),
+            types: TypeRegistry::new(),
+            call_depth: 0,
+            #[cfg(feature = "concurrency")]
+            nursery: None,
+        }
     }
 
     pub fn eval_program(&mut self, program: &Program) -> IonResult {
@@ -696,6 +706,25 @@ impl Interpreter {
                 self.types.construct_enum(enum_name, variant, vals)
                     .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
+
+            // Concurrency
+            #[cfg(feature = "concurrency")]
+            ExprKind::AsyncBlock(body) => self.eval_async_block(body, span),
+            #[cfg(feature = "concurrency")]
+            ExprKind::SpawnExpr(expr) => self.eval_spawn(expr, span),
+            #[cfg(feature = "concurrency")]
+            ExprKind::AwaitExpr(expr) => self.eval_await(expr, span),
+            #[cfg(feature = "concurrency")]
+            ExprKind::SelectExpr(branches) => self.eval_select(branches, span),
+
+            #[cfg(not(feature = "concurrency"))]
+            ExprKind::AsyncBlock(_) | ExprKind::SpawnExpr(_) |
+            ExprKind::AwaitExpr(_) | ExprKind::SelectExpr(_) => {
+                Err(IonError::runtime(
+                    ion_str!("concurrency features require the 'concurrency' cargo feature").to_string(),
+                    span.line, span.col,
+                ).into())
+            }
         }
     }
 
@@ -857,6 +886,10 @@ impl Interpreter {
             Value::Dict(map) => self.dict_method(map, method, args, span),
             Value::Option(opt) => self.option_method(opt, method, args, span),
             Value::Result(res) => self.result_method(res, method, args, span),
+            #[cfg(feature = "concurrency")]
+            Value::Task(handle) => self.task_method(handle, method, span),
+            #[cfg(feature = "concurrency")]
+            Value::Channel(ch) => self.channel_method(ch, method, args, span),
             _ => Err(IonError::type_err(
                 format!(
                     "{}{}{}{}",
@@ -1389,6 +1422,187 @@ impl Interpreter {
     }
 }
 
+#[cfg(feature = "concurrency")]
+impl Interpreter {
+    fn eval_async_block(&mut self, body: &[Stmt], _span: Span) -> SignalResult {
+        use crate::async_rt::Nursery;
+
+        // Save and set nursery for this scope
+        let prev_nursery = self.nursery.take();
+        self.nursery = Some(Nursery::new());
+
+        self.env.push_scope();
+        let result = self.eval_stmts(body);
+        self.env.pop_scope();
+
+        // Join all spawned tasks (structured concurrency)
+        let nursery = self.nursery.take().unwrap();
+        self.nursery = prev_nursery;
+
+        if let Err(e) = nursery.join_all() {
+            return Err(e.into());
+        }
+
+        result
+    }
+
+    fn eval_spawn(&mut self, expr: &Expr, span: Span) -> SignalResult {
+        use crate::async_rt::TaskHandle;
+        use std::sync::Arc;
+
+        // Require being inside an async block
+        if self.nursery.is_none() {
+            return Err(IonError::runtime(
+                ion_str!("spawn is only allowed inside async {}").to_string(),
+                span.line, span.col,
+            ).into());
+        }
+
+        // Capture current environment for the spawned task
+        let captured_env = self.env.capture();
+        let expr_clone = expr.clone();
+        let limits = self.limits.clone();
+        let types = self.types.clone();
+
+        let handle = std::thread::spawn(move || {
+            let mut child = Interpreter::new();
+            child.limits = limits;
+            child.types = types;
+            // Load captured environment
+            for (name, val) in captured_env {
+                child.env.define(name, val, false);
+            }
+            // Evaluate the expression
+            let program = crate::ast::Program {
+                stmts: vec![crate::ast::Stmt {
+                    kind: crate::ast::StmtKind::ExprStmt { expr: expr_clone, has_semi: false },
+                    span: crate::ast::Span { line: 0, col: 0 },
+                }],
+            };
+            child.eval_program(&program)
+        });
+
+        let task_handle = Arc::new(TaskHandle::new(handle));
+
+        // Register with nursery
+        if let Some(nursery) = &mut self.nursery {
+            nursery.spawn(task_handle.clone());
+        }
+
+        Ok(Value::Task(task_handle))
+    }
+
+    fn eval_await(&mut self, expr: &Expr, span: Span) -> SignalResult {
+        let val = self.eval_expr(expr)?;
+        match val {
+            Value::Task(handle) => {
+                handle.join().map_err(|e| SignalOrError::Error(e))
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}", ion_str!("cannot await "), val.type_name()),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn eval_select(&mut self, branches: &[crate::ast::SelectBranch], span: Span) -> SignalResult {
+        use crate::async_rt::TaskHandle;
+        use std::sync::Arc;
+
+        // Spawn all branch futures as tasks
+        let mut tasks: Vec<(usize, Arc<TaskHandle>)> = Vec::new();
+        for (i, branch) in branches.iter().enumerate() {
+            let captured_env = self.env.capture();
+            let expr_clone = branch.future_expr.clone();
+            let limits = self.limits.clone();
+            let types = self.types.clone();
+
+            let handle = std::thread::spawn(move || {
+                let mut child = Interpreter::new();
+                child.limits = limits;
+                child.types = types;
+                for (name, val) in captured_env {
+                    child.env.define(name, val, false);
+                }
+                let program = crate::ast::Program {
+                    stmts: vec![crate::ast::Stmt {
+                        kind: crate::ast::StmtKind::ExprStmt { expr: expr_clone, has_semi: false },
+                        span: crate::ast::Span { line: 0, col: 0 },
+                    }],
+                };
+                child.eval_program(&program)
+            });
+            tasks.push((i, Arc::new(TaskHandle::new(handle))));
+        }
+
+        // Poll until one finishes (simple busy-wait with yield)
+        loop {
+            for (idx, task) in &tasks {
+                if task.is_finished() {
+                    let result = task.join()?;
+                    let branch = &branches[*idx];
+                    // Bind pattern and evaluate body
+                    self.env.push_scope();
+                    self.bind_pattern(&branch.pattern, &result, false, span)?;
+                    let body_result = self.eval_expr(&branch.body);
+                    self.env.pop_scope();
+                    return body_result;
+                }
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn task_method(&self, handle: &std::sync::Arc<crate::async_rt::TaskHandle>, method: &str, span: Span) -> SignalResult {
+        match method {
+            "is_finished" => Ok(Value::Bool(handle.is_finished())),
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Task")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn channel_method(&self, ch: &crate::async_rt::ChannelEnd, method: &str, args: &[Value], span: Span) -> SignalResult {
+        use crate::async_rt::ChannelEnd;
+        match (ch, method) {
+            (ChannelEnd::Sender(tx), "send") => {
+                if args.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!("send requires a value").to_string(), span.line, span.col,
+                    ).into());
+                }
+                let mut sender = tx.lock().unwrap();
+                // Use try_send for synchronous send
+                sender.try_send(args[0].clone()).map_err(|e| {
+                    IonError::runtime(format!("{}{}", ion_str!("channel send failed: "), e), span.line, span.col)
+                })?;
+                Ok(Value::Unit)
+            }
+            (ChannelEnd::Sender(tx), "close") => {
+                let mut sender = tx.lock().unwrap();
+                sender.close_channel();
+                Ok(Value::Unit)
+            }
+            (ChannelEnd::Receiver(rx), "recv") => {
+                let mut receiver = rx.lock().unwrap();
+                // Use try_next for synchronous receive (blocking via spin)
+                use futures::StreamExt;
+                // Block on the future using futures executor
+                let val = futures::executor::block_on(receiver.next());
+                match val {
+                    Some(v) => Ok(Value::Option(Some(Box::new(v)))),
+                    None => Ok(Value::Option(None)),
+                }
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Channel")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+}
+
 fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("print").to_string(),
@@ -1641,4 +1855,21 @@ fn register_builtins(env: &mut Env) {
         }),
         false,
     );
+
+    #[cfg(feature = "concurrency")]
+    {
+        env.define(
+            ion_str!("channel").to_string(),
+            Value::BuiltinFn(ion_str!("channel").to_string(), |args| {
+                let buffer = if args.is_empty() {
+                    16
+                } else {
+                    args[0].as_int().ok_or(ion_str!("channel buffer size must be int"))? as usize
+                };
+                let (tx, rx) = crate::async_rt::create_channel(buffer);
+                Ok(Value::Tuple(vec![tx, rx]))
+            }),
+            false,
+        );
+    }
 }

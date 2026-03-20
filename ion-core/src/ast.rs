@@ -149,6 +149,16 @@ pub enum ExprKind {
 
     // Range
     Range { start: Box<Expr>, end: Box<Expr>, inclusive: bool },
+
+    // Concurrency
+    /// `async { body }` — structured concurrency scope
+    AsyncBlock(Vec<Stmt>),
+    /// `spawn expr` — launch a child task, returns Task handle
+    SpawnExpr(Box<Expr>),
+    /// `expr.await` — wait for a task/future result
+    AwaitExpr(Box<Expr>),
+    /// `select { branch => expr, ... }` — race multiple async expressions
+    SelectExpr(Vec<SelectBranch>),
 }
 
 /// A dict entry: either a key-value pair or a spread `...expr`.
@@ -168,6 +178,14 @@ pub enum FStrPart {
 pub struct CallArg {
     pub name: Option<String>,
     pub value: Expr,
+}
+
+/// A branch in a `select {}` expression.
+#[derive(Debug, Clone)]
+pub struct SelectBranch {
+    pub pattern: Pattern,
+    pub future_expr: Expr,
+    pub body: Expr,
 }
 
 #[derive(Debug, Clone)]

@@ -450,6 +450,13 @@ impl Parser {
                 }
                 Token::Dot => {
                     self.advance();
+                    // .await is special syntax
+                    if self.check(&Token::Await) {
+                        self.advance();
+                        let span = expr.span;
+                        expr = Expr { kind: ExprKind::AwaitExpr(Box::new(expr)), span };
+                        continue;
+                    }
                     let field = self.eat_ident()?;
                     if self.check(&Token::LParen) {
                         // Method call
@@ -725,6 +732,34 @@ impl Parser {
                 let body = self.parse_block_stmts()?;
                 self.eat(&Token::RBrace)?;
                 Ok(Expr { kind: ExprKind::LoopExpr(body), span })
+            }
+            Token::Async => {
+                self.advance();
+                self.eat(&Token::LBrace)?;
+                let body = self.parse_block_stmts()?;
+                self.eat(&Token::RBrace)?;
+                Ok(Expr { kind: ExprKind::AsyncBlock(body), span })
+            }
+            Token::Spawn => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                Ok(Expr { kind: ExprKind::SpawnExpr(Box::new(expr)), span })
+            }
+            Token::Select => {
+                self.advance();
+                self.eat(&Token::LBrace)?;
+                let mut branches = Vec::new();
+                while !self.check(&Token::RBrace) {
+                    let pattern = self.parse_pattern()?;
+                    self.eat(&Token::Eq)?;
+                    let future_expr = self.parse_expr()?;
+                    self.eat(&Token::Arrow)?;
+                    let body = self.parse_expr()?;
+                    branches.push(SelectBranch { pattern, future_expr, body });
+                    if self.check(&Token::Comma) { self.advance(); }
+                }
+                self.eat(&Token::RBrace)?;
+                Ok(Expr { kind: ExprKind::SelectExpr(branches), span })
             }
             Token::LBrace => {
                 self.advance();
