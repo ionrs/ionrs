@@ -66,6 +66,10 @@ pub enum Token {
     SlashEq,  // /=
     Pipe,     // |>
     Question, // ?
+    Ampersand, // &
+    Caret,     // ^
+    Shl,       // <<
+    Shr,       // >>
     DotDot,   // ..
     DotDotEq, // ..=
     Dot,      // .

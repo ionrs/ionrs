@@ -169,6 +169,11 @@ impl Compiler {
                             BinOp::Gt => self.chunk.emit_op(Op::Gt, line),
                             BinOp::Le => self.chunk.emit_op(Op::LtEq, line),
                             BinOp::Ge => self.chunk.emit_op(Op::GtEq, line),
+                            BinOp::BitAnd => self.chunk.emit_op(Op::BitAnd, line),
+                            BinOp::BitOr => self.chunk.emit_op(Op::BitOr, line),
+                            BinOp::BitXor => self.chunk.emit_op(Op::BitXor, line),
+                            BinOp::Shl => self.chunk.emit_op(Op::Shl, line),
+                            BinOp::Shr => self.chunk.emit_op(Op::Shr, line),
                             _ => unreachable!(),
                         }
                     }

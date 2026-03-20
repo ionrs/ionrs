@@ -186,6 +186,9 @@ impl<'a> Lexer<'a> {
                 if self.peek() == b'=' {
                     self.advance();
                     Ok(self.spanned(Token::LtEq, line, col))
+                } else if self.peek() == b'<' {
+                    self.advance();
+                    Ok(self.spanned(Token::Shl, line, col))
                 } else {
                     Ok(self.spanned(Token::Lt, line, col))
                 }
@@ -194,6 +197,9 @@ impl<'a> Lexer<'a> {
                 if self.peek() == b'=' {
                     self.advance();
                     Ok(self.spanned(Token::GtEq, line, col))
+                } else if self.peek() == b'>' {
+                    self.advance();
+                    Ok(self.spanned(Token::Shr, line, col))
                 } else {
                     Ok(self.spanned(Token::Gt, line, col))
                 }
@@ -203,9 +209,10 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     Ok(self.spanned(Token::And, line, col))
                 } else {
-                    Err(IonError::lex(ion_str!("expected '&&'"), line, col))
+                    Ok(self.spanned(Token::Ampersand, line, col))
                 }
             }
+            b'^' => Ok(self.spanned(Token::Caret, line, col)),
             b'|' => {
                 if self.peek() == b'|' {
                     self.advance();

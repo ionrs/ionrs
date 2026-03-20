@@ -363,3 +363,16 @@ fn test_vm_fallback_list_comp() {
     assert_eq!(vm_eval("[x * 2 for x in [1, 2, 3]]"),
         Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
 }
+
+// ============================================================
+// Bitwise operators (VM path)
+// ============================================================
+
+#[test]
+fn test_vm_bitwise() {
+    assert_eq!(vm_eval("12 & 10"), Value::Int(8));
+    assert_eq!(vm_eval("12 | 10"), Value::Int(14));
+    assert_eq!(vm_eval("12 ^ 10"), Value::Int(6));
+    assert_eq!(vm_eval("1 << 4"), Value::Int(16));
+    assert_eq!(vm_eval("16 >> 2"), Value::Int(4));
+}

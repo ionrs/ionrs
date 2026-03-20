@@ -22,6 +22,13 @@ pub enum Op {
     Mod,
     Neg,
 
+    // --- Bitwise ---
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+
     // --- Comparison ---
     Eq,
     NotEq,

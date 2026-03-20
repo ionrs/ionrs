@@ -105,6 +105,63 @@ impl Vm {
                     self.stack.push(self.op_neg(val, line)?);
                 }
 
+                // --- Bitwise ---
+                Op::BitAnd => {
+                    let b = self.pop(line)?;
+                    let a = self.pop(line)?;
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x & y)),
+                        (a, b) => return Err(IonError::type_err(
+                            format!("'&' expects int, got {} and {}", a.type_name(), b.type_name()),
+                            line, 0,
+                        )),
+                    }
+                }
+                Op::BitOr => {
+                    let b = self.pop(line)?;
+                    let a = self.pop(line)?;
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x | y)),
+                        (a, b) => return Err(IonError::type_err(
+                            format!("'|' expects int, got {} and {}", a.type_name(), b.type_name()),
+                            line, 0,
+                        )),
+                    }
+                }
+                Op::BitXor => {
+                    let b = self.pop(line)?;
+                    let a = self.pop(line)?;
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x ^ y)),
+                        (a, b) => return Err(IonError::type_err(
+                            format!("'^' expects int, got {} and {}", a.type_name(), b.type_name()),
+                            line, 0,
+                        )),
+                    }
+                }
+                Op::Shl => {
+                    let b = self.pop(line)?;
+                    let a = self.pop(line)?;
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x << y)),
+                        (a, b) => return Err(IonError::type_err(
+                            format!("'<<' expects int, got {} and {}", a.type_name(), b.type_name()),
+                            line, 0,
+                        )),
+                    }
+                }
+                Op::Shr => {
+                    let b = self.pop(line)?;
+                    let a = self.pop(line)?;
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x >> y)),
+                        (a, b) => return Err(IonError::type_err(
+                            format!("'>>' expects int, got {} and {}", a.type_name(), b.type_name()),
+                            line, 0,
+                        )),
+                    }
+                }
+
                 // --- Comparison ---
                 Op::Eq => {
                     let b = self.pop(line)?;
@@ -816,6 +873,13 @@ impl Vm {
                     }
                 }
             }
+            // Closure-based methods require tree-walk fallback; the hybrid engine handles this.
+            "map" | "and_then" | "or_else" | "unwrap_or_else" => {
+                Err(IonError::runtime(
+                    format!("Option.{} requires tree-walk fallback", method),
+                    line, 0,
+                ))
+            }
             _ => Err(IonError::type_err(format!("Option has no method '{}'", method), line, 0)),
         }
     }
@@ -843,6 +907,13 @@ impl Vm {
                         Err(IonError::runtime(format!("{}: {}", msg, e), line, 0))
                     }
                 }
+            }
+            // Closure-based methods require tree-walk fallback; the hybrid engine handles this.
+            "map" | "map_err" | "and_then" | "or_else" | "unwrap_or_else" => {
+                Err(IonError::runtime(
+                    format!("Result.{} requires tree-walk fallback", method),
+                    line, 0,
+                ))
             }
             _ => Err(IonError::type_err(format!("Result has no method '{}'", method), line, 0)),
         }

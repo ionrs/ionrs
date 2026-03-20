@@ -820,6 +820,26 @@ impl Interpreter {
             BinOp::Le => self.compare_values(l, r, span, |o| o != std::cmp::Ordering::Greater),
             BinOp::Ge => self.compare_values(l, r, span, |o| o != std::cmp::Ordering::Less),
             BinOp::And | BinOp::Or => unreachable!(), // handled in eval_expr
+            BinOp::BitAnd => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a & b)),
+                _ => Err(self.type_mismatch_err(ion_str!("&"), l, r, span)),
+            },
+            BinOp::BitOr => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a | b)),
+                _ => Err(self.type_mismatch_err(ion_str!("|"), l, r, span)),
+            },
+            BinOp::BitXor => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a ^ b)),
+                _ => Err(self.type_mismatch_err(ion_str!("^"), l, r, span)),
+            },
+            BinOp::Shl => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a << b)),
+                _ => Err(self.type_mismatch_err(ion_str!("<<"), l, r, span)),
+            },
+            BinOp::Shr => match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a >> b)),
+                _ => Err(self.type_mismatch_err(ion_str!(">>"), l, r, span)),
+            },
         }
     }
 
@@ -923,8 +943,8 @@ impl Interpreter {
             Value::List(items) => self.list_method(items, method, args, span),
             Value::Str(s) => self.string_method(s, method, args, span),
             Value::Dict(map) => self.dict_method(map, method, args, span),
-            Value::Option(opt) => self.option_method(opt, method, args, span),
-            Value::Result(res) => self.result_method(res, method, args, span),
+            Value::Option(opt) => self.option_method(opt.clone(), method, args, span),
+            Value::Result(res) => self.result_method(res.clone(), method, args, span),
             #[cfg(feature = "concurrency")]
             Value::Task(handle) => self.task_method(handle, method, span),
             #[cfg(feature = "concurrency")]
@@ -1078,6 +1098,7 @@ impl Interpreter {
                         .collect()
                 ))
             }
+            "is_empty" => Ok(Value::Bool(items.is_empty())),
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on list")),
                 span.line, span.col,
@@ -1125,6 +1146,11 @@ impl Interpreter {
                 ))?;
                 Ok(Value::Str(s.replace(from, to)))
             }
+            "chars" => {
+                let chars: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+                Ok(Value::List(chars))
+            }
+            "is_empty" => Ok(Value::Bool(s.is_empty())),
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on string")),
                 span.line, span.col,
@@ -1192,31 +1218,53 @@ impl Interpreter {
         }
     }
 
-    fn option_method(&self, opt: &Option<Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn option_method(&mut self, opt: Option<Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
         match method {
             "is_some" => Ok(Value::Bool(opt.is_some())),
             "is_none" => Ok(Value::Bool(opt.is_none())),
             "unwrap_or" => match opt {
-                Some(v) => Ok(*v.clone()),
+                Some(v) => Ok(*v),
                 None => Ok(args[0].clone()),
             },
             "expect" => match opt {
-                Some(v) => Ok(*v.clone()),
+                Some(v) => Ok(*v),
                 None => {
                     let default_msg = ion_str!("expect failed");
                     let msg = args[0].as_str().unwrap_or(&default_msg);
                     Err(IonError::runtime(msg.to_string(), span.line, span.col).into())
                 }
             },
-            "map" => match opt {
-                Some(_v) => {
-                    Err(IonError::runtime(
-                        ion_str!("Option.map requires interpreter context; use match instead").to_string(),
-                        span.line, span.col,
-                    ).into())
+            "map" => {
+                let func = args[0].clone();
+                match opt {
+                    Some(v) => {
+                        let result = self.call_value(&func, &[*v], span)?;
+                        Ok(Value::Option(Some(Box::new(result))))
+                    }
+                    None => Ok(Value::Option(None)),
                 }
-                None => Ok(Value::Option(None)),
-            },
+            }
+            "and_then" => {
+                let func = args[0].clone();
+                match opt {
+                    Some(v) => self.call_value(&func, &[*v], span),
+                    None => Ok(Value::Option(None)),
+                }
+            }
+            "or_else" => {
+                let func = args[0].clone();
+                match opt {
+                    Some(v) => Ok(Value::Option(Some(v))),
+                    None => self.call_value(&func, &[], span),
+                }
+            }
+            "unwrap_or_else" => {
+                let func = args[0].clone();
+                match opt {
+                    Some(v) => Ok(*v),
+                    None => self.call_value(&func, &[], span),
+                }
+            }
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Option")),
                 span.line, span.col,
@@ -1224,16 +1272,16 @@ impl Interpreter {
         }
     }
 
-    fn result_method(&self, res: &Result<Box<Value>, Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn result_method(&mut self, res: Result<Box<Value>, Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
         match method {
             "is_ok" => Ok(Value::Bool(res.is_ok())),
             "is_err" => Ok(Value::Bool(res.is_err())),
             "unwrap_or" => match res {
-                Ok(v) => Ok(*v.clone()),
+                Ok(v) => Ok(*v),
                 Err(_) => Ok(args[0].clone()),
             },
             "expect" => match res {
-                Ok(v) => Ok(*v.clone()),
+                Ok(v) => Ok(*v),
                 Err(e) => {
                     let default_msg = ion_str!("expect failed");
                     let msg = args[0].as_str().unwrap_or(&default_msg);
@@ -1242,15 +1290,47 @@ impl Interpreter {
                     ).into())
                 }
             },
-            "map_err" => match res {
-                Ok(v) => Ok(Value::Result(Ok(v.clone()))),
-                Err(_) => {
-                    Err(IonError::runtime(
-                        ion_str!("Result.map_err requires interpreter context").to_string(),
-                        span.line, span.col,
-                    ).into())
+            "map" => {
+                let func = args[0].clone();
+                match res {
+                    Ok(v) => {
+                        let result = self.call_value(&func, &[*v], span)?;
+                        Ok(Value::Result(Ok(Box::new(result))))
+                    }
+                    Err(e) => Ok(Value::Result(Err(e))),
                 }
-            },
+            }
+            "map_err" => {
+                let func = args[0].clone();
+                match res {
+                    Ok(v) => Ok(Value::Result(Ok(v))),
+                    Err(e) => {
+                        let result = self.call_value(&func, &[*e], span)?;
+                        Ok(Value::Result(Err(Box::new(result))))
+                    }
+                }
+            }
+            "and_then" => {
+                let func = args[0].clone();
+                match res {
+                    Ok(v) => self.call_value(&func, &[*v], span),
+                    Err(e) => Ok(Value::Result(Err(e))),
+                }
+            }
+            "or_else" => {
+                let func = args[0].clone();
+                match res {
+                    Ok(v) => Ok(Value::Result(Ok(v))),
+                    Err(e) => self.call_value(&func, &[*e], span),
+                }
+            }
+            "unwrap_or_else" => {
+                let func = args[0].clone();
+                match res {
+                    Ok(v) => Ok(*v),
+                    Err(e) => self.call_value(&func, &[*e], span),
+                }
+            }
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Result")),
                 span.line, span.col,

@@ -1669,3 +1669,135 @@ fn test_derive_roundtrip_typed() {
     assert_eq!(result.x, 84.0);
     assert_eq!(result.y, 198.0);
 }
+
+// ============================================================
+// Section 32: Bitwise Operators
+// ============================================================
+
+#[test]
+fn test_bitwise_and() {
+    assert_eq!(eval("12 & 10"), Value::Int(8));
+    assert_eq!(eval("255 & 15"), Value::Int(15));
+}
+
+#[test]
+fn test_bitwise_or() {
+    assert_eq!(eval("12 | 10"), Value::Int(14));
+    assert_eq!(eval("8 | 4"), Value::Int(12));
+}
+
+#[test]
+fn test_bitwise_xor() {
+    assert_eq!(eval("12 ^ 10"), Value::Int(6));
+    assert_eq!(eval("5 ^ 3"), Value::Int(6));
+}
+
+#[test]
+fn test_shift_left() {
+    assert_eq!(eval("1 << 4"), Value::Int(16));
+    assert_eq!(eval("3 << 2"), Value::Int(12));
+}
+
+#[test]
+fn test_shift_right() {
+    assert_eq!(eval("16 >> 2"), Value::Int(4));
+    assert_eq!(eval("255 >> 4"), Value::Int(15));
+}
+
+#[test]
+fn test_bitwise_precedence() {
+    // & binds tighter than |
+    assert_eq!(eval("1 | 2 & 3"), Value::Int(1 | (2 & 3)));
+    // ^ is between & and |
+    assert_eq!(eval("3 | 5 ^ 6 & 7"), Value::Int(3 | (5 ^ (6 & 7))));
+}
+
+#[test]
+fn test_bitwise_type_error() {
+    let err = eval_err("1.0 & 2");
+    assert!(err.contains("int"), "got: {}", err);
+}
+
+// ============================================================
+// Section 33: Option/Result Functional Methods
+// ============================================================
+
+#[test]
+fn test_option_map() {
+    assert_eq!(eval("Some(5).map(|x| x * 2)"), Value::Option(Some(Box::new(Value::Int(10)))));
+    assert_eq!(eval("None.map(|x| x * 2)"), Value::Option(None));
+}
+
+#[test]
+fn test_option_and_then() {
+    assert_eq!(eval("Some(5).and_then(|x| Some(x + 1))"), Value::Option(Some(Box::new(Value::Int(6)))));
+    assert_eq!(eval("None.and_then(|x| Some(x + 1))"), Value::Option(None));
+}
+
+#[test]
+fn test_option_or_else() {
+    assert_eq!(eval("Some(5).or_else(|| Some(0))"), Value::Option(Some(Box::new(Value::Int(5)))));
+    assert_eq!(eval("None.or_else(|| Some(99))"), Value::Option(Some(Box::new(Value::Int(99)))));
+}
+
+#[test]
+fn test_option_unwrap_or_else() {
+    assert_eq!(eval("Some(5).unwrap_or_else(|| 0)"), Value::Int(5));
+    assert_eq!(eval("None.unwrap_or_else(|| 42)"), Value::Int(42));
+}
+
+#[test]
+fn test_result_map() {
+    assert_eq!(eval("Ok(5).map(|x| x * 2)"), Value::Result(Ok(Box::new(Value::Int(10)))));
+    assert_eq!(eval("Err(\"bad\").map(|x| x * 2)"), Value::Result(Err(Box::new(Value::Str("bad".to_string())))));
+}
+
+#[test]
+fn test_result_map_err() {
+    assert_eq!(eval("Ok(5).map_err(|e| f\"wrapped: {e}\")"), Value::Result(Ok(Box::new(Value::Int(5)))));
+    assert_eq!(eval("Err(\"bad\").map_err(|e| f\"wrapped: {e}\")"),
+        Value::Result(Err(Box::new(Value::Str("wrapped: bad".to_string())))));
+}
+
+#[test]
+fn test_result_and_then() {
+    assert_eq!(eval("Ok(5).and_then(|x| Ok(x + 1))"), Value::Result(Ok(Box::new(Value::Int(6)))));
+    assert_eq!(eval("Err(\"bad\").and_then(|x| Ok(x + 1))"), Value::Result(Err(Box::new(Value::Str("bad".to_string())))));
+}
+
+#[test]
+fn test_result_or_else() {
+    assert_eq!(eval("Ok(5).or_else(|e| Ok(0))"), Value::Result(Ok(Box::new(Value::Int(5)))));
+    assert_eq!(eval("Err(\"bad\").or_else(|e| Ok(99))"), Value::Result(Ok(Box::new(Value::Int(99)))));
+}
+
+#[test]
+fn test_result_unwrap_or_else() {
+    assert_eq!(eval("Ok(5).unwrap_or_else(|e| 0)"), Value::Int(5));
+    assert_eq!(eval("Err(\"bad\").unwrap_or_else(|e| 42)"), Value::Int(42));
+}
+
+// ============================================================
+// Section 34: String/List Missing Methods
+// ============================================================
+
+#[test]
+fn test_string_chars() {
+    assert_eq!(eval("\"abc\".chars()"), Value::List(vec![
+        Value::Str("a".to_string()),
+        Value::Str("b".to_string()),
+        Value::Str("c".to_string()),
+    ]));
+}
+
+#[test]
+fn test_string_is_empty() {
+    assert_eq!(eval("\"\".is_empty()"), Value::Bool(true));
+    assert_eq!(eval("\"hello\".is_empty()"), Value::Bool(false));
+}
+
+#[test]
+fn test_list_is_empty() {
+    assert_eq!(eval("[].is_empty()"), Value::Bool(true));
+    assert_eq!(eval("[1].is_empty()"), Value::Bool(false));
+}

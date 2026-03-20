@@ -20,6 +20,43 @@ pub enum ErrorKind {
 }
 
 impl IonError {
+    /// Format error with source context showing the offending line.
+    pub fn format_with_source(&self, source: &str) -> String {
+        let mut out = String::new();
+        // Header
+        out.push_str(&format!("\x1b[1;31merror[{}]\x1b[0m: {}\n", self.kind_str(), self.message));
+        // Source context
+        if self.line > 0 {
+            let lines: Vec<&str> = source.lines().collect();
+            if self.line <= lines.len() {
+                let line_str = lines[self.line - 1];
+                let line_num = format!("{}", self.line);
+                let padding = " ".repeat(line_num.len());
+                out.push_str(&format!(" {} \x1b[34m|\x1b[0m\n", padding));
+                out.push_str(&format!(" \x1b[34m{} |\x1b[0m {}\n", line_num, line_str));
+                out.push_str(&format!(" {} \x1b[34m|\x1b[0m ", padding));
+                if self.col > 0 && self.col <= line_str.len() + 1 {
+                    out.push_str(&" ".repeat(self.col - 1));
+                    out.push_str("\x1b[1;31m^\x1b[0m");
+                }
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    fn kind_str(&self) -> &str {
+        match &self.kind {
+            ErrorKind::LexError => "lex",
+            ErrorKind::ParseError => "parse",
+            ErrorKind::RuntimeError => "runtime",
+            ErrorKind::TypeError => "type",
+            ErrorKind::NameError => "name",
+            ErrorKind::PropagatedErr => "propagated_err",
+            ErrorKind::PropagatedNone => "propagated_none",
+        }
+    }
+
     pub fn lex(message: impl Into<String>, line: usize, col: usize) -> Self {
         Self { kind: ErrorKind::LexError, message: message.into(), line, col }
     }

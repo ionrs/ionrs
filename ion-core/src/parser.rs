@@ -304,13 +304,55 @@ impl Parser {
     }
 
     fn parse_and(&mut self) -> Result<Expr, IonError> {
-        let mut left = self.parse_equality()?;
+        let mut left = self.parse_bitwise_or()?;
         while self.check(&Token::And) {
+            self.advance();
+            let right = self.parse_bitwise_or()?;
+            let span = left.span;
+            left = Expr {
+                kind: ExprKind::BinOp { left: Box::new(left), op: BinOp::And, right: Box::new(right) },
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitwise_or(&mut self) -> Result<Expr, IonError> {
+        let mut left = self.parse_bitwise_xor()?;
+        while self.check(&Token::PipeSym) {
+            self.advance();
+            let right = self.parse_bitwise_xor()?;
+            let span = left.span;
+            left = Expr {
+                kind: ExprKind::BinOp { left: Box::new(left), op: BinOp::BitOr, right: Box::new(right) },
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitwise_xor(&mut self) -> Result<Expr, IonError> {
+        let mut left = self.parse_bitwise_and()?;
+        while self.check(&Token::Caret) {
+            self.advance();
+            let right = self.parse_bitwise_and()?;
+            let span = left.span;
+            left = Expr {
+                kind: ExprKind::BinOp { left: Box::new(left), op: BinOp::BitXor, right: Box::new(right) },
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitwise_and(&mut self) -> Result<Expr, IonError> {
+        let mut left = self.parse_equality()?;
+        while self.check(&Token::Ampersand) {
             self.advance();
             let right = self.parse_equality()?;
             let span = left.span;
             left = Expr {
-                kind: ExprKind::BinOp { left: Box::new(left), op: BinOp::And, right: Box::new(right) },
+                kind: ExprKind::BinOp { left: Box::new(left), op: BinOp::BitAnd, right: Box::new(right) },
                 span,
             };
         }
@@ -337,13 +379,32 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, IonError> {
-        let mut left = self.parse_range()?;
+        let mut left = self.parse_shift()?;
         loop {
             let op = match self.peek() {
                 Token::Lt => BinOp::Lt,
                 Token::Gt => BinOp::Gt,
                 Token::LtEq => BinOp::Le,
                 Token::GtEq => BinOp::Ge,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_shift()?;
+            let span = left.span;
+            left = Expr {
+                kind: ExprKind::BinOp { left: Box::new(left), op, right: Box::new(right) },
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_shift(&mut self) -> Result<Expr, IonError> {
+        let mut left = self.parse_range()?;
+        loop {
+            let op = match self.peek() {
+                Token::Shl => BinOp::Shl,
+                Token::Shr => BinOp::Shr,
                 _ => break,
             };
             self.advance();
