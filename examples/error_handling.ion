@@ -1,0 +1,73 @@
+// Error handling with Result, Option, and ? operator
+
+// Parsing with Result matching
+fn parse_point(input) {
+    let parts = input.split(",");
+    if parts.len() != 2 {
+        return Err("expected 'x,y' format");
+    }
+    match (parts[0].trim().to_int(), parts[1].trim().to_int()) {
+        (Ok(x), Ok(y)) => Ok((x, y)),
+        (Err(e), _) => Err(f"bad x: {e}"),
+        (_, Err(e)) => Err(f"bad y: {e}"),
+    }
+}
+
+// Test various inputs
+let inputs = ["3, 4", "10,20", "bad,5", "1,2,3"];
+for input in inputs {
+    match parse_point(input) {
+        Ok((x, y)) => println(f"  '{input}' -> point({x}, {y})"),
+        Err(e) => println(f"  '{input}' -> error: {e}"),
+    }
+}
+
+// Option chaining
+fn lookup(db, key) {
+    db.get(key)
+}
+
+let db = #{
+    alice: #{age: 30, role: "admin"},
+    bob: #{age: 25, role: "user"},
+};
+
+let alice_age = lookup(db, "alice")
+    .map(|user| user.age);
+println(f"\nAlice's age: {alice_age}");
+
+let unknown = lookup(db, "charlie");
+println(f"Charlie: {unknown}");
+
+// unwrap_or for defaults
+let name = None.unwrap_or("anonymous");
+println(f"Name: {name}");
+
+let val = Some(42).unwrap_or(0);
+println(f"Value: {val}");
+
+// Result methods
+fn safe_divide(a, b) {
+    if b == 0 {
+        Err("division by zero")
+    } else {
+        Ok(a / b)
+    }
+}
+
+let result = safe_divide(10, 3)
+    .map(|n| n * 100)
+    .unwrap_or(0);
+println(f"\n10/3 * 100 = {result}");
+
+let fallback = safe_divide(10, 0).unwrap_or(-1);
+println(f"10/0 with fallback: {fallback}");
+
+// is_ok / is_err
+println(f"10/3 is_ok: {safe_divide(10, 3).is_ok()}");
+println(f"10/0 is_err: {safe_divide(10, 0).is_err()}");
+
+// map_err
+let tagged = safe_divide(10, 0)
+    .map_err(|e| f"math error: {e}");
+println(f"Tagged error: {tagged}");

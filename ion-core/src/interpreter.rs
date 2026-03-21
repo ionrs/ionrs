@@ -928,6 +928,9 @@ impl Interpreter {
                 (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
                 (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
                 (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * *b as f64)),
+                (Value::Str(s), Value::Int(n)) | (Value::Int(n), Value::Str(s)) => {
+                    Ok(Value::Str(s.repeat(*n as usize)))
+                }
                 _ => Err(self.type_mismatch_err(ion_str!("*"), l, r, span)),
             },
             BinOp::Div => match (l, r) {

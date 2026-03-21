@@ -1,0 +1,45 @@
+// Data transformation pipeline
+
+let users = [
+    #{name: "Alice", age: 30, role: "admin"},
+    #{name: "Bob", age: 25, role: "user"},
+    #{name: "Charlie", age: 35, role: "admin"},
+    #{name: "Diana", age: 28, role: "user"},
+    #{name: "Eve", age: 22, role: "admin"},
+];
+
+// Filter admins and format their names
+let admin_names = users
+    .filter(|u| u.role == "admin")
+    .map(|u| u.name);
+println(f"Admins: {admin_names}");
+
+// Average age
+let total_age = users.fold(0, |acc, u| acc + u.age);
+let avg_age = total_age / users.len();
+println(f"Average age: {avg_age}");
+
+// Group by role
+let roles = users.map(|u| u.role);
+let unique_roles = [];
+for role in roles {
+    if !unique_roles.contains(role) {
+        let mut unique_roles = unique_roles.push(role);
+    }
+}
+
+// Age statistics
+let ages = users.map(|u| u.age);
+let youngest = ages.fold(999, |a, b| if b < a { b } else { a });
+let oldest = ages.fold(0, |a, b| if b > a { b } else { a });
+println(f"Age range: {youngest} to {oldest}");
+
+// Create summary report
+let report = #{
+    total_users: users.len(),
+    admin_count: users.filter(|u| u.role == "admin").len(),
+    average_age: avg_age,
+    oldest: oldest,
+    youngest: youngest,
+};
+println(f"Report: {json_encode_pretty(report)}");

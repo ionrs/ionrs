@@ -1,0 +1,51 @@
+// Configuration and JSON processing
+
+// Build a config from defaults + overrides
+let defaults = #{
+    host: "0.0.0.0",
+    port: 8080,
+    debug: false,
+    max_connections: 100,
+    timeout_ms: 30000,
+    features: ["logging", "metrics"],
+};
+
+let overrides = #{
+    port: 3000,
+    debug: true,
+    features: ["logging", "metrics", "tracing"],
+};
+
+// Merge configs (overrides win)
+let config = defaults.merge(overrides);
+println(f"Server config:");
+println(f"  Host: {config.host}");
+println(f"  Port: {config.port}");
+println(f"  Debug: {config.debug}");
+println(f"  Features: {config.features.join(\", \")}");
+
+// Validate config
+fn validate(config) {
+    if config.port < 1 || config.port > 65535 {
+        Err("invalid port")
+    } else if config.max_connections < 1 {
+        Err("max_connections must be positive")
+    } else if config.timeout_ms < 100 {
+        Err("timeout too low")
+    } else {
+        Ok(config)
+    }
+}
+
+match validate(config) {
+    Ok(c) => println(f"\nConfig valid! Listening on {c.host}:{c.port}"),
+    Err(e) => println(f"\nConfig error: {e}"),
+}
+
+// Serialize to JSON
+let json = json_encode_pretty(config);
+println(f"\nJSON output:\n{json}");
+
+// Round-trip: encode then decode
+let decoded = json_decode(json_encode(config));
+println(f"\nRound-trip port: {decoded.port}");

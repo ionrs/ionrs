@@ -451,10 +451,12 @@ f"2 + 2 = {2 + 2}"               // "2 + 2 = 4"
 "hello"[-1]                       // "o" (negative indexing)
 ```
 
-### Concatenation
+### Concatenation and repetition
 
 ```
 "hello" + " " + "world"          // "hello world"
+"ha" * 3                          // "hahaha"
+3 * "ab"                          // "ababab"
 ```
 
 See [String Methods](#string-methods) for the full API.

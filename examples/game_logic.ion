@@ -1,0 +1,45 @@
+// Game logic example — RPG damage calculation
+
+fn calculate_damage(attacker, defender) {
+    let base = attacker.attack - defender.defense;
+    let damage = if base < 1 { 1 } else { base };
+
+    // Critical hit check (simulated)
+    let is_crit = attacker.luck > 7;
+    let final_damage = if is_crit { damage * 2 } else { damage };
+
+    #{
+        damage: final_damage,
+        is_crit: is_crit,
+        attacker_name: attacker.name,
+        defender_name: defender.name,
+    }
+}
+
+fn apply_damage(entity, damage) {
+    let new_hp = entity.hp - damage;
+    entity.insert("hp", if new_hp < 0 { 0 } else { new_hp })
+}
+
+fn is_alive(entity) {
+    entity.hp > 0
+}
+
+// Set up combatants
+let hero = #{name: "Hero", hp: 100, attack: 25, defense: 10, luck: 8};
+let goblin = #{name: "Goblin", hp: 40, attack: 12, defense: 5, luck: 3};
+
+// Combat round
+let result = calculate_damage(hero, goblin);
+println(f"{result.attacker_name} attacks {result.defender_name}!");
+if result.is_crit {
+    println("Critical hit!");
+}
+println(f"Deals {result.damage} damage.");
+
+let mut goblin = apply_damage(goblin, result.damage);
+println(f"{goblin.name} HP: {goblin.hp}");
+
+if !is_alive(goblin) {
+    println(f"{goblin.name} has been defeated!");
+}

@@ -2214,3 +2214,24 @@ fn test_tuple_contains() {
 fn test_tuple_to_list() {
     assert_eq!(eval("(1, 2, 3).to_list()"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
 }
+
+#[test]
+fn test_string_multiply() {
+    assert_eq!(eval(r#""ha" * 3"#), Value::Str("hahaha".to_string()));
+    assert_eq!(eval(r#"3 * "ab""#), Value::Str("ababab".to_string()));
+}
+
+#[test]
+fn test_range_for_loop() {
+    assert_eq!(eval("let mut s = 0; for i in 0..5 { s += i; } s"), Value::Int(10));
+}
+
+#[test]
+fn test_range_inclusive_for_loop() {
+    assert_eq!(eval("let mut s = 0; for i in 1..=5 { s += i; } s"), Value::Int(15));
+}
+
+#[test]
+fn test_multiline_lambda() {
+    assert_eq!(eval("let f = |x| { let y = x * 2; y + 1 }; f(5)"), Value::Int(11));
+}

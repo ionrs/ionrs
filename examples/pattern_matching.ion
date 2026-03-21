@@ -1,0 +1,72 @@
+// Pattern matching showcase
+
+// Option handling
+fn find_user(name) {
+    let db = #{alice: 1, bob: 2, charlie: 3};
+    db.get(name)
+}
+
+match find_user("alice") {
+    Some(id) => println(f"Found user with id: {id}"),
+    None => println("User not found"),
+}
+
+// Result handling with ? operator
+fn parse_config(input) {
+    let port = input.to_int()?;
+    if port < 1 || port > 65535 {
+        Err("port out of range")
+    } else {
+        Ok(#{port: port, host: "localhost"})
+    }
+}
+
+match parse_config("8080") {
+    Ok(config) => println(f"Server at {config.host}:{config.port}"),
+    Err(e) => println(f"Config error: {e}"),
+}
+
+// List pattern matching
+fn describe(items) {
+    match items {
+        [] => "empty list",
+        [x] => f"single item: {x}",
+        [x, y] => f"pair: ({x}, {y})",
+        [first, ...rest] => f"starts with {first}, {rest.len()} more items",
+    }
+}
+
+println(describe([]));
+println(describe([42]));
+println(describe([1, 2]));
+println(describe([10, 20, 30, 40]));
+
+// Tuple matching
+fn classify_point(point) {
+    match point {
+        (0, 0) => "origin",
+        (x, 0) => f"on x-axis at {x}",
+        (0, y) => f"on y-axis at {y}",
+        (x, y) => f"at ({x}, {y})",
+    }
+}
+
+println(classify_point((0, 0)));
+println(classify_point((5, 0)));
+println(classify_point((0, 3)));
+println(classify_point((2, 7)));
+
+// Guards
+fn grade(score) {
+    match score {
+        s if s >= 90 => "A",
+        s if s >= 80 => "B",
+        s if s >= 70 => "C",
+        s if s >= 60 => "D",
+        _ => "F",
+    }
+}
+
+for score in [95, 82, 73, 61, 45] {
+    println(f"Score {score}: {grade(score)}");
+}

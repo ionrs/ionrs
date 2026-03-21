@@ -1,0 +1,68 @@
+// String manipulation showcase
+
+let greeting = "Hello, World!";
+
+// Basic methods
+println(f"Length: {greeting.len()}");
+println(f"Upper: {greeting.to_upper()}");
+println(f"Lower: {greeting.to_lower()}");
+println(f"Contains 'World': {greeting.contains(\"World\")}");
+
+// Splitting and joining
+let csv = "alice,bob,charlie,diana";
+let names = csv.split(",");
+println(f"Names: {names}");
+println(f"Joined: {names.join(\" & \")}");
+
+// String multiplication
+let border = "=" * 40;
+println(border);
+println("  Ion Language String Demo");
+println(border);
+
+// F-string interpolation
+let items = [
+    #{name: "Widget", price: 9.99},
+    #{name: "Gadget", price: 24.50},
+    #{name: "Doohickey", price: 3.75},
+];
+
+for item in items {
+    println(f"  {item.name}: ${item.price}");
+}
+println(border);
+
+// String search and transform
+let text = "the quick brown fox jumps over the lazy dog";
+match text.find("fox") {
+    Some(i) => println(f"Found 'fox' at index {i}"),
+    None => println("Not found"),
+}
+
+// Parsing strings to numbers
+let input = "42";
+match input.to_int() {
+    Ok(n) => println(f"Parsed: {n * 2}"),
+    Err(e) => println(f"Parse error: {e}"),
+}
+
+// Triple-quoted strings
+let poem = """
+Roses are red,
+Violets are blue,
+Ion is neat,
+And so are you.
+""";
+println(poem);
+
+// Chars and reverse
+let word = "racecar";
+let reversed = word.reverse();
+println(f"'{word}' reversed is '{reversed}'");
+if word == reversed {
+    println("It's a palindrome!");
+}
+
+// String indexing
+let alpha = "abcdefg";
+println(f"First: {alpha[0]}, Last: {alpha[-1]}, Third: {alpha[2]}");

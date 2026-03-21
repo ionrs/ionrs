@@ -1,0 +1,59 @@
+// Functional programming patterns
+
+// Higher-order functions
+fn compose(f, g) {
+    |x| f(g(x))
+}
+
+let double = |x| x * 2;
+let inc = |x| x + 1;
+let double_then_inc = compose(inc, double);
+println(f"double_then_inc(5) = {double_then_inc(5)}");  // 11
+
+// Currying
+fn add(a) {
+    |b| a + b
+}
+let add10 = add(10);
+println(f"add10(5) = {add10(5)}");  // 15
+
+// Pipeline operator
+let result = [1, 2, 3, 4, 5]
+    .map(|x| x * x)
+    .filter(|x| x > 5)
+    .fold(0, |a, b| a + b);
+println(f"Sum of squares > 5: {result}");  // 9 + 16 + 25 = 50
+
+// flat_map
+let nested = [[1, 2], [3, 4], [5]];
+let flat = nested.flat_map(|xs| xs.map(|x| x * 10));
+println(f"flat_map result: {flat}");  // [10, 20, 30, 40, 50]
+
+// Comprehensions
+let evens = [x * 2 for x in 0..10];
+println(f"Evens: {evens}");
+
+let doubled = [(x, x * 2) for x in 0..4 if x > 0];
+println(f"Doubled: {doubled}");
+
+// Dict comprehension
+let squares = #{str(n): n * n for n in 1..=5};
+println(f"Squares: {squares}");
+
+// Closures with state
+fn make_counter() {
+    let mut count = 0;
+    || {
+        count += 1;
+        count
+    }
+}
+
+// Using fold to simulate reduce
+let product = [1, 2, 3, 4, 5].fold(1, |a, b| a * b);
+println(f"Product: {product}");  // 120
+
+// any/all
+let nums = [2, 4, 6, 8];
+println(f"All even? {nums.all(|x| x % 2 == 0)}");  // true
+println(f"Any > 5? {nums.any(|x| x > 5)}");  // true

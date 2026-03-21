@@ -656,3 +656,20 @@ fn cross_triple_string() {
         Value::Str("hello".to_string()),
     );
 }
+
+#[test]
+fn cross_string_multiply() {
+    assert_both_eq(r#""ha" * 3"#, Value::Str("hahaha".to_string()));
+    assert_both_eq(r#"3 * "ab""#, Value::Str("ababab".to_string()));
+}
+
+#[test]
+fn cross_range_iteration() {
+    assert_both_eq("let mut s = 0; for i in 0..5 { s += i; } s", Value::Int(10));
+    assert_both_eq("let mut s = 0; for i in 1..=3 { s += i; } s", Value::Int(6));
+}
+
+#[test]
+fn cross_multiline_lambda() {
+    assert_both_eq("let f = |x| { let y = x * 2; y + 1 }; f(5)", Value::Int(11));
+}
