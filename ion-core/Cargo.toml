@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["derive"]
+default = ["derive", "vm", "optimize"]
 obfuscate = ["obfstr"]
 derive = ["ion-derive"]
 concurrency = ["futures"]
+vm = []
+optimize = ["vm"]
 
 [dependencies]
 obfstr = { version = "0.4", optional = true }

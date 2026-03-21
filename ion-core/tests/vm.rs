@@ -1,4 +1,5 @@
 //! Tests for the bytecode VM execution path.
+#![cfg(feature = "vm")]
 
 use ion_core::engine::Engine;
 use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef};
@@ -895,6 +896,7 @@ fn test_vm_error_field_access_col() {
 // ============================================================
 
 #[test]
+#[cfg(feature = "optimize")]
 fn test_vm_tail_call_deep_recursion() {
     // This would stack overflow without TCO — 10,000 recursive calls
     assert_eq!(vm_eval(r#"
@@ -906,6 +908,7 @@ fn test_vm_tail_call_deep_recursion() {
 }
 
 #[test]
+#[cfg(feature = "optimize")]
 fn test_vm_tail_call_accumulator() {
     // Tail-recursive sum with accumulator
     assert_eq!(vm_eval(r#"

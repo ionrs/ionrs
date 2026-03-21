@@ -13,13 +13,17 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            #[cfg(feature = "vm")]
             "--vm" => use_vm = true,
             arg if !arg.starts_with('-') => {
                 script_path = Some(arg.to_string());
             }
             other => {
                 eprintln!("Unknown flag: {}", other);
+                #[cfg(feature = "vm")]
                 eprintln!("Usage: ion [--vm] [script.ion]");
+                #[cfg(not(feature = "vm"))]
+                eprintln!("Usage: ion [script.ion]");
                 std::process::exit(1);
             }
         }
@@ -43,7 +47,10 @@ fn run_file(path: &str, use_vm: bool) {
 
     let mut engine = Engine::new();
     let result = if use_vm {
-        engine.vm_eval(&source)
+        #[cfg(feature = "vm")]
+        { engine.vm_eval(&source) }
+        #[cfg(not(feature = "vm"))]
+        { engine.eval(&source) }
     } else {
         engine.eval(&source)
     };
@@ -99,6 +106,7 @@ fn run_repl(use_vm: bool) {
         if input_buf.is_empty() {
             match trimmed {
                 ":quit" | ":q" => break,
+                #[cfg(feature = "vm")]
                 ":vm" => {
                     vm_mode = !vm_mode;
                     println!("VM mode: {}", if vm_mode { "on" } else { "off" });
@@ -139,7 +147,10 @@ fn run_repl(use_vm: bool) {
         }
 
         let result = if vm_mode {
-            engine.vm_eval(&source)
+            #[cfg(feature = "vm")]
+            { engine.vm_eval(&source) }
+            #[cfg(not(feature = "vm"))]
+            { engine.eval(&source) }
         } else {
             engine.eval(&source)
         };

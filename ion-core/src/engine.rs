@@ -92,6 +92,7 @@ impl Engine {
 
     /// Evaluate a script via the bytecode VM. Falls back to tree-walk for
     /// unsupported features (concurrency).
+    #[cfg(feature = "vm")]
     pub fn vm_eval(&mut self, source: &str) -> Result<Value, IonError> {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize()?;

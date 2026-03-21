@@ -2004,6 +2004,10 @@ fn test_for_over_string() {
 // 38. VM function compilation
 // ============================================================
 
+#[cfg(feature = "vm")]
+mod vm_integration {
+    use super::*;
+
 #[test]
 fn test_vm_fn_simple() {
     let mut engine = Engine::new();
@@ -2053,6 +2057,8 @@ fn test_vm_for_bytes() {
     let mut engine = Engine::new();
     assert_eq!(engine.vm_eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#).unwrap(), Value::Int(97 + 98 + 99));
 }
+
+} // mod vm_integration
 
 // ============================================================
 // Index/field assignment (tree-walk)

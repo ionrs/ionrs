@@ -418,6 +418,7 @@ impl Chunk {
     /// - `Neg; Neg` → remove both (double arithmetic negation)
     /// - `Jump 0` → remove (nop jump to next instruction)
     /// - Pure push + `Pop` → remove both (dead value)
+    #[cfg(feature = "optimize")]
     pub fn peephole_optimize(&mut self) {
         let old_len = self.code.len();
         if old_len == 0 { return; }
@@ -489,6 +490,7 @@ impl Chunk {
     }
 
     /// Remove dead bytes and adjust jump targets.
+    #[cfg(feature = "optimize")]
     fn compact_dead(&mut self, dead: &[bool]) {
         let old_len = self.code.len();
 

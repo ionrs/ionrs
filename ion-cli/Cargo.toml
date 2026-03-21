@@ -3,5 +3,9 @@ name = "ion-cli"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["vm"]
+vm = ["ion-core/vm"]
+
 [dependencies]
-ion-core = { path = "../ion-core" }
+ion-core = { path = "../ion-core", default-features = true }
