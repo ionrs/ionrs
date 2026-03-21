@@ -861,3 +861,60 @@ fn test_vm_tail_call_accumulator() {
         sum_acc(10000, 0)
     "#), Value::Int(50005000));
 }
+
+// ============================================================
+// Dict spread
+// ============================================================
+
+#[test]
+fn test_vm_dict_spread_basic() {
+    let val = vm_eval(r#"
+        let base = #{ "a": 1, "b": 2 };
+        #{ ...base, "c": 3 }
+    "#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map.len(), 3);
+        assert_eq!(map["a"], Value::Int(1));
+        assert_eq!(map["b"], Value::Int(2));
+        assert_eq!(map["c"], Value::Int(3));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_vm_dict_spread_override() {
+    let val = vm_eval(r#"
+        let base = #{ "a": 1, "b": 2 };
+        #{ ...base, "b": 99 }
+    "#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map["a"], Value::Int(1));
+        assert_eq!(map["b"], Value::Int(99));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_vm_dict_spread_multiple() {
+    let val = vm_eval(r#"
+        let a = #{ "x": 1 };
+        let b = #{ "y": 2 };
+        #{ ...a, ...b, "z": 3 }
+    "#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map.len(), 3);
+        assert_eq!(map["x"], Value::Int(1));
+        assert_eq!(map["y"], Value::Int(2));
+        assert_eq!(map["z"], Value::Int(3));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_vm_dict_spread_non_dict_error() {
+    let err = vm_eval_err(r#"#{ ...[1, 2, 3] }"#);
+    assert!(err.contains("spread requires a dict"), "got: {}", err);
+}

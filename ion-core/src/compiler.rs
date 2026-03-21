@@ -22,6 +22,8 @@ pub struct Compiler {
     locals: Vec<Local>,
     /// Current scope depth.
     scope_depth: usize,
+    /// Whether locals must also be defined in env (needed when closures exist).
+    needs_env_locals: bool,
 }
 
 impl Compiler {
@@ -32,6 +34,93 @@ impl Compiler {
             in_tail_position: false,
             locals: Vec::new(),
             scope_depth: 0,
+            needs_env_locals: true, // conservative default for top-level
+        }
+    }
+
+    /// Check if a list of statements contains any closures (lambdas or inner fn decls).
+    fn stmts_have_closures(stmts: &[Stmt]) -> bool {
+        for stmt in stmts {
+            match &stmt.kind {
+                StmtKind::FnDecl { body: _, .. } => {
+                    // Inner fn decl itself is a closure; also check its body
+                    return true;
+                    // Note: we don't need to recurse — just the presence of a fn decl
+                    // in the current scope means outer locals might be captured
+                }
+                StmtKind::ExprStmt { expr, .. } => {
+                    if Self::expr_has_closures(expr) { return true; }
+                }
+                StmtKind::Let { value, .. } => {
+                    if Self::expr_has_closures(value) { return true; }
+                }
+                StmtKind::For { body, iter, .. } => {
+                    if Self::expr_has_closures(iter) { return true; }
+                    if Self::stmts_have_closures(body) { return true; }
+                }
+                StmtKind::While { cond, body } => {
+                    if Self::expr_has_closures(cond) { return true; }
+                    if Self::stmts_have_closures(body) { return true; }
+                }
+                StmtKind::Loop { body } => {
+                    if Self::stmts_have_closures(body) { return true; }
+                }
+                StmtKind::Return { value } => {
+                    if let Some(e) = value { if Self::expr_has_closures(e) { return true; } }
+                }
+                StmtKind::Assign { value, .. } => {
+                    if Self::expr_has_closures(value) { return true; }
+                }
+                StmtKind::WhileLet { expr, body, .. } => {
+                    if Self::expr_has_closures(expr) { return true; }
+                    if Self::stmts_have_closures(body) { return true; }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn expr_has_closures(expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Lambda { .. } => true,
+            ExprKind::If { cond, then_body, else_body } => {
+                Self::expr_has_closures(cond)
+                    || Self::stmts_have_closures(then_body)
+                    || else_body.as_ref().map_or(false, |b| Self::stmts_have_closures(b))
+            }
+            ExprKind::Block(stmts) => Self::stmts_have_closures(stmts),
+            ExprKind::Call { func, args } => {
+                Self::expr_has_closures(func)
+                    || args.iter().any(|a| Self::expr_has_closures(&a.value))
+            }
+            ExprKind::MethodCall { expr, args, .. } => {
+                Self::expr_has_closures(expr)
+                    || args.iter().any(|a| Self::expr_has_closures(&a.value))
+            }
+            ExprKind::BinOp { left, right, .. } => {
+                Self::expr_has_closures(left) || Self::expr_has_closures(right)
+            }
+            ExprKind::UnaryOp { expr, .. } => Self::expr_has_closures(expr),
+            ExprKind::PipeOp { left, right } => {
+                Self::expr_has_closures(left) || Self::expr_has_closures(right)
+            }
+            ExprKind::Match { expr, arms } => {
+                Self::expr_has_closures(expr)
+                    || arms.iter().any(|a| Self::expr_has_closures(&a.body))
+            }
+            ExprKind::List(items) => items.iter().any(|e| Self::expr_has_closures(e)),
+            ExprKind::Tuple(items) => items.iter().any(|e| Self::expr_has_closures(e)),
+            ExprKind::ListComp { expr, iter, cond, .. } => {
+                Self::expr_has_closures(expr) || Self::expr_has_closures(iter)
+                    || cond.as_ref().map_or(false, |c| Self::expr_has_closures(c))
+            }
+            ExprKind::IfLet { expr, then_body, else_body, .. } => {
+                Self::expr_has_closures(expr)
+                    || Self::stmts_have_closures(then_body)
+                    || else_body.as_ref().map_or(false, |b| Self::stmts_have_closures(b))
+            }
+            _ => false,
         }
     }
 
@@ -66,15 +155,17 @@ impl Compiler {
         }
     }
 
-    /// Define a new local variable: stores in both env (for closures) and slots (for fast access).
+    /// Define a new local variable. When closures exist, also stores in env.
     /// The value must be on top of the stack.
     fn emit_define_local(&mut self, name: &str, mutable: bool, line: usize) {
         self.add_local(name.to_string(), mutable);
-        // Dup value: one copy for env, one for slot
-        self.chunk.emit_op(Op::Dup, line);
-        let idx = self.chunk.add_constant(Value::Str(name.to_string()));
-        self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
-        self.chunk.emit(if mutable { 1 } else { 0 }, line);
+        if self.needs_env_locals {
+            // Dup value: one copy for env (closure capture), one for slot
+            self.chunk.emit_op(Op::Dup, line);
+            let idx = self.chunk.add_constant(Value::Str(name.to_string()));
+            self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
+            self.chunk.emit(if mutable { 1 } else { 0 }, line);
+        }
         self.chunk.emit_op_u8(Op::DefineLocalSlot, if mutable { 1 } else { 0 }, line);
     }
 
@@ -368,24 +459,34 @@ impl Compiler {
             }
 
             ExprKind::Dict(entries) => {
-                let mut count = 0u16;
-                for entry in entries {
-                    match entry {
-                        DictEntry::KeyValue(k, v) => {
-                            self.compile_expr(k)?;
-                            self.compile_expr(v)?;
-                            count += 1;
-                        }
-                        DictEntry::Spread(expr) => {
-                            // For spread, we push a sentinel + the dict
-                            // The VM will handle merging
-                            self.compile_expr(expr)?;
-                            // TODO: handle spread in VM
-                            count += 1;
+                let has_spread = entries.iter().any(|e| matches!(e, DictEntry::Spread(_)));
+                if has_spread {
+                    // Build empty dict, then insert/merge entries one by one
+                    self.chunk.emit_op_u16(Op::BuildDict, 0, line);
+                    for entry in entries {
+                        match entry {
+                            DictEntry::KeyValue(k, v) => {
+                                self.compile_expr(k)?;
+                                self.compile_expr(v)?;
+                                self.chunk.emit_op(Op::DictInsert, line);
+                            }
+                            DictEntry::Spread(expr) => {
+                                self.compile_expr(expr)?;
+                                self.chunk.emit_op(Op::DictMerge, line);
+                            }
                         }
                     }
+                } else {
+                    // Fast path: no spreads, use BuildDict directly
+                    let count = entries.len() as u16;
+                    for entry in entries {
+                        if let DictEntry::KeyValue(k, v) = entry {
+                            self.compile_expr(k)?;
+                            self.compile_expr(v)?;
+                        }
+                    }
+                    self.chunk.emit_op_u16(Op::BuildDict, count, line);
                 }
-                self.chunk.emit_op_u16(Op::BuildDict, count, line);
             }
 
             ExprKind::FieldAccess { expr: inner, field } => {
@@ -435,7 +536,8 @@ impl Compiler {
                 };
                 // Precompile lambda body
                 let mut fn_compiler = Compiler::new();
-                fn_compiler.in_tail_position = true; // lambda body is in tail position
+                fn_compiler.in_tail_position = true;
+                fn_compiler.needs_env_locals = Self::expr_has_closures(body);
                 // Pre-register parameters as locals
                 for p in params {
                     fn_compiler.add_local(p.clone(), false);
@@ -677,7 +779,9 @@ impl Compiler {
     fn compile_fn_decl(&mut self, name: &str, params: &[Param], body: &[Stmt], line: usize) -> Result<(), IonError> {
         // Compile function body into a separate chunk
         let mut fn_compiler = Compiler::new();
-        fn_compiler.in_tail_position = true; // function body is in tail position
+        fn_compiler.in_tail_position = true;
+        // Only dual-define locals if body contains closures
+        fn_compiler.needs_env_locals = Self::stmts_have_closures(body);
         // Pre-register parameters as locals (they'll be pushed by the VM)
         for param in params {
             fn_compiler.add_local(param.name.clone(), false);
@@ -892,7 +996,8 @@ impl Compiler {
 
     /// Compile a function body to a standalone chunk (for VM-native function execution).
     pub fn compile_fn_body(mut self, params: &[Param], body: &[Stmt], line: usize) -> Result<Chunk, IonError> {
-        self.in_tail_position = true; // function body is in tail position
+        self.in_tail_position = true;
+        self.needs_env_locals = Self::stmts_have_closures(body);
         // Pre-register parameters as locals
         for param in params {
             self.add_local(param.name.clone(), false);

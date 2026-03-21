@@ -740,6 +740,31 @@ impl Vm {
                         return Err(IonError::runtime("DictInsert: no dict on stack", line, col));
                     }
                 }
+                Op::DictMerge => {
+                    // Stack: [..., target_dict, source_dict]
+                    let source = self.pop(line, col)?;
+                    match source {
+                        Value::Dict(other) => {
+                            // Find the target dict on stack
+                            let mut found = false;
+                            for i in (0..self.stack.len()).rev() {
+                                if let Value::Dict(ref mut map) = self.stack[i] {
+                                    for (k, v) in other {
+                                        map.insert(k, v);
+                                    }
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if !found {
+                                return Err(IonError::runtime("DictMerge: no dict on stack", line, col));
+                            }
+                        }
+                        _ => return Err(IonError::type_err(
+                            ion_str!("spread requires a dict").to_string(), line, col
+                        )),
+                    }
+                }
 
                 // --- Slice ---
                 Op::Slice => {
