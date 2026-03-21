@@ -5,17 +5,99 @@ use crate::bytecode::{Chunk, FnProto, Op};
 use crate::error::IonError;
 use crate::value::{Value, FnChunkCache};
 
+/// A local variable tracked at compile time for stack-slot resolution.
+#[derive(Debug, Clone)]
+struct Local {
+    name: String,
+    depth: usize,
+}
+
 pub struct Compiler {
     chunk: Chunk,
     /// Precompiled function body chunks, keyed by fn_id.
     pub fn_chunks: FnChunkCache,
     /// Whether the next expression is in tail position (for TCO).
     in_tail_position: bool,
+    /// Compile-time local variable tracking for stack-slot resolution.
+    locals: Vec<Local>,
+    /// Current scope depth.
+    scope_depth: usize,
 }
 
 impl Compiler {
     pub fn new() -> Self {
-        Self { chunk: Chunk::new(), fn_chunks: FnChunkCache::new(), in_tail_position: false }
+        Self {
+            chunk: Chunk::new(),
+            fn_chunks: FnChunkCache::new(),
+            in_tail_position: false,
+            locals: Vec::new(),
+            scope_depth: 0,
+        }
+    }
+
+    /// Resolve a local variable name to its slot index (searching innermost first).
+    fn resolve_local(&self, name: &str) -> Option<usize> {
+        for (i, local) in self.locals.iter().enumerate().rev() {
+            if local.name == name {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Add a local variable to the compile-time tracking.
+    fn add_local(&mut self, name: String, _mutable: bool) {
+        self.locals.push(Local { name, depth: self.scope_depth });
+    }
+
+    /// Begin a new compile-time scope and emit PushScope.
+    fn begin_scope(&mut self, line: usize) {
+        self.scope_depth += 1;
+        self.chunk.emit_op(Op::PushScope, line);
+    }
+
+    /// Emit a variable read (GetLocalSlot or GetGlobal).
+    fn emit_get_var(&mut self, name: &str, line: usize) {
+        if let Some(slot) = self.resolve_local(name) {
+            self.chunk.emit_op_u16(Op::GetLocalSlot, slot as u16, line);
+        } else {
+            let idx = self.chunk.add_constant(Value::Str(name.to_string()));
+            self.chunk.emit_op_u16(Op::GetGlobal, idx, line);
+        }
+    }
+
+    /// Define a new local variable: stores in both env (for closures) and slots (for fast access).
+    /// The value must be on top of the stack.
+    fn emit_define_local(&mut self, name: &str, mutable: bool, line: usize) {
+        self.add_local(name.to_string(), mutable);
+        // Dup value: one copy for env, one for slot
+        self.chunk.emit_op(Op::Dup, line);
+        let idx = self.chunk.add_constant(Value::Str(name.to_string()));
+        self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
+        self.chunk.emit(if mutable { 1 } else { 0 }, line);
+        self.chunk.emit_op_u8(Op::DefineLocalSlot, if mutable { 1 } else { 0 }, line);
+    }
+
+    /// Emit a variable write (SetLocalSlot or SetGlobal).
+    fn emit_set_var(&mut self, name: &str, line: usize) {
+        if let Some(slot) = self.resolve_local(name) {
+            self.chunk.emit_op_u16(Op::SetLocalSlot, slot as u16, line);
+        } else {
+            let idx = self.chunk.add_constant(Value::Str(name.to_string()));
+            self.chunk.emit_op_u16(Op::SetGlobal, idx, line);
+        }
+    }
+
+    /// End the current compile-time scope, emit PopScope.
+    fn end_scope(&mut self, line: usize) {
+        while let Some(local) = self.locals.last() {
+            if local.depth < self.scope_depth {
+                break;
+            }
+            self.locals.pop();
+        }
+        self.scope_depth -= 1;
+        self.chunk.emit_op(Op::PopScope, line);
     }
 
     pub fn compile_program(mut self, program: &Program) -> Result<(Chunk, FnChunkCache), IonError> {
@@ -112,12 +194,12 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // pop true
 
                 // Pattern matched — bind and execute body
-                self.chunk.emit_op(Op::PushScope, line);
+                self.begin_scope(line);
                 self.compile_pattern_bind(pattern, line)?;
                 for stmt in body {
                     self.compile_stmt(stmt)?;
                 }
-                self.chunk.emit_op(Op::PopScope, line);
+                self.end_scope(line);
 
                 let offset = self.chunk.len() - loop_start + 3;
                 self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
@@ -172,8 +254,12 @@ impl Compiler {
             }
 
             ExprKind::Ident(name) => {
-                let idx = self.chunk.add_constant(Value::Str(name.clone()));
-                self.chunk.emit_op_u16(Op::GetLocal, idx, line);
+                if let Some(slot) = self.resolve_local(name) {
+                    self.chunk.emit_op_u16(Op::GetLocalSlot, slot as u16, line);
+                } else {
+                    let idx = self.chunk.add_constant(Value::Str(name.clone()));
+                    self.chunk.emit_op_u16(Op::GetGlobal, idx, line);
+                }
             }
 
             ExprKind::BinOp { left, op, right } => {
@@ -231,19 +317,19 @@ impl Compiler {
                 self.compile_expr(cond)?;
                 let then_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
                 self.chunk.emit_op(Op::Pop, line); // pop condition
-                self.chunk.emit_op(Op::PushScope, line);
+                self.begin_scope(line);
                 // Both branches inherit tail position
                 self.in_tail_position = was_tail;
                 self.compile_block_expr(then_body, line)?;
-                self.chunk.emit_op(Op::PopScope, line);
+                self.end_scope(line);
                 let else_jump = self.chunk.emit_jump(Op::Jump, line);
                 self.chunk.patch_jump(then_jump);
                 self.chunk.emit_op(Op::Pop, line); // pop condition
                 if let Some(else_stmts) = else_body {
-                    self.chunk.emit_op(Op::PushScope, line);
+                    self.begin_scope(line);
                     self.in_tail_position = was_tail;
                     self.compile_block_expr(else_stmts, line)?;
-                    self.chunk.emit_op(Op::PopScope, line);
+                    self.end_scope(line);
                 } else {
                     self.chunk.emit_op(Op::Unit, line);
                 }
@@ -251,10 +337,10 @@ impl Compiler {
             }
 
             ExprKind::Block(stmts) => {
-                self.chunk.emit_op(Op::PushScope, line);
+                self.begin_scope(line);
                 self.in_tail_position = was_tail;
                 self.compile_block_expr(stmts, line)?;
-                self.chunk.emit_op(Op::PopScope, line);
+                self.end_scope(line);
             }
 
             ExprKind::Call { func, args } => {
@@ -350,6 +436,10 @@ impl Compiler {
                 // Precompile lambda body
                 let mut fn_compiler = Compiler::new();
                 fn_compiler.in_tail_position = true; // lambda body is in tail position
+                // Pre-register parameters as locals
+                for p in params {
+                    fn_compiler.add_local(p.clone(), false);
+                }
                 fn_compiler.compile_expr(body)?;
                 fn_compiler.chunk.emit_op(Op::Return, line);
                 let compiled_chunk = fn_compiler.chunk;
@@ -446,11 +536,11 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // pop true
 
                 // Pattern matched — bind variables in new scope
-                self.chunk.emit_op(Op::PushScope, line);
+                self.begin_scope(line);
                 self.compile_pattern_bind(pattern, line)?;
                 self.in_tail_position = was_tail;
                 self.compile_block_expr(then_body, line)?;
-                self.chunk.emit_op(Op::PopScope, line);
+                self.end_scope(line);
 
                 let end_jump = self.chunk.emit_jump(Op::Jump, line);
 
@@ -459,10 +549,10 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // pop the duped value
 
                 if let Some(else_stmts) = else_body {
-                    self.chunk.emit_op(Op::PushScope, line);
+                    self.begin_scope(line);
                     self.in_tail_position = was_tail;
                     self.compile_block_expr(else_stmts, line)?;
-                    self.chunk.emit_op(Op::PopScope, line);
+                    self.end_scope(line);
                 } else {
                     self.chunk.emit_op(Op::Unit, line);
                 }
@@ -544,9 +634,7 @@ impl Compiler {
     fn compile_let_pattern(&mut self, pattern: &Pattern, mutable: bool, line: usize) -> Result<(), IonError> {
         match pattern {
             Pattern::Ident(name) => {
-                let idx = self.chunk.add_constant(Value::Str(name.clone()));
-                self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
-                self.chunk.emit(if mutable { 1 } else { 0 }, line);
+                self.emit_define_local(name, mutable, line);
             }
             Pattern::Tuple(pats) => {
                 // Value is on stack. Destructure it.
@@ -590,6 +678,10 @@ impl Compiler {
         // Compile function body into a separate chunk
         let mut fn_compiler = Compiler::new();
         fn_compiler.in_tail_position = true; // function body is in tail position
+        // Pre-register parameters as locals (they'll be pushed by the VM)
+        for param in params {
+            fn_compiler.add_local(param.name.clone(), false);
+        }
         fn_compiler.compile_block_expr(body, line)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
         let compiled_chunk = fn_compiler.chunk;
@@ -609,9 +701,7 @@ impl Compiler {
 
         // Define the function in the current scope
         self.chunk.emit_constant(fn_value, line);
-        let name_idx = self.chunk.add_constant(Value::Str(name.to_string()));
-        self.chunk.emit_op_u16(Op::DefineLocal, name_idx, line);
-        self.chunk.emit(0, line); // immutable
+        self.emit_define_local(name, false, line);
         Ok(())
     }
 
@@ -641,14 +731,14 @@ impl Compiler {
         let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
 
         // Bind pattern
-        self.chunk.emit_op(Op::PushScope, line);
+        self.begin_scope(line);
         self.compile_let_pattern(pattern, false, line)?;
 
         // Execute body
         for stmt in body {
             self.compile_stmt(stmt)?;
         }
-        self.chunk.emit_op(Op::PopScope, line);
+        self.end_scope(line);
 
         // Push placeholder for IterNext to pop on next iteration
         self.chunk.emit_op(Op::Unit, line);
@@ -670,11 +760,11 @@ impl Compiler {
         let exit_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
         self.chunk.emit_op(Op::Pop, line); // pop condition
 
-        self.chunk.emit_op(Op::PushScope, line);
+        self.begin_scope(line);
         for stmt in body {
             self.compile_stmt(stmt)?;
         }
-        self.chunk.emit_op(Op::PopScope, line);
+        self.end_scope(line);
 
         let offset = self.chunk.len() - loop_start + 3;
         self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
@@ -687,11 +777,11 @@ impl Compiler {
     fn compile_loop(&mut self, body: &[Stmt], line: usize) -> Result<(), IonError> {
         let loop_start = self.chunk.len();
 
-        self.chunk.emit_op(Op::PushScope, line);
+        self.begin_scope(line);
         for stmt in body {
             self.compile_stmt(stmt)?;
         }
-        self.chunk.emit_op(Op::PopScope, line);
+        self.end_scope(line);
 
         let offset = self.chunk.len() - loop_start + 3;
         self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
@@ -707,8 +797,7 @@ impl Compiler {
                     }
                     AssignOp::PlusEq | AssignOp::MinusEq |
                     AssignOp::StarEq | AssignOp::SlashEq => {
-                        let idx = self.chunk.add_constant(Value::Str(name.clone()));
-                        self.chunk.emit_op_u16(Op::GetLocal, idx, line);
+                        self.emit_get_var(name, line);
                         self.compile_expr(value)?;
                         match op {
                             AssignOp::PlusEq => self.chunk.emit_op(Op::Add, line),
@@ -719,8 +808,7 @@ impl Compiler {
                         }
                     }
                 }
-                let idx = self.chunk.add_constant(Value::Str(name.clone()));
-                self.chunk.emit_op_u16(Op::SetLocal, idx, line);
+                self.emit_set_var(name, line);
             }
             AssignTarget::Index(obj_expr, index_expr) => {
                 // For index assignment, we need to:
@@ -761,8 +849,7 @@ impl Compiler {
                 // Stack: [..., obj, index, new_value]
                 self.chunk.emit_op(Op::SetIndex, line);
                 // SetIndex returns the modified container — write it back
-                let name_idx = self.chunk.add_constant(Value::Str(var_name));
-                self.chunk.emit_op_u16(Op::SetLocal, name_idx, line);
+                self.emit_set_var(&var_name, line);
             }
             AssignTarget::Field(obj_expr, field) => {
                 let var_name = match &obj_expr.kind {
@@ -797,16 +884,19 @@ impl Compiler {
                 let field_idx = self.chunk.add_constant(Value::Str(field.clone()));
                 self.chunk.emit_op_u16(Op::SetField, field_idx, line);
                 // SetField returns the modified container — write it back
-                let name_idx = self.chunk.add_constant(Value::Str(var_name));
-                self.chunk.emit_op_u16(Op::SetLocal, name_idx, line);
+                self.emit_set_var(&var_name, line);
             }
         }
         Ok(())
     }
 
     /// Compile a function body to a standalone chunk (for VM-native function execution).
-    pub fn compile_fn_body(mut self, body: &[Stmt], line: usize) -> Result<Chunk, IonError> {
+    pub fn compile_fn_body(mut self, params: &[Param], body: &[Stmt], line: usize) -> Result<Chunk, IonError> {
         self.in_tail_position = true; // function body is in tail position
+        // Pre-register parameters as locals
+        for param in params {
+            self.add_local(param.name.clone(), false);
+        }
         self.compile_block_expr(body, line)?;
         self.chunk.emit_op(Op::Return, line);
         Ok(self.chunk)
@@ -815,20 +905,18 @@ impl Compiler {
     fn compile_match(&mut self, subject: &Expr, arms: &[MatchArm], line: usize) -> Result<(), IonError> {
         let was_tail = self.in_tail_position;
         // Store subject in a hidden temp variable (not in tail position)
-        self.chunk.emit_op(Op::PushScope, line);
+        self.begin_scope(line);
         self.in_tail_position = false;
         self.compile_expr(subject)?;
         let tmp_name = "__match_subject__";
-        let tmp_idx = self.chunk.add_constant(Value::Str(tmp_name.to_string()));
-        self.chunk.emit_op_u16(Op::DefineLocal, tmp_idx, line);
-        self.chunk.emit(0, line); // immutable
+        self.emit_define_local(tmp_name, false, line);
+        let subject_slot = self.locals.len() - 1;
 
         let mut end_jumps = Vec::new();
 
         for arm in arms {
             // Load subject for pattern test
-            let load_idx = self.chunk.add_constant(Value::Str(tmp_name.to_string()));
-            self.chunk.emit_op_u16(Op::GetLocal, load_idx, line);
+            self.chunk.emit_op_u16(Op::GetLocalSlot, subject_slot as u16, line);
 
             // Emit pattern test — consumes subject copy, pushes bool
             self.compile_pattern_test(&arm.pattern, line)?;
@@ -848,15 +936,14 @@ impl Compiler {
             self.chunk.emit_op(Op::Pop, line); // pop true
 
             // Bind pattern variables in new scope
-            self.chunk.emit_op(Op::PushScope, line);
-            let bind_idx = self.chunk.add_constant(Value::Str(tmp_name.to_string()));
-            self.chunk.emit_op_u16(Op::GetLocal, bind_idx, line);
+            self.begin_scope(line);
+            self.chunk.emit_op_u16(Op::GetLocalSlot, subject_slot as u16, line);
             self.compile_pattern_bind(&arm.pattern, line)?;
 
             // Compile arm body — inherits tail position
             self.in_tail_position = was_tail;
             self.compile_expr(&arm.body)?;
-            self.chunk.emit_op(Op::PopScope, line);
+            self.end_scope(line);
 
             end_jumps.push(self.chunk.emit_jump(Op::Jump, line));
 
@@ -871,7 +958,7 @@ impl Compiler {
             self.chunk.patch_jump(j);
         }
 
-        self.chunk.emit_op(Op::PopScope, line); // pop the match subject scope
+        self.end_scope(line); // pop the match subject scope
         Ok(())
     }
 
@@ -1023,9 +1110,7 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line);
             }
             Pattern::Ident(name) => {
-                let idx = self.chunk.add_constant(Value::Str(name.clone()));
-                self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
-                self.chunk.emit(0, line); // immutable
+                self.emit_define_local(name, false, line);
             }
             Pattern::Int(_) | Pattern::Float(_) | Pattern::Bool(_) |
             Pattern::Str(_) | Pattern::Bytes(_) | Pattern::None => {
@@ -1094,7 +1179,7 @@ impl Compiler {
         let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
 
         // Bind pattern in scope
-        self.chunk.emit_op(Op::PushScope, line);
+        self.begin_scope(line);
         self.compile_let_pattern(pattern, false, line)?;
 
         // If there's a condition, check it
@@ -1117,7 +1202,7 @@ impl Compiler {
             self.chunk.emit_op(Op::ListAppend, line);
         }
 
-        self.chunk.emit_op(Op::PopScope, line);
+        self.end_scope(line);
 
         // Push placeholder for IterNext to pop on next iteration
         self.chunk.emit_op(Op::Unit, line);
@@ -1142,7 +1227,7 @@ impl Compiler {
         let loop_start = self.chunk.len();
         let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
 
-        self.chunk.emit_op(Op::PushScope, line);
+        self.begin_scope(line);
         self.compile_let_pattern(pattern, false, line)?;
 
         if let Some(cond_expr) = cond {
@@ -1164,7 +1249,7 @@ impl Compiler {
             self.chunk.emit_op(Op::DictInsert, line);
         }
 
-        self.chunk.emit_op(Op::PopScope, line);
+        self.end_scope(line);
 
         // Push placeholder for IterNext to pop on next iteration
         self.chunk.emit_op(Op::Unit, line);

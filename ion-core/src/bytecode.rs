@@ -144,6 +144,14 @@ pub enum Op {
     /// Slice access: pop end (or sentinel), pop start (or sentinel), pop object, push slice.
     Slice,          // u8: flags (bit 0 = has_start, bit 1 = has_end, bit 2 = inclusive)
 
+    // --- Stack-slot locals (fast path) ---
+    /// Define a local in the slot array.
+    DefineLocalSlot,  // u8 mutable flag
+    /// Get a local by slot index (relative to current frame base).
+    GetLocalSlot,     // u16 slot index
+    /// Set a local by slot index.
+    SetLocalSlot,     // u16 slot index
+
     /// Print (for testing/debugging)
     Print,          // u8: 0 = print, 1 = println
 }

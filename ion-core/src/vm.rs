@@ -7,11 +7,18 @@ use crate::env::Env;
 use crate::error::IonError;
 use crate::value::Value;
 
+/// A local variable stored in a stack slot.
+#[derive(Debug, Clone)]
+struct LocalSlot {
+    value: Value,
+    mutable: bool,
+}
+
 /// The Ion virtual machine.
 pub struct Vm {
     /// Value stack.
     stack: Vec<Value>,
-    /// Environment for variable bindings (reuses existing Env).
+    /// Environment for variable bindings (globals and fallback).
     env: Env,
     /// Instruction pointer.
     ip: usize,
@@ -21,6 +28,12 @@ pub struct Vm {
     fn_cache: std::collections::HashMap<u64, crate::bytecode::Chunk>,
     /// Pending tail call: (func, args) to be executed by the trampoline.
     pending_tail_call: Option<(Value, Vec<Value>)>,
+    /// Stack-slot local variables (fast indexed access).
+    locals: Vec<LocalSlot>,
+    /// Scope boundaries in the locals array (each entry is the locals.len() at scope start).
+    local_frames: Vec<usize>,
+    /// Base offset for the current function's locals (slot indices are relative to this).
+    locals_base: usize,
 }
 
 impl Vm {
@@ -32,6 +45,9 @@ impl Vm {
             iterators: Vec::new(),
             fn_cache: std::collections::HashMap::new(),
             pending_tail_call: None,
+            locals: Vec::with_capacity(64),
+            local_frames: Vec::with_capacity(16),
+            locals_base: 0,
         }
     }
 
@@ -44,6 +60,9 @@ impl Vm {
             iterators: Vec::new(),
             fn_cache: std::collections::HashMap::new(),
             pending_tail_call: None,
+            locals: Vec::with_capacity(64),
+            local_frames: Vec::with_capacity(16),
+            locals_base: 0,
         }
     }
 
@@ -288,6 +307,32 @@ impl Vm {
                     self.stack.push(val);
                 }
 
+                // --- Stack-slot locals (fast path) ---
+                Op::DefineLocalSlot => {
+                    let mutable = chunk.read_u8(self.ip) != 0;
+                    self.ip += 1;
+                    let val = self.pop(line, col)?;
+                    self.locals.push(LocalSlot { value: val, mutable });
+                }
+                Op::GetLocalSlot => {
+                    let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    let val = self.locals[slot].value.clone();
+                    self.stack.push(val);
+                }
+                Op::SetLocalSlot => {
+                    let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    let val = self.pop(line, col)?;
+                    if !self.locals[slot].mutable {
+                        return Err(IonError::runtime(
+                            "cannot assign to immutable variable".to_string(), line, col,
+                        ));
+                    }
+                    self.locals[slot].value = val.clone();
+                    self.stack.push(val); // assignment is an expression
+                }
+
                 // --- Control flow ---
                 Op::Jump => {
                     let offset = chunk.read_u16(self.ip) as usize;
@@ -470,9 +515,13 @@ impl Vm {
                 // --- Scope ---
                 Op::PushScope => {
                     self.env.push_scope();
+                    self.local_frames.push(self.locals.len());
                 }
                 Op::PopScope => {
                     self.env.pop_scope();
+                    if let Some(base) = self.local_frames.pop() {
+                        self.locals.truncate(base);
+                    }
                 }
 
                 // --- String ---
@@ -1519,6 +1568,13 @@ impl Vm {
                         self.env.define(name.clone(), val.clone(), false);
                     }
 
+                    // Save locals state for this function call
+                    let saved_locals_base = self.locals_base;
+                    let saved_locals_len = self.locals.len();
+                    let saved_frames_len = self.local_frames.len();
+                    self.locals_base = self.locals.len(); // new base for function's locals
+
+                    // Push params as slot-based locals (slots 0..N relative to base)
                     for (i, param) in ion_fn.params.iter().enumerate() {
                         let val = if i < args.len() {
                             args[i].clone()
@@ -1528,7 +1584,7 @@ impl Vm {
                         } else {
                             Value::Unit
                         };
-                        self.env.define(param.name.clone(), val, false);
+                        self.locals.push(LocalSlot { value: val, mutable: false });
                     }
 
                     let fn_id = ion_fn.fn_id;
@@ -1536,7 +1592,7 @@ impl Vm {
                         Some(chunk.clone())
                     } else {
                         let compiler = crate::compiler::Compiler::new();
-                        compiler.compile_fn_body(&ion_fn.body, line).ok()
+                        compiler.compile_fn_body(&ion_fn.params, &ion_fn.body, line).ok()
                     };
                     if let Some(chunk) = chunk_opt {
                         self.fn_cache.entry(fn_id).or_insert_with(|| chunk.clone());
@@ -1546,6 +1602,10 @@ impl Vm {
                         let result = self.run_chunk(&chunk);
                         self.ip = saved_ip;
                         self.iterators = saved_iters;
+                        // Restore locals
+                        self.locals.truncate(saved_locals_len);
+                        self.local_frames.truncate(saved_frames_len);
+                        self.locals_base = saved_locals_base;
                         self.env.pop_scope();
 
                         // Check for pending tail call (trampoline)
@@ -1560,6 +1620,10 @@ impl Vm {
                             Err(e) => return Err(e),
                         }
                     } else {
+                        // Restore locals before tree-walk fallback
+                        self.locals.truncate(saved_locals_len);
+                        self.local_frames.truncate(saved_frames_len);
+                        self.locals_base = saved_locals_base;
                         let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
                         let result = interp.eval_block(&ion_fn.body);
                         self.env = interp.take_env();
