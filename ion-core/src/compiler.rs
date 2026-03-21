@@ -89,6 +89,7 @@ impl Compiler {
             }
             StmtKind::Assign { target, op, value } => {
                 self.compile_assign(target, op, value, line)?;
+                self.chunk.emit_op(Op::Pop, line); // discard assignment result
             }
             StmtKind::WhileLet { .. } => {
                 return Err(IonError::runtime(
@@ -300,20 +301,22 @@ impl Compiler {
             }
 
             ExprKind::Lambda { params, body } => {
-                let fn_proto = self.compile_lambda(params, body, line)?;
-                let idx = self.chunk.add_constant(Value::Str(fn_proto.name.clone()));
-                // Store function prototype as a constant
-                let proto_idx = self.chunk.add_constant(Value::Fn(crate::value::IonFn {
-                    name: fn_proto.name,
-                    params: fn_proto.param_names.iter().map(|n| crate::ast::Param {
+                // Build lambda body as a single expression statement for tree-walk fallback
+                let body_stmt = Stmt {
+                    kind: StmtKind::ExprStmt { expr: *body.clone(), has_semi: false },
+                    span: expr.span,
+                };
+                let fn_value = Value::Fn(crate::value::IonFn {
+                    name: "<lambda>".to_string(),
+                    params: params.iter().map(|n| crate::ast::Param {
                         name: n.clone(),
                         default: None,
                     }).collect(),
-                    body: vec![],  // VM uses bytecode, not AST body
+                    body: vec![body_stmt],
                     captures: std::collections::HashMap::new(),
-                }));
-                self.chunk.emit_op_u16(Op::Constant, proto_idx, line);
-                let _ = idx; // name index unused for now
+                });
+                let fn_idx = self.chunk.add_constant(fn_value);
+                self.chunk.emit_op_u16(Op::Closure, fn_idx, line);
             }
 
             ExprKind::FStr(parts) => {
@@ -370,10 +373,16 @@ impl Compiler {
                 self.compile_match(subject, arms, line)?;
             }
 
+            ExprKind::ListComp { expr: item_expr, pattern, iter, cond } => {
+                self.compile_list_comp(item_expr, pattern, iter, cond.as_deref(), line)?;
+            }
+
+            ExprKind::DictComp { key, value, pattern, iter, cond } => {
+                self.compile_dict_comp(key, value, pattern, iter, cond.as_deref(), line)?;
+            }
+
             // Features that fall back to tree-walk for now
             ExprKind::IfLet { .. } |
-            ExprKind::ListComp { .. } |
-            ExprKind::DictComp { .. } |
             ExprKind::StructConstruct { .. } |
             ExprKind::EnumVariant { .. } |
             ExprKind::EnumVariantCall { .. } => {
@@ -483,11 +492,15 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_lambda(&mut self, params: &[String], _body: &Expr, _line: usize) -> Result<FnProto, IonError> {
+    #[allow(dead_code)]
+    fn compile_lambda(&mut self, params: &[String], body: &Expr, line: usize) -> Result<FnProto, IonError> {
+        let mut fn_compiler = Compiler::new();
+        fn_compiler.compile_expr(body)?;
+        fn_compiler.chunk.emit_op(Op::Return, line);
         Ok(FnProto {
             name: "<lambda>".to_string(),
             arity: params.len(),
-            chunk: Chunk::new(),
+            chunk: fn_compiler.chunk,
             param_names: params.to_vec(),
             has_defaults: vec![false; params.len()],
         })
@@ -514,12 +527,15 @@ impl Compiler {
         }
         self.chunk.emit_op(Op::PopScope, line);
 
+        // Push placeholder for IterNext to pop on next iteration
+        self.chunk.emit_op(Op::Unit, line);
+
         // Loop back
         let offset = self.chunk.len() - loop_start + 3;
         self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
 
         self.chunk.patch_jump(exit_jump);
-        // Pop the iterator
+        // Pop the iterator placeholder
         self.chunk.emit_op(Op::Pop, line);
         Ok(())
     }
@@ -600,11 +616,317 @@ impl Compiler {
         Ok(self.chunk)
     }
 
-    fn compile_match(&mut self, _subject: &Expr, _arms: &[MatchArm], line: usize) -> Result<(), IonError> {
-        // For now, fall back to unsupported
-        Err(IonError::runtime(
-            "match not yet supported in bytecode VM".to_string(),
-            line, 0,
-        ))
+    fn compile_match(&mut self, subject: &Expr, arms: &[MatchArm], line: usize) -> Result<(), IonError> {
+        // Store subject in a hidden temp variable
+        self.chunk.emit_op(Op::PushScope, line);
+        self.compile_expr(subject)?;
+        let tmp_name = "__match_subject__";
+        let tmp_idx = self.chunk.add_constant(Value::Str(tmp_name.to_string()));
+        self.chunk.emit_op_u16(Op::DefineLocal, tmp_idx, line);
+        self.chunk.emit(0, line); // immutable
+
+        let mut end_jumps = Vec::new();
+
+        for arm in arms {
+            // Load subject for pattern test
+            let load_idx = self.chunk.add_constant(Value::Str(tmp_name.to_string()));
+            self.chunk.emit_op_u16(Op::GetLocal, load_idx, line);
+
+            // Emit pattern test — consumes subject copy, pushes bool
+            self.compile_pattern_test(&arm.pattern, line)?;
+
+            // If guard exists, test it too (only if pattern matched)
+            if let Some(guard) = &arm.guard {
+                let skip_guard = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+                self.compile_expr(guard)?;
+                let after_guard = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(skip_guard);
+                // false stays on stack — jump lands here
+                self.chunk.patch_jump(after_guard);
+            }
+
+            let next_arm = self.chunk.emit_jump(Op::JumpIfFalse, line);
+            self.chunk.emit_op(Op::Pop, line); // pop true
+
+            // Bind pattern variables in new scope
+            self.chunk.emit_op(Op::PushScope, line);
+            let bind_idx = self.chunk.add_constant(Value::Str(tmp_name.to_string()));
+            self.chunk.emit_op_u16(Op::GetLocal, bind_idx, line);
+            self.compile_pattern_bind(&arm.pattern, line)?;
+
+            // Compile arm body
+            self.compile_expr(&arm.body)?;
+            self.chunk.emit_op(Op::PopScope, line);
+
+            end_jumps.push(self.chunk.emit_jump(Op::Jump, line));
+
+            self.chunk.patch_jump(next_arm);
+            self.chunk.emit_op(Op::Pop, line); // pop false
+        }
+
+        // No arm matched — push Unit
+        self.chunk.emit_op(Op::Unit, line);
+
+        for j in end_jumps {
+            self.chunk.patch_jump(j);
+        }
+
+        self.chunk.emit_op(Op::PopScope, line); // pop the match subject scope
+        Ok(())
+    }
+
+    /// Compile a pattern test: consumes the value on stack, pushes bool.
+    fn compile_pattern_test(&mut self, pattern: &Pattern, line: usize) -> Result<(), IonError> {
+        match pattern {
+            Pattern::Wildcard | Pattern::Ident(_) => {
+                self.chunk.emit_op(Op::Pop, line); // consume value
+                self.chunk.emit_op(Op::True, line); // always matches
+            }
+            Pattern::Int(n) => {
+                self.chunk.emit_constant(Value::Int(*n), line);
+                self.chunk.emit_op(Op::Eq, line);
+            }
+            Pattern::Float(n) => {
+                self.chunk.emit_constant(Value::Float(*n), line);
+                self.chunk.emit_op(Op::Eq, line);
+            }
+            Pattern::Bool(b) => {
+                self.chunk.emit_op(if *b { Op::True } else { Op::False }, line);
+                self.chunk.emit_op(Op::Eq, line);
+            }
+            Pattern::Str(s) => {
+                self.chunk.emit_constant(Value::Str(s.clone()), line);
+                self.chunk.emit_op(Op::Eq, line);
+            }
+            Pattern::Bytes(b) => {
+                self.chunk.emit_constant(Value::Bytes(b.clone()), line);
+                self.chunk.emit_op(Op::Eq, line);
+            }
+            Pattern::None => {
+                // Check if value is Option(None)
+                self.chunk.emit_op(Op::None, line);
+                self.chunk.emit_op(Op::Eq, line);
+            }
+            Pattern::Some(inner) => {
+                // Test: is it Some(x)? Use MatchArm opcode for complex patterns
+                // For now, test structurally: use a simpler encoding
+                // We'll use the MatchBegin/MatchArm opcodes repurposed:
+                // Actually, let's just emit inline checks.
+                // Stack has value. We need to check if it's Some(_) and test inner.
+                self.chunk.emit_op_u8(Op::MatchBegin, 1, line); // 1 = test Some
+                let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+                // Now unwrap the Some and test inner pattern
+                self.chunk.emit_op_u8(Op::MatchArm, 1, line); // 1 = unwrap Some
+                self.compile_pattern_test(inner, line)?;
+                let end = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(fail_jump);
+                // false stays
+                self.chunk.patch_jump(end);
+            }
+            Pattern::Ok(inner) => {
+                self.chunk.emit_op_u8(Op::MatchBegin, 2, line); // 2 = test Ok
+                let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line);
+                self.chunk.emit_op_u8(Op::MatchArm, 2, line); // 2 = unwrap Ok
+                self.compile_pattern_test(inner, line)?;
+                let end = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(fail_jump);
+                self.chunk.patch_jump(end);
+            }
+            Pattern::Err(inner) => {
+                self.chunk.emit_op_u8(Op::MatchBegin, 3, line); // 3 = test Err
+                let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line);
+                self.chunk.emit_op_u8(Op::MatchArm, 3, line); // 3 = unwrap Err
+                self.compile_pattern_test(inner, line)?;
+                let end = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(fail_jump);
+                self.chunk.patch_jump(end);
+            }
+            Pattern::Tuple(pats) => {
+                // Check: is it a tuple of the right length, and do all sub-patterns match?
+                self.chunk.emit_op_u8(Op::MatchBegin, 4, line); // 4 = test Tuple
+                self.chunk.emit(pats.len() as u8, line); // expected length
+                let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+                // Test each element
+                for (i, pat) in pats.iter().enumerate() {
+                    // Load the subject again and index into it
+                    self.chunk.emit_op_u8(Op::MatchArm, 4, line); // 4 = get tuple element
+                    self.chunk.emit(i as u8, line);
+                    self.compile_pattern_test(pat, line)?;
+                    let sub_fail = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                    self.chunk.emit_op(Op::Pop, line); // pop true, continue
+                    if i == pats.len() - 1 {
+                        // All matched
+                        self.chunk.emit_op(Op::True, line);
+                    }
+                    // Patch sub_fail to push false and skip remaining
+                    let sub_end = self.chunk.emit_jump(Op::Jump, line);
+                    self.chunk.patch_jump(sub_fail);
+                    // false stays on stack
+                    self.chunk.patch_jump(sub_end);
+                }
+                if pats.is_empty() {
+                    self.chunk.emit_op(Op::True, line);
+                }
+                let end = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(fail_jump);
+                // false stays
+                self.chunk.patch_jump(end);
+            }
+            _ => {
+                // For complex patterns (List, EnumVariant, Struct), fall back
+                return Err(IonError::runtime(
+                    "complex pattern not yet supported in bytecode VM match".to_string(),
+                    line, 0,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Bind pattern variables: consumes value on stack.
+    fn compile_pattern_bind(&mut self, pattern: &Pattern, line: usize) -> Result<(), IonError> {
+        match pattern {
+            Pattern::Wildcard => {
+                self.chunk.emit_op(Op::Pop, line);
+            }
+            Pattern::Ident(name) => {
+                let idx = self.chunk.add_constant(Value::Str(name.clone()));
+                self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
+                self.chunk.emit(0, line); // immutable
+            }
+            Pattern::Int(_) | Pattern::Float(_) | Pattern::Bool(_) |
+            Pattern::Str(_) | Pattern::Bytes(_) | Pattern::None => {
+                self.chunk.emit_op(Op::Pop, line); // no bindings for literals
+            }
+            Pattern::Some(inner) => {
+                // Unwrap the Some value
+                self.chunk.emit_op_u8(Op::MatchArm, 1, line); // unwrap Some
+                self.compile_pattern_bind(inner, line)?;
+            }
+            Pattern::Ok(inner) => {
+                self.chunk.emit_op_u8(Op::MatchArm, 2, line); // unwrap Ok
+                self.compile_pattern_bind(inner, line)?;
+            }
+            Pattern::Err(inner) => {
+                self.chunk.emit_op_u8(Op::MatchArm, 3, line); // unwrap Err
+                self.compile_pattern_bind(inner, line)?;
+            }
+            Pattern::Tuple(pats) => {
+                for (i, pat) in pats.iter().enumerate() {
+                    self.chunk.emit_op(Op::Dup, line); // dup tuple
+                    self.chunk.emit_constant(Value::Int(i as i64), line);
+                    self.chunk.emit_op(Op::GetIndex, line);
+                    self.compile_pattern_bind(pat, line)?;
+                }
+                self.chunk.emit_op(Op::Pop, line); // pop tuple
+            }
+            _ => {
+                return Err(IonError::runtime(
+                    "complex pattern binding not yet supported in bytecode VM".to_string(),
+                    line, 0,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn compile_list_comp(&mut self, item_expr: &Expr, pattern: &Pattern, iter: &Expr, cond: Option<&Expr>, line: usize) -> Result<(), IonError> {
+        // Build an empty list, then iterate and append
+        self.chunk.emit_op_u16(Op::BuildList, 0, line); // empty list on stack
+
+        // Evaluate iterator
+        self.compile_expr(iter)?;
+        self.chunk.emit_op(Op::IterInit, line);
+
+        let loop_start = self.chunk.len();
+        let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
+
+        // Bind pattern in scope
+        self.chunk.emit_op(Op::PushScope, line);
+        self.compile_let_pattern(pattern, false, line)?;
+
+        // If there's a condition, check it
+        if let Some(cond_expr) = cond {
+            self.compile_expr(cond_expr)?;
+            let skip_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+            self.chunk.emit_op(Op::Pop, line); // pop true
+
+            // Compile item expression and append
+            self.compile_expr(item_expr)?;
+            self.chunk.emit_op(Op::ListAppend, line);
+
+            let after = self.chunk.emit_jump(Op::Jump, line);
+            self.chunk.patch_jump(skip_jump);
+            self.chunk.emit_op(Op::Pop, line); // pop false
+            self.chunk.patch_jump(after);
+        } else {
+            // Compile item expression and append
+            self.compile_expr(item_expr)?;
+            self.chunk.emit_op(Op::ListAppend, line);
+        }
+
+        self.chunk.emit_op(Op::PopScope, line);
+
+        // Push placeholder for IterNext to pop on next iteration
+        self.chunk.emit_op(Op::Unit, line);
+
+        // Loop back
+        let offset = self.chunk.len() - loop_start + 3;
+        self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
+
+        self.chunk.patch_jump(exit_jump);
+        self.chunk.emit_op(Op::Pop, line); // pop exhausted iterator placeholder
+        // List is still on stack
+        Ok(())
+    }
+
+    fn compile_dict_comp(&mut self, key_expr: &Expr, value_expr: &Expr, pattern: &Pattern, iter: &Expr, cond: Option<&Expr>, line: usize) -> Result<(), IonError> {
+        // Build an empty dict, then iterate and insert
+        self.chunk.emit_op_u16(Op::BuildDict, 0, line);
+
+        self.compile_expr(iter)?;
+        self.chunk.emit_op(Op::IterInit, line);
+
+        let loop_start = self.chunk.len();
+        let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
+
+        self.chunk.emit_op(Op::PushScope, line);
+        self.compile_let_pattern(pattern, false, line)?;
+
+        if let Some(cond_expr) = cond {
+            self.compile_expr(cond_expr)?;
+            let skip_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+            self.chunk.emit_op(Op::Pop, line);
+
+            self.compile_expr(key_expr)?;
+            self.compile_expr(value_expr)?;
+            self.chunk.emit_op(Op::DictInsert, line);
+
+            let after = self.chunk.emit_jump(Op::Jump, line);
+            self.chunk.patch_jump(skip_jump);
+            self.chunk.emit_op(Op::Pop, line);
+            self.chunk.patch_jump(after);
+        } else {
+            self.compile_expr(key_expr)?;
+            self.compile_expr(value_expr)?;
+            self.chunk.emit_op(Op::DictInsert, line);
+        }
+
+        self.chunk.emit_op(Op::PopScope, line);
+
+        // Push placeholder for IterNext to pop on next iteration
+        self.chunk.emit_op(Op::Unit, line);
+
+        let offset = self.chunk.len() - loop_start + 3;
+        self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
+
+        self.chunk.patch_jump(exit_jump);
+        self.chunk.emit_op(Op::Pop, line);
+        Ok(())
     }
 }

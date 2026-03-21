@@ -446,8 +446,74 @@ impl Vm {
                 }
 
                 // --- Pattern matching ---
-                Op::MatchBegin | Op::MatchArm | Op::MatchEnd => {
-                    return Err(IonError::runtime("match not yet supported in bytecode VM", line, 0));
+                Op::MatchBegin => {
+                    // u8: kind (1=Some, 2=Ok, 3=Err, 4=Tuple)
+                    let kind = chunk.read_u8(self.ip);
+                    self.ip += 1;
+                    let val = self.pop(line)?;
+                    let result = match kind {
+                        1 => matches!(val, Value::Option(Some(_))),
+                        2 => matches!(val, Value::Result(Ok(_))),
+                        3 => matches!(val, Value::Result(Err(_))),
+                        4 => {
+                            let expected_len = chunk.read_u8(self.ip) as usize;
+                            self.ip += 1;
+                            match &val {
+                                Value::Tuple(items) => items.len() == expected_len,
+                                _ => false,
+                            }
+                        }
+                        _ => false,
+                    };
+                    // Push value back (needed for unwrap) and then bool
+                    self.stack.push(val);
+                    self.stack.push(Value::Bool(result));
+                }
+                Op::MatchArm => {
+                    // u8: kind (1=unwrap Some, 2=unwrap Ok, 3=unwrap Err, 4=get tuple element)
+                    let kind = chunk.read_u8(self.ip);
+                    self.ip += 1;
+                    match kind {
+                        1 => {
+                            // Unwrap Some: pop Option(Some(v)), push v
+                            let val = self.pop(line)?;
+                            match val {
+                                Value::Option(Some(v)) => self.stack.push(*v),
+                                other => self.stack.push(other), // shouldn't happen
+                            }
+                        }
+                        2 => {
+                            let val = self.pop(line)?;
+                            match val {
+                                Value::Result(Ok(v)) => self.stack.push(*v),
+                                other => self.stack.push(other),
+                            }
+                        }
+                        3 => {
+                            let val = self.pop(line)?;
+                            match val {
+                                Value::Result(Err(v)) => self.stack.push(*v),
+                                other => self.stack.push(other),
+                            }
+                        }
+                        4 => {
+                            // Get tuple element: u8 index follows
+                            let idx = chunk.read_u8(self.ip) as usize;
+                            self.ip += 1;
+                            // Peek at the value on top (don't pop — may need more elements)
+                            let val = self.peek(line)?;
+                            match val {
+                                Value::Tuple(items) => {
+                                    self.stack.push(items.get(idx).cloned().unwrap_or(Value::Unit));
+                                }
+                                _ => self.stack.push(Value::Unit),
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Op::MatchEnd => {
+                    // Currently unused — match uses Jump/JumpIfFalse directly
                 }
 
                 // --- Range ---
@@ -518,8 +584,52 @@ impl Vm {
                         }
                     }
                 }
-                Op::ListAppend | Op::DictInsert => {
-                    return Err(IonError::runtime("comprehensions not yet supported in bytecode VM", line, 0));
+                Op::ListAppend => {
+                    // Stack: [..., list, iter_placeholder, ..., item]
+                    // Pop item, find the list deeper in the stack, append to it
+                    let item = self.pop(line)?;
+                    // Find the list — it's below the iterator placeholder
+                    // The list is at position: stack.len() - 1 (after popping item) minus
+                    // however many scope vars are between. Actually, the list is always
+                    // 2 below the current top: [..., list, iter_placeholder, ...]
+                    // But with scopes, it's simpler to find the last List on the stack.
+                    // Actually: stack layout is [..., list, Unit(iter_placeholder), ...]
+                    // Let's find the list by scanning backwards
+                    let mut found = false;
+                    for i in (0..self.stack.len()).rev() {
+                        if let Value::List(_) = &self.stack[i] {
+                            if let Value::List(ref mut items) = self.stack[i] {
+                                items.push(item.clone());
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return Err(IonError::runtime("ListAppend: no list on stack", line, 0));
+                    }
+                }
+                Op::DictInsert => {
+                    // Stack: [..., dict, iter_placeholder, ..., key, value]
+                    let value = self.pop(line)?;
+                    let key = self.pop(line)?;
+                    let key_str = match key {
+                        Value::Str(s) => s,
+                        other => other.to_string(),
+                    };
+                    let mut found = false;
+                    for i in (0..self.stack.len()).rev() {
+                        if let Value::Dict(_) = &self.stack[i] {
+                            if let Value::Dict(ref mut map) = self.stack[i] {
+                                map.insert(key_str.clone(), value.clone());
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return Err(IonError::runtime("DictInsert: no dict on stack", line, 0));
+                    }
                 }
 
                 // --- Slice ---

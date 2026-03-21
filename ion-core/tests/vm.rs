@@ -352,16 +352,124 @@ fn test_vm_tuple_destructure() {
 // Fallback to tree-walk for unsupported features
 // ============================================================
 
+// ============================================================
+// Match expressions (VM-native)
+// ============================================================
+
 #[test]
-fn test_vm_fallback_match() {
-    // match is unsupported in VM, should fall back to tree-walk
-    assert_eq!(vm_eval("match 1 { 1 => \"one\", _ => \"other\" }"), Value::Str("one".to_string()));
+fn test_vm_match_int() {
+    assert_eq!(vm_eval("match 1 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"), Value::Str("one".to_string()));
+    assert_eq!(vm_eval("match 2 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"), Value::Str("two".to_string()));
+    assert_eq!(vm_eval("match 99 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"), Value::Str("other".to_string()));
 }
 
 #[test]
-fn test_vm_fallback_list_comp() {
+fn test_vm_match_bool() {
+    assert_eq!(vm_eval("match true { true => 1, false => 0 }"), Value::Int(1));
+    assert_eq!(vm_eval("match false { true => 1, false => 0 }"), Value::Int(0));
+}
+
+#[test]
+fn test_vm_match_string() {
+    assert_eq!(vm_eval("match \"hi\" { \"hi\" => 1, \"bye\" => 2, _ => 0 }"), Value::Int(1));
+}
+
+#[test]
+fn test_vm_match_binding() {
+    assert_eq!(vm_eval("match 42 { x => x + 1 }"), Value::Int(43));
+    assert_eq!(vm_eval("match 10 { 1 => \"one\", x => x * 2 }"), Value::Int(20));
+}
+
+#[test]
+fn test_vm_match_option() {
+    assert_eq!(vm_eval("match Some(5) { Some(x) => x, None => 0 }"), Value::Int(5));
+    assert_eq!(vm_eval("match None { Some(x) => x, None => 0 }"), Value::Int(0));
+}
+
+#[test]
+fn test_vm_match_result() {
+    assert_eq!(vm_eval("match Ok(10) { Ok(x) => x, Err(e) => 0 }"), Value::Int(10));
+    assert_eq!(vm_eval("match Err(\"fail\") { Ok(x) => 0, Err(e) => e }"), Value::Str("fail".to_string()));
+}
+
+#[test]
+fn test_vm_match_tuple() {
+    assert_eq!(vm_eval("match (1, 2) { (a, b) => a + b }"), Value::Int(3));
+    assert_eq!(vm_eval("match (1, 2) { (1, x) => x, _ => 0 }"), Value::Int(2));
+}
+
+#[test]
+fn test_vm_match_wildcard() {
+    assert_eq!(vm_eval("match 42 { _ => \"any\" }"), Value::Str("any".to_string()));
+}
+
+// ============================================================
+// Closures / Lambdas (VM-native)
+// ============================================================
+
+#[test]
+fn test_vm_lambda_basic() {
+    assert_eq!(vm_eval("let f = |x| x + 1; f(10)"), Value::Int(11));
+}
+
+#[test]
+fn test_vm_lambda_multi_param() {
+    assert_eq!(vm_eval("let add = |a, b| a + b; add(3, 4)"), Value::Int(7));
+}
+
+#[test]
+fn test_vm_lambda_closure_capture() {
+    assert_eq!(vm_eval("let n = 10; let f = |x| x + n; f(5)"), Value::Int(15));
+}
+
+#[test]
+fn test_vm_lambda_in_list() {
+    assert_eq!(vm_eval("let ops = [|x| x + 1, |x| x * 2]; ops[1](5)"), Value::Int(10));
+}
+
+#[test]
+fn test_vm_lambda_passed_to_fn() {
+    assert_eq!(vm_eval("fn apply(f, x) { f(x) } apply(|x| x * 3, 7)"), Value::Int(21));
+}
+
+// ============================================================
+// List / Dict comprehensions (VM-native)
+// ============================================================
+
+#[test]
+fn test_vm_list_comp_basic() {
     assert_eq!(vm_eval("[x * 2 for x in [1, 2, 3]]"),
         Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+}
+
+#[test]
+fn test_vm_list_comp_with_filter() {
+    assert_eq!(vm_eval("[x for x in [1, 2, 3, 4, 5] if x > 2]"),
+        Value::List(vec![Value::Int(3), Value::Int(4), Value::Int(5)]));
+}
+
+#[test]
+fn test_vm_list_comp_transform_and_filter() {
+    assert_eq!(vm_eval("[x * x for x in [1, 2, 3, 4] if x % 2 == 0]"),
+        Value::List(vec![Value::Int(4), Value::Int(16)]));
+}
+
+#[test]
+fn test_vm_list_comp_string() {
+    assert_eq!(vm_eval("[c for c in \"abc\"]"),
+        Value::List(vec![Value::Str("a".to_string()), Value::Str("b".to_string()), Value::Str("c".to_string())]));
+}
+
+#[test]
+fn test_vm_dict_comp() {
+    let result = vm_eval("#{f\"{k}!\": v * 2 for (k, v) in #{\"a\": 1, \"b\": 2}}");
+    match result {
+        Value::Dict(map) => {
+            assert_eq!(map.get("a!"), Some(&Value::Int(2)));
+            assert_eq!(map.get("b!"), Some(&Value::Int(4)));
+        }
+        other => panic!("expected dict, got {:?}", other),
+    }
 }
 
 // ============================================================
