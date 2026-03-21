@@ -1801,3 +1801,124 @@ fn test_list_is_empty() {
     assert_eq!(eval("[].is_empty()"), Value::Bool(true));
     assert_eq!(eval("[1].is_empty()"), Value::Bool(false));
 }
+
+// ============================================================
+// 35. Bytes type
+// ============================================================
+
+#[test]
+fn test_bytes_literal() {
+    assert_eq!(eval(r#"b"hello""#), Value::Bytes(b"hello".to_vec()));
+}
+
+#[test]
+fn test_bytes_escape_sequences() {
+    assert_eq!(eval(r#"b"\x00\xff""#), Value::Bytes(vec![0x00, 0xff]));
+    assert_eq!(eval(r#"b"\n\t\r""#), Value::Bytes(vec![b'\n', b'\t', b'\r']));
+    assert_eq!(eval(r#"b"\0""#), Value::Bytes(vec![0]));
+}
+
+#[test]
+fn test_bytes_concat() {
+    assert_eq!(eval(r#"b"hello" + b" world""#), Value::Bytes(b"hello world".to_vec()));
+}
+
+#[test]
+fn test_bytes_index() {
+    assert_eq!(eval(r#"b"abc"[0]"#), Value::Option(Some(Box::new(Value::Int(97)))));
+    assert_eq!(eval(r#"b"abc"[-1]"#), Value::Option(Some(Box::new(Value::Int(99)))));
+}
+
+#[test]
+fn test_bytes_methods() {
+    assert_eq!(eval(r#"b"hello".len()"#), Value::Int(5));
+    assert_eq!(eval(r#"b"".is_empty()"#), Value::Bool(true));
+    assert_eq!(eval(r#"b"abc".contains(97)"#), Value::Bool(true));
+    assert_eq!(eval(r#"b"abc".contains(0)"#), Value::Bool(false));
+}
+
+#[test]
+fn test_bytes_slice() {
+    assert_eq!(eval(r#"b"hello".slice(1, 3)"#), Value::Bytes(b"el".to_vec()));
+    assert_eq!(eval(r#"b"hello".slice(2)"#), Value::Bytes(b"llo".to_vec()));
+}
+
+#[test]
+fn test_bytes_to_list() {
+    assert_eq!(eval(r#"b"abc".to_list()"#), Value::List(vec![
+        Value::Int(97), Value::Int(98), Value::Int(99),
+    ]));
+}
+
+#[test]
+fn test_bytes_to_str() {
+    assert_eq!(eval(r#"b"hello".to_str()"#), Value::Result(Ok(Box::new(Value::Str("hello".to_string())))));
+}
+
+#[test]
+fn test_bytes_to_hex() {
+    assert_eq!(eval(r#"b"\xde\xad".to_hex()"#), Value::Str("dead".to_string()));
+}
+
+#[test]
+fn test_bytes_find() {
+    assert_eq!(eval(r#"b"abc".find(98)"#), Value::Option(Some(Box::new(Value::Int(1)))));
+    assert_eq!(eval(r#"b"abc".find(0)"#), Value::Option(None));
+}
+
+#[test]
+fn test_bytes_reverse() {
+    assert_eq!(eval(r#"b"abc".reverse()"#), Value::Bytes(vec![99, 98, 97]));
+}
+
+#[test]
+fn test_bytes_push() {
+    assert_eq!(eval(r#"b"ab".push(99)"#), Value::Bytes(b"abc".to_vec()));
+}
+
+#[test]
+fn test_bytes_constructor() {
+    assert_eq!(eval(r#"bytes([65, 66, 67])"#), Value::Bytes(b"ABC".to_vec()));
+    assert_eq!(eval(r#"bytes("hello")"#), Value::Bytes(b"hello".to_vec()));
+    assert_eq!(eval(r#"bytes(3)"#), Value::Bytes(vec![0, 0, 0]));
+    assert_eq!(eval(r#"bytes()"#), Value::Bytes(Vec::new()));
+}
+
+#[test]
+fn test_bytes_from_hex() {
+    assert_eq!(eval(r#"bytes_from_hex("deadbeef")"#), Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef]));
+}
+
+#[test]
+fn test_bytes_len_builtin() {
+    assert_eq!(eval(r#"len(b"hello")"#), Value::Int(5));
+}
+
+#[test]
+fn test_bytes_equality() {
+    assert_eq!(eval(r#"b"abc" == b"abc""#), Value::Bool(true));
+    assert_eq!(eval(r#"b"abc" != b"def""#), Value::Bool(true));
+}
+
+#[test]
+fn test_bytes_truthy() {
+    assert_eq!(eval(r#"if b"hello" { true } else { false }"#), Value::Bool(true));
+    assert_eq!(eval(r#"if b"" { true } else { false }"#), Value::Bool(false));
+}
+
+#[test]
+fn test_bytes_pattern_match() {
+    assert_eq!(eval(r#"match b"abc" { b"abc" => 1, _ => 2 }"#), Value::Int(1));
+    assert_eq!(eval(r#"match b"xyz" { b"abc" => 1, _ => 2 }"#), Value::Int(2));
+}
+
+#[test]
+fn test_bytes_for_loop() {
+    assert_eq!(eval(r#"let mut sum = 0; for b in b"abc".to_list() { sum += b; } sum"#),
+        Value::Int(97 + 98 + 99));
+}
+
+#[test]
+fn test_bytes_display() {
+    assert_eq!(eval("let x = b\"hello\"; f\"{x}\""), Value::Str("b\"hello\"".to_string()));
+}

@@ -102,6 +102,12 @@ impl<'a> Lexer<'a> {
             return self.lex_string(line, col, true);
         }
 
+        // byte strings
+        if ch == b'b' && self.peek_at(1) == b'"' {
+            self.advance(); // consume 'b'
+            return self.lex_bytes(line, col);
+        }
+
         // Identifiers and keywords
         if ch.is_ascii_alphabetic() || ch == b'_' {
             return self.lex_ident(line, col);
@@ -335,6 +341,54 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn lex_bytes(&mut self, line: usize, col: usize) -> Result<SpannedToken, IonError> {
+        self.advance(); // consume opening "
+        let mut bytes = Vec::new();
+
+        while self.pos < self.source.len() && self.peek() != b'"' {
+            let ch = self.peek();
+            if ch == b'\\' {
+                self.advance();
+                match self.peek() {
+                    b'n' => { self.advance(); bytes.push(b'\n'); }
+                    b't' => { self.advance(); bytes.push(b'\t'); }
+                    b'r' => { self.advance(); bytes.push(b'\r'); }
+                    b'\\' => { self.advance(); bytes.push(b'\\'); }
+                    b'"' => { self.advance(); bytes.push(b'"'); }
+                    b'0' => { self.advance(); bytes.push(0); }
+                    b'x' => {
+                        self.advance(); // consume 'x'
+                        let hi = self.advance();
+                        let lo = self.advance();
+                        let val = hex_digit(hi).ok_or_else(|| {
+                            IonError::lex(ion_str!("invalid hex escape in byte string"), self.line, self.col)
+                        })? << 4
+                            | hex_digit(lo).ok_or_else(|| {
+                                IonError::lex(ion_str!("invalid hex escape in byte string"), self.line, self.col)
+                            })?;
+                        bytes.push(val);
+                    }
+                    _ => {
+                        return Err(IonError::lex(
+                            ion_str!("invalid escape sequence in byte string"),
+                            self.line, self.col,
+                        ));
+                    }
+                }
+            } else {
+                self.advance();
+                bytes.push(ch);
+            }
+        }
+
+        if self.pos >= self.source.len() {
+            return Err(IonError::lex(ion_str!("unterminated byte string"), line, col));
+        }
+        self.advance(); // consume closing "
+
+        Ok(self.spanned(Token::Bytes(bytes), line, col))
+    }
+
     fn lex_ident(&mut self, line: usize, col: usize) -> Result<SpannedToken, IonError> {
         let start = self.pos;
         while self.peek().is_ascii_alphanumeric() || self.peek() == b'_' {
@@ -369,6 +423,15 @@ impl<'a> Lexer<'a> {
             _ => Token::Ident(text.to_string()),
         };
         Ok(self.spanned(token, line, col))
+    }
+}
+
+fn hex_digit(ch: u8) -> Option<u8> {
+    match ch {
+        b'0'..=b'9' => Some(ch - b'0'),
+        b'a'..=b'f' => Some(ch - b'a' + 10),
+        b'A'..=b'F' => Some(ch - b'A' + 10),
+        _ => None,
     }
 }
 

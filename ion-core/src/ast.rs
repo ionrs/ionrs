@@ -80,6 +80,7 @@ pub enum ExprKind {
     Str(String),
     /// f-string: list of parts (literal strings and expressions)
     FStr(Vec<FStrPart>),
+    Bytes(Vec<u8>),
     None,
     Unit,
 
@@ -203,6 +204,7 @@ pub enum Pattern {
     Float(f64),
     Bool(bool),
     Str(String),
+    Bytes(Vec<u8>),
     None,
     /// `Some(pattern)`
     Some(Box<Pattern>),

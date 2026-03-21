@@ -339,6 +339,7 @@ impl Interpreter {
             ExprKind::Float(n) => Ok(Value::Float(*n)),
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
             ExprKind::Str(s) => Ok(Value::Str(s.clone())),
+            ExprKind::Bytes(b) => Ok(Value::Bytes(b.clone())),
             ExprKind::None => Ok(Value::Option(None)),
             ExprKind::Unit => Ok(Value::Unit),
 
@@ -777,6 +778,11 @@ impl Interpreter {
                 (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
                 (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + *b as f64)),
                 (Value::Str(a), Value::Str(b)) => Ok(Value::Str(format!("{}{}", a, b))),
+                (Value::Bytes(a), Value::Bytes(b)) => {
+                    let mut result = a.clone();
+                    result.extend(b);
+                    Ok(Value::Bytes(result))
+                }
                 _ => Err(self.type_mismatch_err(ion_str!("+"), l, r, span)),
             },
             BinOp::Sub => match (l, r) {
@@ -916,6 +922,13 @@ impl Interpreter {
                     None => Value::Option(None),
                 })
             }
+            (Value::Bytes(bytes), Value::Int(i)) => {
+                let index = if *i < 0 { bytes.len() as i64 + i } else { *i } as usize;
+                Ok(bytes.get(index)
+                    .map(|&b| Value::Int(b as i64))
+                    .map(|v| Value::Option(Some(Box::new(v))))
+                    .unwrap_or(Value::Option(None)))
+            }
             (Value::Tuple(items), Value::Int(i)) => {
                 let index = *i as usize;
                 items.get(index)
@@ -942,6 +955,7 @@ impl Interpreter {
         match receiver {
             Value::List(items) => self.list_method(items, method, args, span),
             Value::Str(s) => self.string_method(s, method, args, span),
+            Value::Bytes(b) => self.bytes_method(b, method, args, span),
             Value::Dict(map) => self.dict_method(map, method, args, span),
             Value::Option(opt) => self.option_method(opt.clone(), method, args, span),
             Value::Result(res) => self.result_method(res.clone(), method, args, span),
@@ -1153,6 +1167,83 @@ impl Interpreter {
             "is_empty" => Ok(Value::Bool(s.is_empty())),
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on string")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn bytes_method(&self, bytes: &[u8], method: &str, args: &[Value], span: Span) -> SignalResult {
+        match method {
+            "len" => Ok(Value::Int(bytes.len() as i64)),
+            "is_empty" => Ok(Value::Bool(bytes.is_empty())),
+            "contains" => {
+                let byte = args.first()
+                    .and_then(|a| a.as_int())
+                    .ok_or_else(|| IonError::type_err(
+                        ion_str!("bytes.contains() requires an int argument").to_string(),
+                        span.line, span.col,
+                    ))?;
+                Ok(Value::Bool(bytes.contains(&(byte as u8))))
+            }
+            "slice" => {
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
+                let end = args.get(1).and_then(|a| a.as_int())
+                    .map(|n| n as usize)
+                    .unwrap_or(bytes.len());
+                let start = start.min(bytes.len());
+                let end = end.min(bytes.len());
+                Ok(Value::Bytes(bytes[start..end].to_vec()))
+            }
+            "to_list" => {
+                Ok(Value::List(bytes.iter().map(|&b| Value::Int(b as i64)).collect()))
+            }
+            "to_str" => {
+                match std::str::from_utf8(bytes) {
+                    std::result::Result::Ok(s) => Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string()))))),
+                    std::result::Result::Err(e) => Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e)))))),
+                }
+            }
+            "to_hex" => {
+                let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                Ok(Value::Str(hex))
+            }
+            "find" => {
+                let needle = args.first()
+                    .and_then(|a| a.as_int())
+                    .ok_or_else(|| IonError::type_err(
+                        ion_str!("bytes.find() requires an int argument").to_string(),
+                        span.line, span.col,
+                    ))?;
+                let pos = bytes.iter().position(|&b| b == needle as u8);
+                Ok(match pos {
+                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
+                    None => Value::Option(None),
+                })
+            }
+            "reverse" => {
+                let mut rev = bytes.to_vec();
+                rev.reverse();
+                Ok(Value::Bytes(rev))
+            }
+            "push" => {
+                let byte = args.first()
+                    .and_then(|a| a.as_int())
+                    .ok_or_else(|| IonError::type_err(
+                        ion_str!("bytes.push() requires an int argument").to_string(),
+                        span.line, span.col,
+                    ))?;
+                let mut new = bytes.to_vec();
+                new.push(byte as u8);
+                Ok(Value::Bytes(new))
+            }
+            _ => Err(IonError::type_err(
+                format!(
+                    "{}{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on "),
+                    ion_str!("bytes"),
+                ),
                 span.line, span.col,
             ).into()),
         }
@@ -1439,6 +1530,7 @@ impl Interpreter {
             (Pattern::Float(a), Value::Float(b)) => a == b,
             (Pattern::Bool(a), Value::Bool(b)) => a == b,
             (Pattern::Str(a), Value::Str(b)) => a == b,
+            (Pattern::Bytes(a), Value::Bytes(b)) => a == b,
             (Pattern::None, Value::Option(None)) => true,
             (Pattern::Some(p), Value::Option(Some(v))) => self.pattern_matches(p, v),
             (Pattern::Ok(p), Value::Result(Ok(v))) => self.pattern_matches(p, v),
@@ -1488,7 +1580,7 @@ impl Interpreter {
                 self.env.define(name.clone(), val.clone(), mutable);
                 Ok(())
             }
-            (Pattern::Int(_) | Pattern::Float(_) | Pattern::Bool(_) | Pattern::Str(_) | Pattern::None, _) => Ok(()),
+            (Pattern::Int(_) | Pattern::Float(_) | Pattern::Bool(_) | Pattern::Str(_) | Pattern::Bytes(_) | Pattern::None, _) => Ok(()),
             (Pattern::Some(p), Value::Option(Some(v))) => self.bind_pattern(p, v, mutable, span),
             (Pattern::Ok(p), Value::Result(Ok(v))) => self.bind_pattern(p, v, mutable, span),
             (Pattern::Err(p), Value::Result(Err(v))) => self.bind_pattern(p, v, mutable, span),
@@ -1748,6 +1840,7 @@ pub fn register_builtins(env: &mut Env) {
                 Value::List(items) => Ok(Value::Int(items.len() as i64)),
                 Value::Str(s) => Ok(Value::Int(s.len() as i64)),
                 Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
+                Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
                 _ => Err(format!("{}{}", ion_str!("len() not supported for "), args[0].type_name())),
             }
         }),
@@ -1971,6 +2064,48 @@ pub fn register_builtins(env: &mut Env) {
                 )),
                 _ => Err(format!("{}{}", ion_str!("enumerate() not supported for "), args[0].type_name())),
             }
+        }),
+        false,
+    );
+
+    env.define(
+        ion_str!("bytes").to_string(),
+        Value::BuiltinFn(ion_str!("bytes").to_string(), |args| {
+            match args.first() {
+                Some(Value::List(items)) => {
+                    let mut bytes = Vec::with_capacity(items.len());
+                    for item in items {
+                        let n = item.as_int().ok_or_else(|| ion_str!("bytes() list items must be ints"))?;
+                        if n < 0 || n > 255 {
+                            return Err(format!("{}{}", ion_str!("byte value out of range: "), n));
+                        }
+                        bytes.push(n as u8);
+                    }
+                    Ok(Value::Bytes(bytes))
+                }
+                Some(Value::Str(s)) => Ok(Value::Bytes(s.as_bytes().to_vec())),
+                Some(Value::Int(n)) => Ok(Value::Bytes(vec![0u8; *n as usize])),
+                None => Ok(Value::Bytes(Vec::new())),
+                _ => Err(format!("{}{}", ion_str!("bytes() not supported for "), args[0].type_name())),
+            }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("bytes_from_hex").to_string(),
+        Value::BuiltinFn(ion_str!("bytes_from_hex").to_string(), |args| {
+            if args.len() != 1 { return Err(ion_str!("bytes_from_hex takes 1 argument")); }
+            let s = args[0].as_str().ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
+            if s.len() % 2 != 0 {
+                return Err(ion_str!("hex string must have even length").to_string());
+            }
+            let mut bytes = Vec::with_capacity(s.len() / 2);
+            for i in (0..s.len()).step_by(2) {
+                let byte = u8::from_str_radix(&s[i..i+2], 16)
+                    .map_err(|_| format!("{}{}", ion_str!("invalid hex: "), &s[i..i+2]))?;
+                bytes.push(byte);
+            }
+            Ok(Value::Bytes(bytes))
         }),
         false,
     );

@@ -614,6 +614,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr { kind: ExprKind::Str(s), span })
             }
+            Token::Bytes(b) => {
+                self.advance();
+                Ok(Expr { kind: ExprKind::Bytes(b), span })
+            }
             Token::FStr(template) => {
                 self.advance();
                 let parts = self.parse_fstr_parts(&template, span)?;
@@ -1087,6 +1091,10 @@ impl Parser {
             Token::Str(s) => {
                 self.advance();
                 Ok(Pattern::Str(s))
+            }
+            Token::Bytes(b) => {
+                self.advance();
+                Ok(Pattern::Bytes(b))
             }
             Token::None => {
                 self.advance();

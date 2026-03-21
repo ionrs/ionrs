@@ -576,6 +576,11 @@ impl Vm {
                 r.extend(y.clone());
                 Ok(Value::List(r))
             }
+            (Value::Bytes(x), Value::Bytes(y)) => {
+                let mut r = x.clone();
+                r.extend(y);
+                Ok(Value::Bytes(r))
+            }
             _ => Err(IonError::type_err(
                 format!("cannot add {} and {}", a.type_name(), b.type_name()),
                 line, 0,
@@ -724,6 +729,12 @@ impl Vm {
                     .map(|c| Value::Str(c.to_string()))
                     .ok_or_else(|| IonError::runtime(format!("index {} out of range", i), line, 0))
             }
+            (Value::Bytes(bytes), Value::Int(i)) => {
+                let idx = if *i < 0 { bytes.len() as i64 + i } else { *i } as usize;
+                bytes.get(idx)
+                    .map(|&b| Value::Int(b as i64))
+                    .ok_or_else(|| IonError::runtime(format!("index {} out of range", i), line, 0))
+            }
             _ => Err(IonError::type_err(
                 format!("cannot index {} with {}", obj.type_name(), index.type_name()),
                 line, 0,
@@ -738,6 +749,7 @@ impl Vm {
             Value::List(items) => self.list_method(items, method, args, line),
             Value::Str(s) => self.str_method(s, method, args, line),
             Value::Dict(map) => self.dict_method(map, method, args, line),
+            Value::Bytes(b) => self.bytes_method(b, method, args, line),
             Value::Option(_) => self.option_method(&receiver, method, args, line),
             Value::Result(_) => self.result_method(&receiver, method, args, line),
             _ => Err(IonError::type_err(
@@ -823,6 +835,58 @@ impl Vm {
             }
             "is_empty" => Ok(Value::Bool(s.is_empty())),
             _ => Err(IonError::type_err(format!("string has no method '{}'", method), line, 0)),
+        }
+    }
+
+    fn bytes_method(&self, bytes: &[u8], method: &str, args: &[Value], line: usize) -> Result<Value, IonError> {
+        match method {
+            "len" => Ok(Value::Int(bytes.len() as i64)),
+            "is_empty" => Ok(Value::Bool(bytes.is_empty())),
+            "contains" => {
+                let byte = args.first().and_then(|a| a.as_int())
+                    .ok_or_else(|| IonError::type_err("bytes.contains() requires an int".to_string(), line, 0))?;
+                Ok(Value::Bool(bytes.contains(&(byte as u8))))
+            }
+            "slice" => {
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
+                let end = args.get(1).and_then(|a| a.as_int()).map(|n| n as usize).unwrap_or(bytes.len());
+                let start = start.min(bytes.len());
+                let end = end.min(bytes.len());
+                Ok(Value::Bytes(bytes[start..end].to_vec()))
+            }
+            "to_list" => Ok(Value::List(bytes.iter().map(|&b| Value::Int(b as i64)).collect())),
+            "to_str" => {
+                match std::str::from_utf8(bytes) {
+                    std::result::Result::Ok(s) => Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string()))))),
+                    std::result::Result::Err(e) => Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e)))))),
+                }
+            }
+            "to_hex" => {
+                let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                Ok(Value::Str(hex))
+            }
+            "find" => {
+                let needle = args.first().and_then(|a| a.as_int())
+                    .ok_or_else(|| IonError::type_err("bytes.find() requires an int".to_string(), line, 0))?;
+                let pos = bytes.iter().position(|&b| b == needle as u8);
+                Ok(match pos {
+                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
+                    None => Value::Option(None),
+                })
+            }
+            "reverse" => {
+                let mut rev = bytes.to_vec();
+                rev.reverse();
+                Ok(Value::Bytes(rev))
+            }
+            "push" => {
+                let byte = args.first().and_then(|a| a.as_int())
+                    .ok_or_else(|| IonError::type_err("bytes.push() requires an int".to_string(), line, 0))?;
+                let mut new = bytes.to_vec();
+                new.push(byte as u8);
+                Ok(Value::Bytes(new))
+            }
+            _ => Err(IonError::type_err(format!("bytes has no method '{}'", method), line, 0)),
         }
     }
 

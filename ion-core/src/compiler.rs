@@ -114,6 +114,9 @@ impl Compiler {
             ExprKind::Str(s) => {
                 self.chunk.emit_constant(Value::Str(s.clone()), line);
             }
+            ExprKind::Bytes(b) => {
+                self.chunk.emit_constant(Value::Bytes(b.clone()), line);
+            }
             ExprKind::Unit => {
                 self.chunk.emit_op(Op::Unit, line);
             }

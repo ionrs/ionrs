@@ -12,6 +12,7 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     Str(String),
+    Bytes(Vec<u8>),
     List(Vec<Value>),
     Dict(IndexMap<String, Value>),
     Tuple(Vec<Value>),
@@ -52,6 +53,7 @@ impl Value {
             Value::Float(_) => ion_static_str!("float"),
             Value::Bool(_) => ion_static_str!("bool"),
             Value::Str(_) => ion_static_str!("string"),
+            Value::Bytes(_) => ion_static_str!("bytes"),
             Value::List(_) => ion_static_str!("list"),
             Value::Dict(_) => ion_static_str!("dict"),
             Value::Tuple(_) => ion_static_str!("tuple"),
@@ -73,6 +75,7 @@ impl Value {
         match self {
             Value::Bool(b) => *b,
             Value::Int(n) => *n != 0,
+            Value::Bytes(b) => !b.is_empty(),
             Value::Option(None) => false,
             Value::Unit => false,
             _ => true,
@@ -113,6 +116,21 @@ impl fmt::Display for Value {
             }
             Value::Bool(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
+            Value::Bytes(bytes) => {
+                write!(f, "b\"")?;
+                for &b in bytes {
+                    match b {
+                        b'\\' => write!(f, "\\\\")?,
+                        b'"' => write!(f, "\\\"")?,
+                        b'\n' => write!(f, "\\n")?,
+                        b'\t' => write!(f, "\\t")?,
+                        b'\r' => write!(f, "\\r")?,
+                        0x20..=0x7e => write!(f, "{}", b as char)?,
+                        _ => write!(f, "\\x{:02x}", b)?,
+                    }
+                }
+                write!(f, "\"")
+            }
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
@@ -189,6 +207,7 @@ impl PartialEq for Value {
             (Value::Float(a), Value::Int(b)) => *a == (*b as f64),
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Str(a), Value::Str(b)) => a == b,
+            (Value::Bytes(a), Value::Bytes(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::Option(a), Value::Option(b)) => a == b,
@@ -256,6 +275,10 @@ impl Value {
             }
             #[cfg(feature = "concurrency")]
             Value::Task(_) | Value::Channel(_) => serde_json::Value::Null,
+            Value::Bytes(b) => {
+                let hex: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
+                serde_json::Value::String(hex)
+            }
             Value::Fn(_) | Value::BuiltinFn(_, _) => serde_json::Value::Null,
         }
     }

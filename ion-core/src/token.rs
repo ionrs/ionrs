@@ -5,6 +5,7 @@ pub enum Token {
     Float(f64),
     Str(String),
     FStr(String), // f"..." interpolated string (raw template)
+    Bytes(Vec<u8>), // b"..." byte literal
     True,
     False,
 
