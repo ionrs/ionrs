@@ -53,6 +53,11 @@ impl Vm {
         &mut self.env
     }
 
+    /// Pre-populate the function cache with precompiled chunks from the compiler.
+    pub fn preload_fn_chunks(&mut self, chunks: crate::value::FnChunkCache) {
+        self.fn_cache.extend(chunks);
+    }
+
     /// Execute a compiled chunk, returning the final value.
     pub fn execute(&mut self, chunk: &Chunk) -> Result<Value, IonError> {
         self.ip = 0;
@@ -1511,40 +1516,36 @@ impl Vm {
                     self.env.define(param.name.clone(), val, false);
                 }
 
-                // Try to compile (with cache) and execute function body as bytecode
+                // Use cached (precompiled or previously compiled) chunk, or compile on demand
                 let fn_id = ion_fn.fn_id;
-                let cached = self.fn_cache.get(&fn_id).cloned();
-                let chunk_result = if let Some(chunk) = cached {
-                    Ok(chunk)
+                let chunk_opt = if let Some(chunk) = self.fn_cache.get(&fn_id) {
+                    Some(chunk.clone())
                 } else {
                     let compiler = crate::compiler::Compiler::new();
-                    compiler.compile_fn_body(&ion_fn.body, line)
+                    compiler.compile_fn_body(&ion_fn.body, line).ok()
                 };
-                match chunk_result {
-                    Ok(chunk) => {
-                        self.fn_cache.entry(fn_id).or_insert_with(|| chunk.clone());
-                        let saved_ip = self.ip;
-                        let saved_iters = std::mem::take(&mut self.iterators);
-                        self.ip = 0;
-                        let result = self.run_chunk(&chunk);
-                        self.ip = saved_ip;
-                        self.iterators = saved_iters;
-                        self.env.pop_scope();
-                        match result {
-                            Ok(val) => self.stack.push(val),
-                            Err(e) => return Err(e),
-                        }
+                if let Some(chunk) = chunk_opt {
+                    self.fn_cache.entry(fn_id).or_insert_with(|| chunk.clone());
+                    let saved_ip = self.ip;
+                    let saved_iters = std::mem::take(&mut self.iterators);
+                    self.ip = 0;
+                    let result = self.run_chunk(&chunk);
+                    self.ip = saved_ip;
+                    self.iterators = saved_iters;
+                    self.env.pop_scope();
+                    match result {
+                        Ok(val) => self.stack.push(val),
+                        Err(e) => return Err(e),
                     }
-                    Err(_) => {
-                        // Fallback to tree-walk for complex function bodies
-                        let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
-                        let result = interp.eval_block(&ion_fn.body);
-                        self.env = interp.take_env();
-                        self.env.pop_scope();
-                        match result {
-                            Ok(val) => self.stack.push(val),
-                            Err(e) => return Err(e),
-                        }
+                } else {
+                    // Fallback to tree-walk for complex function bodies
+                    let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
+                    let result = interp.eval_block(&ion_fn.body);
+                    self.env = interp.take_env();
+                    self.env.pop_scope();
+                    match result {
+                        Ok(val) => self.stack.push(val),
+                        Err(e) => return Err(e),
                     }
                 }
             }

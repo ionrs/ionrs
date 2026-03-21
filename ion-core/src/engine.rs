@@ -101,10 +101,12 @@ impl Engine {
         // Try the bytecode path first
         let compiler = crate::compiler::Compiler::new();
         match compiler.compile_program(&program) {
-            Ok(chunk) => {
+            Ok((chunk, fn_chunks)) => {
                 let mut vm = crate::vm::Vm::with_env(
                     std::mem::replace(&mut self.interpreter.env, crate::env::Env::new())
                 );
+                // Pre-populate the VM's function cache with compiled chunks
+                vm.preload_fn_chunks(fn_chunks);
                 // Register builtins in VM env
                 crate::interpreter::register_builtins(vm.env_mut());
                 let result = vm.execute(&chunk);

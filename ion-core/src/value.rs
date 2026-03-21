@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use serde_json;
 
 use crate::ast::{Param, Stmt};
+use crate::bytecode::Chunk;
 
 static NEXT_FN_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -58,6 +59,9 @@ impl IonFn {
         }
     }
 }
+
+/// Precompiled function chunk, keyed by fn_id.
+pub type FnChunkCache = HashMap<u64, Chunk>;
 
 /// A built-in function: Rust-side callback.
 pub type BuiltinFn = fn(&[Value]) -> Result<Value, String>;

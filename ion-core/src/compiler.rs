@@ -3,18 +3,20 @@
 use crate::ast::*;
 use crate::bytecode::{Chunk, FnProto, Op};
 use crate::error::IonError;
-use crate::value::Value;
+use crate::value::{Value, FnChunkCache};
 
 pub struct Compiler {
     chunk: Chunk,
+    /// Precompiled function body chunks, keyed by fn_id.
+    pub fn_chunks: FnChunkCache,
 }
 
 impl Compiler {
     pub fn new() -> Self {
-        Self { chunk: Chunk::new() }
+        Self { chunk: Chunk::new(), fn_chunks: FnChunkCache::new() }
     }
 
-    pub fn compile_program(mut self, program: &Program) -> Result<Chunk, IonError> {
+    pub fn compile_program(mut self, program: &Program) -> Result<(Chunk, FnChunkCache), IonError> {
         let len = program.stmts.len();
         for (i, stmt) in program.stmts.iter().enumerate() {
             let is_last = i == len - 1;
@@ -40,7 +42,7 @@ impl Compiler {
             self.chunk.emit_op(Op::Unit, 0);
         }
         self.chunk.emit_op(Op::Return, 0);
-        Ok(self.chunk)
+        Ok((self.chunk, self.fn_chunks))
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<(), IonError> {
@@ -330,6 +332,13 @@ impl Compiler {
                     kind: StmtKind::ExprStmt { expr: *body.clone(), has_semi: false },
                     span: expr.span,
                 };
+                // Precompile lambda body
+                let mut fn_compiler = Compiler::new();
+                fn_compiler.compile_expr(body)?;
+                fn_compiler.chunk.emit_op(Op::Return, line);
+                let compiled_chunk = fn_compiler.chunk;
+                self.fn_chunks.extend(fn_compiler.fn_chunks);
+
                 let fn_value = Value::Fn(crate::value::IonFn::new(
                     "<lambda>".to_string(),
                     params.iter().map(|n| crate::ast::Param {
@@ -339,6 +348,10 @@ impl Compiler {
                     vec![body_stmt],
                     std::collections::HashMap::new(),
                 ));
+                // Associate precompiled chunk with fn_id
+                if let Value::Fn(ref ion_fn) = fn_value {
+                    self.fn_chunks.insert(ion_fn.fn_id, compiled_chunk);
+                }
                 let fn_idx = self.chunk.add_constant(fn_value);
                 self.chunk.emit_op_u16(Op::Closure, fn_idx, line);
             }
@@ -545,9 +558,11 @@ impl Compiler {
     fn compile_fn_decl(&mut self, name: &str, params: &[Param], body: &[Stmt], line: usize) -> Result<(), IonError> {
         // Compile function body into a separate chunk
         let mut fn_compiler = Compiler::new();
-        // Compile body as block expression
         fn_compiler.compile_block_expr(body, line)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
+        let compiled_chunk = fn_compiler.chunk;
+        // Collect any nested function chunks
+        self.fn_chunks.extend(fn_compiler.fn_chunks);
 
         let fn_value = Value::Fn(crate::value::IonFn::new(
             name.to_string(),
@@ -555,6 +570,10 @@ impl Compiler {
             body.to_vec(), // Keep AST body for tree-walk fallback
             std::collections::HashMap::new(),
         ));
+        // Extract fn_id to associate with precompiled chunk
+        if let Value::Fn(ref ion_fn) = fn_value {
+            self.fn_chunks.insert(ion_fn.fn_id, compiled_chunk);
+        }
 
         // Define the function in the current scope
         self.chunk.emit_constant(fn_value, line);
