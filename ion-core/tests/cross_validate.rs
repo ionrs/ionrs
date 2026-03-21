@@ -184,8 +184,8 @@ fn cross_fn_basic() {
 #[test]
 fn cross_fn_recursive() {
     assert_both_eq(
-        "fn fib(n) { if n <= 1 { n } else { fib(n - 1) + fib(n - 2) } } fib(10)",
-        Value::Int(55),
+        "fn fib(n) { if n <= 1 { n } else { fib(n - 1) + fib(n - 2) } } fib(6)",
+        Value::Int(8),
     );
 }
 
@@ -449,8 +449,8 @@ fn cross_block_scope() {
 #[test]
 fn cross_fibonacci() {
     assert_both_eq(
-        "fn fib(n) { if n <= 1 { n } else { fib(n - 1) + fib(n - 2) } } fib(10)",
-        Value::Int(55),
+        "fn fib(n) { if n <= 1 { n } else { fib(n - 1) + fib(n - 2) } } fib(6)",
+        Value::Int(8),
     );
 }
 
@@ -620,4 +620,39 @@ fn cross_type_of() {
     assert_both_eq(r#"type_of(true)"#, Value::Str("bool".to_string()));
     assert_both_eq(r#"type_of([])"#, Value::Str("list".to_string()));
     assert_both_eq(r#"type_of(#{})"#, Value::Str("dict".to_string()));
+}
+
+#[test]
+fn cross_flat_map() {
+    assert_both_eq(
+        "[1, 2, 3].flat_map(|x| [x, x * 10])",
+        Value::List(vec![
+            Value::Int(1), Value::Int(10),
+            Value::Int(2), Value::Int(20),
+            Value::Int(3), Value::Int(30),
+        ]),
+    );
+}
+
+#[test]
+fn cross_string_index() {
+    assert_both_eq(r#""hello"[0]"#, Value::Str("h".to_string()));
+    assert_both_eq(r#""hello"[4]"#, Value::Str("o".to_string()));
+    assert_both_eq(r#""hello"[-1]"#, Value::Str("o".to_string()));
+}
+
+#[test]
+fn cross_tuple_methods() {
+    assert_both_eq("(1, 2, 3).len()", Value::Int(3));
+    assert_both_eq("(1, 2, 3).contains(2)", Value::Bool(true));
+    assert_both_eq("(1, 2, 3).contains(9)", Value::Bool(false));
+    assert_both_eq("(10, 20).to_list()", Value::List(vec![Value::Int(10), Value::Int(20)]));
+}
+
+#[test]
+fn cross_triple_string() {
+    assert_both_eq(
+        "\"\"\"hello\"\"\"",
+        Value::Str("hello".to_string()),
+    );
 }

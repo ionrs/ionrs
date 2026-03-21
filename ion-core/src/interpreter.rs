@@ -702,11 +702,20 @@ impl Interpreter {
 
             ExprKind::Call { func, args } => {
                 let func_val = self.eval_expr(func)?;
-                let mut arg_vals = Vec::new();
-                for arg in args {
-                    arg_vals.push(self.eval_expr(&arg.value)?);
+                let has_named = args.iter().any(|a| a.name.is_some());
+                if has_named {
+                    let mut evaluated: Vec<(Option<String>, Value)> = Vec::new();
+                    for arg in args {
+                        evaluated.push((arg.name.clone(), self.eval_expr(&arg.value)?));
+                    }
+                    self.call_with_named(&func_val, evaluated, span)
+                } else {
+                    let mut arg_vals = Vec::new();
+                    for arg in args {
+                        arg_vals.push(self.eval_expr(&arg.value)?);
+                    }
+                    self.call_value(&func_val, &arg_vals, span)
                 }
-                self.call_value(&func_val, &arg_vals, span)
             }
 
             ExprKind::Lambda { params, body } => {
@@ -1064,6 +1073,15 @@ impl Interpreter {
                         span.line, span.col,
                     ).into())
             }
+            (Value::Str(s), Value::Int(i)) => {
+                let index = if *i < 0 { s.chars().count() as i64 + i } else { *i } as usize;
+                s.chars().nth(index)
+                    .map(|c| Value::Str(c.to_string()))
+                    .ok_or_else(|| IonError::runtime(
+                        ion_str!("string index out of bounds").to_string(),
+                        span.line, span.col,
+                    ).into())
+            }
             (Value::Tuple(items), Value::Int(i)) => {
                 let index = *i as usize;
                 items.get(index)
@@ -1134,6 +1152,7 @@ impl Interpreter {
     fn method_call(&mut self, receiver: &Value, method: &str, args: &[Value], span: Span) -> SignalResult {
         match receiver {
             Value::List(items) => self.list_method(items, method, args, span),
+            Value::Tuple(items) => self.tuple_method(items, method, args, span),
             Value::Str(s) => self.string_method(s, method, args, span),
             Value::Bytes(b) => self.bytes_method(b, method, args, span),
             Value::Dict(map) => self.dict_method(map, method, args, span),
@@ -1199,6 +1218,18 @@ impl Interpreter {
                     acc = self.call_value(func, &[acc, item.clone()], span)?;
                 }
                 Ok(acc)
+            }
+            "flat_map" => {
+                let func = &args[0];
+                let mut result = Vec::new();
+                for item in items {
+                    let mapped = self.call_value(func, &[item.clone()], span)?;
+                    match mapped {
+                        Value::List(sub) => result.extend(sub),
+                        other => result.push(other),
+                    }
+                }
+                Ok(Value::List(result))
             }
             "any" => {
                 let func = &args[0];
@@ -1295,6 +1326,21 @@ impl Interpreter {
             "is_empty" => Ok(Value::Bool(items.is_empty())),
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on list")),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn tuple_method(&self, items: &[Value], method: &str, args: &[Value], span: Span) -> SignalResult {
+        match method {
+            "len" => Ok(Value::Int(items.len() as i64)),
+            "contains" => {
+                let target = &args[0];
+                Ok(Value::Bool(items.iter().any(|v| v == target)))
+            }
+            "to_list" => Ok(Value::List(items.to_vec())),
+            _ => Err(IonError::type_err(
+                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on tuple")),
                 span.line, span.col,
             ).into()),
         }
@@ -1723,6 +1769,86 @@ impl Interpreter {
                 format!("{}{}", ion_str!("not callable: "), func.type_name()),
                 span.line, span.col,
             ).into()),
+        }
+    }
+
+    fn call_with_named(&mut self, func: &Value, named_args: Vec<(Option<String>, Value)>, span: Span) -> SignalResult {
+        match func {
+            Value::Fn(ion_fn) => {
+                // Reorder named args to match parameter positions
+                let mut ordered = vec![None; ion_fn.params.len()];
+                let mut pos_idx = 0;
+                for (name, val) in named_args {
+                    if let Some(name) = name {
+                        // Find param by name
+                        let param_idx = ion_fn.params.iter().position(|p| p.name == name)
+                            .ok_or_else(|| IonError::runtime(
+                                format!("{}{}{}{}",
+                                    ion_str!("unknown parameter '"),
+                                    name,
+                                    ion_str!("' for function '"),
+                                    ion_fn.name,
+                                ),
+                                span.line, span.col,
+                            ))?;
+                        ordered[param_idx] = Some(val);
+                    } else {
+                        // Positional arg — fill next empty slot
+                        while pos_idx < ordered.len() && ordered[pos_idx].is_some() {
+                            pos_idx += 1;
+                        }
+                        if pos_idx < ordered.len() {
+                            ordered[pos_idx] = Some(val);
+                            pos_idx += 1;
+                        }
+                    }
+                }
+                // Convert to flat args, using None for unfilled slots (defaults will handle them)
+                let args: Vec<Value> = ordered.into_iter().map(|v| v.unwrap_or(Value::Unit)).collect();
+                // Use call_value with the reordered args, but handle defaults specially
+                if self.call_depth >= self.limits.max_call_depth {
+                    return Err(IonError::runtime(
+                        ion_str!("maximum call depth exceeded").to_string(),
+                        span.line, span.col,
+                    ).into());
+                }
+                self.call_depth += 1;
+                self.env.push_scope();
+                for (name, val) in &ion_fn.captures {
+                    self.env.define(name.clone(), val.clone(), false);
+                }
+                for (i, param) in ion_fn.params.iter().enumerate() {
+                    let val = if i < args.len() && args[i] != Value::Unit {
+                        args[i].clone()
+                    } else if let Some(default) = &param.default {
+                        self.eval_expr(default)?
+                    } else {
+                        return Err(IonError::runtime(
+                            format!(
+                                "{}{}{}",
+                                ion_str!("missing argument '"),
+                                param.name,
+                                ion_str!("'"),
+                            ),
+                            span.line, span.col,
+                        ).into());
+                    };
+                    self.env.define(param.name.clone(), val, false);
+                }
+                let result = self.eval_stmts(&ion_fn.body);
+                self.env.pop_scope();
+                self.call_depth -= 1;
+                match result {
+                    Ok(v) => Ok(v),
+                    Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
+                    Err(e) => Err(e),
+                }
+            }
+            _ => {
+                // For builtins, just pass positional values
+                let args: Vec<Value> = named_args.into_iter().map(|(_, v)| v).collect();
+                self.call_value(func, &args, span)
+            }
         }
     }
 

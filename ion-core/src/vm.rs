@@ -1353,6 +1353,7 @@ impl Vm {
         // Non-closure methods
         match &receiver {
             Value::List(items) => self.list_method(items, method, args, line, col),
+            Value::Tuple(items) => self.tuple_method(items, method, args, line, col),
             Value::Str(s) => self.str_method(s, method, args, line, col),
             Value::Dict(map) => self.dict_method(map, method, args, line, col),
             Value::Bytes(b) => self.bytes_method(b, method, args, line, col),
@@ -1449,6 +1450,17 @@ impl Vm {
                 }
             }
             _ => Err(IonError::type_err(format!("list has no method '{}'", method), line, col)),
+        }
+    }
+
+    fn tuple_method(&self, items: &[Value], method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+        match method {
+            "len" => Ok(Value::Int(items.len() as i64)),
+            "contains" => {
+                Ok(Value::Bool(args.first().map(|a| items.contains(a)).unwrap_or(false)))
+            }
+            "to_list" => Ok(Value::List(items.to_vec())),
+            _ => Err(IonError::type_err(format!("tuple has no method '{}'", method), line, col)),
         }
     }
 

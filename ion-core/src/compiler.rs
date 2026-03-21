@@ -575,6 +575,12 @@ impl Compiler {
             }
 
             ExprKind::Call { func, args } => {
+                // Named arguments require interpreter fallback
+                if args.iter().any(|a| a.name.is_some()) {
+                    return Err(IonError::runtime(
+                        "named arguments not supported in VM".to_string(), line, 0,
+                    ));
+                }
                 // Sub-expressions are not in tail position (already cleared above)
                 self.compile_expr(func)?;
                 for arg in args {

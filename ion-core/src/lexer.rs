@@ -91,6 +91,18 @@ impl<'a> Lexer<'a> {
             return self.lex_number(line, col);
         }
 
+        // Triple-quoted strings (must check before single-quoted)
+        // ch == peek() since pos hasn't advanced yet, so check peek_at(1) and peek_at(2)
+        if ch == b'"' && self.peek_at(1) == b'"' && self.peek_at(2) == b'"' {
+            return self.lex_triple_string(line, col, false);
+        }
+
+        // Triple-quoted f-strings
+        if ch == b'f' && self.peek_at(1) == b'"' && self.peek_at(2) == b'"' && self.peek_at(3) == b'"' {
+            self.advance(); // consume 'f'
+            return self.lex_triple_string(line, col, true);
+        }
+
         // Strings
         if ch == b'"' {
             return self.lex_string(line, col, false);
@@ -339,6 +351,67 @@ impl<'a> Lexer<'a> {
         } else {
             Ok(self.spanned(Token::Str(s), line, col))
         }
+    }
+
+    fn lex_triple_string(
+        &mut self,
+        line: usize,
+        col: usize,
+        is_fstr: bool,
+    ) -> Result<SpannedToken, IonError> {
+        // consume opening """
+        self.advance(); // first "
+        self.advance(); // second "
+        self.advance(); // third "
+        // Skip a leading newline immediately after """
+        if self.pos < self.source.len() && self.peek() == b'\n' {
+            self.advance();
+        }
+        let mut s = String::new();
+
+        while self.pos < self.source.len() {
+            if self.peek() == b'"'
+                && self.pos + 1 < self.source.len() && self.source[self.pos + 1] == b'"'
+                && self.pos + 2 < self.source.len() && self.source[self.pos + 2] == b'"'
+            {
+                // consume closing """
+                self.advance();
+                self.advance();
+                self.advance();
+                if is_fstr {
+                    return Ok(self.spanned(Token::FStr(s), line, col));
+                } else {
+                    return Ok(self.spanned(Token::Str(s), line, col));
+                }
+            }
+            let ch = self.peek();
+            if ch == b'\n' {
+                self.advance();
+                s.push('\n');
+            } else if ch == b'\\' {
+                self.advance();
+                match self.peek() {
+                    b'n' => { self.advance(); s.push('\n'); }
+                    b't' => { self.advance(); s.push('\t'); }
+                    b'r' => { self.advance(); s.push('\r'); }
+                    b'\\' => { self.advance(); s.push('\\'); }
+                    b'"' => { self.advance(); s.push('"'); }
+                    b'{' => { self.advance(); s.push('{'); }
+                    b'}' => { self.advance(); s.push('}'); }
+                    _ => {
+                        return Err(IonError::lex(
+                            ion_str!("invalid escape sequence"),
+                            self.line, self.col,
+                        ));
+                    }
+                }
+            } else {
+                self.advance();
+                s.push(ch as char);
+            }
+        }
+
+        Err(IonError::lex(ion_str!("unterminated triple-quoted string"), line, col))
     }
 
     fn lex_bytes(&mut self, line: usize, col: usize) -> Result<SpannedToken, IonError> {

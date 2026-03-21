@@ -230,6 +230,20 @@ greet()         // "hello world"
 greet("ion")    // "hello ion"
 ```
 
+### Named arguments
+
+Call functions with arguments specified by name:
+
+```
+fn connect(host, port, timeout = 30) {
+    f"{host}:{port} (timeout={timeout})"
+}
+connect(port: 443, host: "example.com")
+connect("localhost", timeout: 5, port: 8080)
+```
+
+Positional and named arguments can be mixed. Named arguments are resolved to parameter positions at call time.
+
 ### Lambdas (closures)
 
 ```
@@ -406,12 +420,35 @@ See [Dict Methods](#dict-methods) for the full API.
 "line one\nline two"    // escape sequences: \n, \t, \\, \"
 ```
 
+### Triple-quoted strings
+
+Multi-line strings using triple quotes:
+
+```
+let text = """
+This is a multi-line
+string literal.
+""";
+```
+
+A leading newline immediately after `"""` is stripped. Escape sequences work inside triple-quoted strings.
+
+Triple-quoted f-strings: `f"""value: {x}"""`
+
 ### F-strings (interpolation)
 
 ```
 let name = "ion";
 f"hello {name}"                   // "hello ion"
 f"2 + 2 = {2 + 2}"               // "2 + 2 = 4"
+```
+
+### Indexing
+
+```
+"hello"[0]                        // "h"
+"hello"[4]                        // "o"
+"hello"[-1]                       // "o" (negative indexing)
 ```
 
 ### Concatenation
@@ -577,8 +614,17 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.map(fn)` | List | Apply function to each element |
 | `.filter(fn)` | List | Keep elements where fn returns true |
 | `.fold(init, fn)` | Value | Reduce with accumulator |
+| `.flat_map(fn)` | List | Map then flatten results |
 | `.any(fn)` | Bool | True if fn returns true for any element |
 | `.all(fn)` | Bool | True if fn returns true for all elements |
+
+### Tuple Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.len()` | Int | Number of elements |
+| `.contains(val)` | Bool | Contains value |
+| `.to_list()` | List | Convert to list |
 
 ### Dict Methods
 
