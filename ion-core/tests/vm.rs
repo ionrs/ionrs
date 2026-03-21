@@ -186,6 +186,59 @@ fn test_vm_for() {
     assert_eq!(vm_eval("let mut sum = 0; for x in [1, 2, 3] { sum += x; } sum"), Value::Int(6));
 }
 
+#[test]
+fn test_vm_continue_in_for() {
+    assert_eq!(vm_eval("
+        let mut sum = 0;
+        for x in [1, 2, 3, 4, 5] {
+            if x == 3 { continue; }
+            sum += x;
+        }
+        sum
+    "), Value::Int(12));
+}
+
+#[test]
+fn test_vm_continue_in_while() {
+    assert_eq!(vm_eval("
+        let mut sum = 0;
+        let mut i = 0;
+        while i < 5 {
+            i += 1;
+            if i == 3 { continue; }
+            sum += i;
+        }
+        sum
+    "), Value::Int(12));
+}
+
+#[test]
+fn test_vm_break_in_for() {
+    assert_eq!(vm_eval("
+        let mut sum = 0;
+        for x in [1, 2, 3, 4, 5] {
+            if x == 4 { break; }
+            sum += x;
+        }
+        sum
+    "), Value::Int(6));
+}
+
+#[test]
+fn test_vm_nested_continue() {
+    assert_eq!(vm_eval("
+        let mut sum = 0;
+        for x in [1, 2, 3] {
+            for y in [10, 20, 30] {
+                if y == 20 { continue; }
+                sum += y;
+            }
+            sum += x;
+        }
+        sum
+    "), Value::Int(126));
+}
+
 // ============================================================
 // Functions
 // ============================================================
@@ -1080,4 +1133,35 @@ fn test_vm_host_enum_variant_with_data() {
     } else {
         panic!("expected HostEnum, got: {:?}", val);
     }
+}
+
+// ============================================================
+// Peephole optimization (correctness under optimization)
+// ============================================================
+
+#[test]
+fn test_vm_peephole_double_not() {
+    assert_eq!(vm_eval("!!true"), Value::Bool(true));
+    assert_eq!(vm_eval("!!false"), Value::Bool(false));
+    assert_eq!(vm_eval("let x = 5; !!(x > 3)"), Value::Bool(true));
+}
+
+#[test]
+fn test_vm_peephole_double_neg() {
+    assert_eq!(vm_eval("--5"), Value::Int(5));
+    assert_eq!(vm_eval("let x = 42; --x"), Value::Int(42));
+}
+
+#[test]
+fn test_vm_peephole_if_else_correctness() {
+    assert_eq!(vm_eval("if true { 1 } else { 2 }"), Value::Int(1));
+    assert_eq!(vm_eval("if false { 1 } else { 2 }"), Value::Int(2));
+    assert_eq!(vm_eval("let x = if true { 10 } else { 20 }; x"), Value::Int(10));
+}
+
+#[test]
+fn test_vm_peephole_match_correctness() {
+    assert_eq!(vm_eval("match Some(5) { Some(v) => v * 2, None => 0 }"), Value::Int(10));
+    assert_eq!(vm_eval("match None { Some(v) => v, None => 99 }"), Value::Int(99));
+    assert_eq!(vm_eval("match Ok(7) { Ok(v) => v, Err(e) => 0 }"), Value::Int(7));
 }

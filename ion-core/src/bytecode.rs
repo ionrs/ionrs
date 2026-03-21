@@ -123,7 +123,7 @@ pub enum Op {
     /// Begin a match expression.
     MatchBegin,
     /// Test a pattern against the match subject.
-    MatchArm,       // u16 jump offset if no match
+    MatchArm,       // u8 kind (1=Some,2=Ok,3=Err,4=tuple,5=list), +u8 index for 4/5
     /// End match (cleanup).
     MatchEnd,
 
@@ -298,6 +298,263 @@ impl Chunk {
             }
             i += 1;
         }
+    }
+
+    /// Return the total size (opcode + operands) of the instruction at `offset`.
+    pub fn instruction_size(code: &[u8], offset: usize) -> usize {
+        if offset >= code.len() { return 1; }
+        match code[offset] {
+            // 1-byte (no operands)
+            x if x == Op::True as u8
+              || x == Op::False as u8
+              || x == Op::Unit as u8
+              || x == Op::None as u8
+              || x == Op::Add as u8
+              || x == Op::Sub as u8
+              || x == Op::Mul as u8
+              || x == Op::Div as u8
+              || x == Op::Mod as u8
+              || x == Op::Neg as u8
+              || x == Op::BitAnd as u8
+              || x == Op::BitOr as u8
+              || x == Op::BitXor as u8
+              || x == Op::Shl as u8
+              || x == Op::Shr as u8
+              || x == Op::Eq as u8
+              || x == Op::NotEq as u8
+              || x == Op::Lt as u8
+              || x == Op::Gt as u8
+              || x == Op::LtEq as u8
+              || x == Op::GtEq as u8
+              || x == Op::Not as u8
+              || x == Op::Pop as u8
+              || x == Op::Dup as u8
+              || x == Op::GetIndex as u8
+              || x == Op::SetIndex as u8
+              || x == Op::WrapSome as u8
+              || x == Op::WrapOk as u8
+              || x == Op::WrapErr as u8
+              || x == Op::Try as u8
+              || x == Op::PushScope as u8
+              || x == Op::PopScope as u8
+              || x == Op::MatchEnd as u8
+              || x == Op::Return as u8
+              || x == Op::IterInit as u8
+              || x == Op::ListAppend as u8
+              || x == Op::DictInsert as u8
+              || x == Op::DictMerge as u8
+              || x == Op::IterDrop as u8
+              => 1,
+            // 2-byte (u8 operand)
+            x if x == Op::Call as u8
+              || x == Op::TailCall as u8
+              || x == Op::Pipe as u8
+              || x == Op::BuildRange as u8
+              || x == Op::Slice as u8
+              || x == Op::DefineLocalSlot as u8
+              || x == Op::Print as u8
+              => 2,
+            // 3-byte (u16 operand)
+            x if x == Op::Constant as u8
+              || x == Op::And as u8
+              || x == Op::Or as u8
+              || x == Op::GetLocal as u8
+              || x == Op::SetLocal as u8
+              || x == Op::GetGlobal as u8
+              || x == Op::SetGlobal as u8
+              || x == Op::Jump as u8
+              || x == Op::JumpIfFalse as u8
+              || x == Op::Loop as u8
+              || x == Op::BuildList as u8
+              || x == Op::BuildTuple as u8
+              || x == Op::BuildDict as u8
+              || x == Op::GetField as u8
+              || x == Op::SetField as u8
+              || x == Op::Closure as u8
+              || x == Op::BuildFString as u8
+              || x == Op::IterNext as u8
+              || x == Op::GetLocalSlot as u8
+              || x == Op::SetLocalSlot as u8
+              => 3,
+            // 4-byte (u16 + u8)
+            x if x == Op::DefineLocal as u8
+              || x == Op::MethodCall as u8
+              => 4,
+            // 5-byte (u16 + u16)
+            x if x == Op::ConstructStruct as u8
+              => 5,
+            // 6-byte (u16 + u16 + u8)
+            x if x == Op::ConstructEnum as u8
+              => 6,
+            // Variable-width: MatchBegin (u8 kind + extra operands depending on kind)
+            x if x == Op::MatchBegin as u8 => {
+                if offset + 1 < code.len() {
+                    match code[offset + 1] {
+                        4 => 3,     // Tuple: kind + u8 length
+                        5 => 4,     // List: kind + u8 length + u8 has_rest
+                        _ => 2,     // Some/Ok/Err: just kind
+                    }
+                } else {
+                    2
+                }
+            }
+            // Variable-width: MatchArm (u8 kind, then u8 index for kinds 4/5)
+            x if x == Op::MatchArm as u8 => {
+                if offset + 1 < code.len() {
+                    let kind = code[offset + 1];
+                    if kind == 4 || kind == 5 { 3 } else { 2 }
+                } else {
+                    2
+                }
+            }
+            // Unknown — treat as 1 to avoid infinite loops
+            _ => 1,
+        }
+    }
+
+    /// Peephole optimization pass: removes dead instruction sequences and
+    /// adjusts jump targets accordingly.
+    /// - `Not; Not` → remove both (double negation)
+    /// - `Neg; Neg` → remove both (double arithmetic negation)
+    /// - `Jump 0` → remove (nop jump to next instruction)
+    /// - Pure push + `Pop` → remove both (dead value)
+    pub fn peephole_optimize(&mut self) {
+        let old_len = self.code.len();
+        if old_len == 0 { return; }
+        let mut dead = vec![false; old_len];
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let mut i = 0;
+            while i < old_len {
+                if dead[i] { i += 1; continue; }
+                let size = Self::instruction_size(&self.code, i);
+                // Find next live instruction
+                let mut next = i + size;
+                while next < old_len && dead[next] { next += 1; }
+                if next >= old_len { break; }
+                let next_size = Self::instruction_size(&self.code, next);
+
+                // Pattern: Not; Not → remove both
+                if self.code[i] == Op::Not as u8 && self.code[next] == Op::Not as u8 {
+                    dead[i] = true;
+                    dead[next] = true;
+                    changed = true;
+                    i = next + next_size;
+                    continue;
+                }
+
+                // Pattern: Neg; Neg → remove both
+                if self.code[i] == Op::Neg as u8 && self.code[next] == Op::Neg as u8 {
+                    dead[i] = true;
+                    dead[next] = true;
+                    changed = true;
+                    i = next + next_size;
+                    continue;
+                }
+
+
+                // Pattern: Jump 0 → remove (jump to next instruction)
+                if self.code[i] == Op::Jump as u8 && size == 3 {
+                    let target = self.read_u16(i + 1);
+                    if target == 0 {
+                        for j in i..i+3 { dead[j] = true; }
+                        changed = true;
+                        i = next;
+                        continue;
+                    }
+                }
+
+                // Pattern: pure push followed by Pop → remove both
+                if self.code[next] == Op::Pop as u8 {
+                    let b = self.code[i];
+                    let is_pure = b == Op::True as u8 || b == Op::False as u8
+                        || b == Op::Unit as u8 || b == Op::None as u8
+                        || b == Op::Constant as u8 || b == Op::Dup as u8
+                        || b == Op::GetLocalSlot as u8;
+                    if is_pure {
+                        for j in i..i+size { dead[j] = true; }
+                        dead[next] = true;
+                        changed = true;
+                        i = next + 1;
+                        continue;
+                    }
+                }
+
+                i = next;
+            }
+        }
+
+        self.compact_dead(&dead);
+    }
+
+    /// Remove dead bytes and adjust jump targets.
+    fn compact_dead(&mut self, dead: &[bool]) {
+        let old_len = self.code.len();
+
+        // Build offset map: old position → new position
+        let mut offset_map = vec![0usize; old_len + 1];
+        let mut new_pos = 0;
+        for old_pos in 0..old_len {
+            offset_map[old_pos] = new_pos;
+            if !dead[old_pos] {
+                new_pos += 1;
+            }
+        }
+        offset_map[old_len] = new_pos;
+
+        if new_pos == old_len { return; } // nothing to compact
+
+        // Adjust jump targets (walk instruction boundaries on live code)
+        let mut i = 0;
+        while i < old_len {
+            if dead[i] { i += 1; continue; }
+            let op = self.code[i];
+            let size = Self::instruction_size(&self.code, i);
+
+            // Forward jumps: offset is relative to the byte AFTER the instruction
+            if (op == Op::Jump as u8 || op == Op::JumpIfFalse as u8
+                || op == Op::And as u8 || op == Op::Or as u8
+                || op == Op::IterNext as u8)
+                && size == 3
+            {
+                let old_offset = self.read_u16(i + 1) as usize;
+                let old_target = i + 3 + old_offset;
+                let new_instr_end = offset_map[i] + 3; // new position of byte after this instr
+                let new_target = if old_target <= old_len { offset_map[old_target] } else { offset_map[old_len] };
+                let new_offset = new_target.saturating_sub(new_instr_end);
+                self.code[i + 1] = (new_offset >> 8) as u8;
+                self.code[i + 2] = (new_offset & 0xff) as u8;
+            }
+
+            // Backward jump: Loop
+            if op == Op::Loop as u8 && size == 3 {
+                let old_offset = self.read_u16(i + 1) as usize;
+                let old_target = (i + 3).wrapping_sub(old_offset);
+                let new_instr_end = offset_map[i] + 3;
+                let new_target = if old_target <= old_len { offset_map[old_target] } else { 0 };
+                let new_offset = new_instr_end.saturating_sub(new_target);
+                self.code[i + 1] = (new_offset >> 8) as u8;
+                self.code[i + 2] = (new_offset & 0xff) as u8;
+            }
+
+            i += size;
+        }
+
+        // Compact: remove dead bytes
+        let mut new_code = Vec::with_capacity(new_pos);
+        let mut new_lines = Vec::with_capacity(new_pos);
+        let mut new_cols = Vec::with_capacity(new_pos);
+        for j in 0..old_len {
+            if !dead[j] {
+                new_code.push(self.code[j]);
+                new_lines.push(self.lines[j]);
+                new_cols.push(self.cols[j]);
+            }
+        }
+        self.code = new_code;
+        self.lines = new_lines;
+        self.cols = new_cols;
     }
 }
 

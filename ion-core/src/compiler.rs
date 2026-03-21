@@ -26,10 +26,12 @@ pub struct Compiler {
     needs_env_locals: bool,
     /// Pending break jump offsets to patch when loop ends.
     break_jumps: Vec<usize>,
-    /// Loop start offset for continue jumps.
+    /// Loop start offset for continue jumps (used by while/loop).
     continue_target: Option<usize>,
-    /// Whether we're inside a for-loop (break needs iterator cleanup).
+    /// Whether we're inside a for-loop (break needs iterator cleanup, continue needs scope cleanup).
     in_for_loop: bool,
+    /// Scope depth at the start of the current loop (for break/continue scope cleanup).
+    loop_scope_depth: usize,
 }
 
 impl Compiler {
@@ -44,6 +46,7 @@ impl Compiler {
             break_jumps: Vec::new(),
             continue_target: None,
             in_for_loop: false,
+            loop_scope_depth: 0,
         }
     }
 
@@ -294,6 +297,7 @@ impl Compiler {
             self.chunk.emit_op(Op::Unit, 0);
         }
         self.chunk.emit_op(Op::Return, 0);
+        self.chunk.peephole_optimize();
         Ok((self.chunk, self.fn_chunks))
     }
 
@@ -326,6 +330,10 @@ impl Compiler {
                 } else {
                     self.chunk.emit_op(Op::Unit, line);
                 }
+                // Pop all scopes back to the loop's scope level
+                for _ in self.loop_scope_depth..self.scope_depth {
+                    self.chunk.emit_op(Op::PopScope, line);
+                }
                 if self.in_for_loop {
                     self.chunk.emit_op(Op::IterDrop, line);
                 }
@@ -334,11 +342,17 @@ impl Compiler {
             }
             StmtKind::Continue => {
                 if let Some(target) = self.continue_target {
-                    // Emit loop-back jump to loop start
+                    // Pop all scopes back to the loop's scope level
+                    for _ in self.loop_scope_depth..self.scope_depth {
+                        self.chunk.emit_op(Op::PopScope, line);
+                    }
+                    if self.in_for_loop {
+                        // For-loop: push Unit placeholder for IterNext
+                        self.chunk.emit_op(Op::Unit, line);
+                    }
                     let offset = self.chunk.len() - target + 3;
                     self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
                 } else {
-                    // No loop context — emit placeholder (shouldn't happen in valid code)
                     self.chunk.emit_jump(Op::Jump, line);
                 }
             }
@@ -360,7 +374,9 @@ impl Compiler {
             StmtKind::WhileLet { pattern, expr, body } => {
                 let saved_breaks = std::mem::take(&mut self.break_jumps);
                 let saved_in_for = self.in_for_loop;
+                let saved_loop_depth = self.loop_scope_depth;
                 self.in_for_loop = false;
+                self.loop_scope_depth = self.scope_depth;
                 let saved_continue = self.continue_target.take();
 
                 let loop_start = self.chunk.len();
@@ -398,6 +414,7 @@ impl Compiler {
                 self.break_jumps = saved_breaks;
                 self.continue_target = saved_continue;
                 self.in_for_loop = saved_in_for;
+                self.loop_scope_depth = saved_loop_depth;
             }
         }
         Ok(())
@@ -653,6 +670,7 @@ impl Compiler {
                 }
                 fn_compiler.compile_expr(body)?;
                 fn_compiler.chunk.emit_op(Op::Return, line);
+                fn_compiler.chunk.peephole_optimize();
                 let compiled_chunk = fn_compiler.chunk;
                 self.fn_chunks.extend(fn_compiler.fn_chunks);
 
@@ -944,6 +962,7 @@ impl Compiler {
         }
         fn_compiler.compile_block_expr(body, line)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
+        fn_compiler.chunk.peephole_optimize();
         let compiled_chunk = fn_compiler.chunk;
         // Collect any nested function chunks
         self.fn_chunks.extend(fn_compiler.fn_chunks);
@@ -970,6 +989,7 @@ impl Compiler {
         let mut fn_compiler = Compiler::new();
         fn_compiler.compile_expr(body)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
+        fn_compiler.chunk.peephole_optimize();
         Ok(FnProto {
             name: "<lambda>".to_string(),
             arity: params.len(),
@@ -984,7 +1004,9 @@ impl Compiler {
         let saved_breaks = std::mem::take(&mut self.break_jumps);
         let saved_continue = self.continue_target.take();
         let saved_in_for = self.in_for_loop;
+        let saved_loop_depth = self.loop_scope_depth;
         self.in_for_loop = true;
+        self.loop_scope_depth = self.scope_depth;
 
         // Evaluate the iterator expression
         self.compile_expr(iter)?;
@@ -1029,6 +1051,7 @@ impl Compiler {
         self.break_jumps = saved_breaks;
         self.continue_target = saved_continue;
         self.in_for_loop = saved_in_for;
+        self.loop_scope_depth = saved_loop_depth;
         Ok(())
     }
 
@@ -1036,7 +1059,9 @@ impl Compiler {
         let saved_breaks = std::mem::take(&mut self.break_jumps);
         let saved_continue = self.continue_target.take();
         let saved_in_for = self.in_for_loop;
+        let saved_loop_depth = self.loop_scope_depth;
         self.in_for_loop = false;
+        self.loop_scope_depth = self.scope_depth;
 
         let loop_start = self.chunk.len();
         self.continue_target = Some(loop_start);
@@ -1064,6 +1089,7 @@ impl Compiler {
         self.break_jumps = saved_breaks;
         self.continue_target = saved_continue;
         self.in_for_loop = saved_in_for;
+        self.loop_scope_depth = saved_loop_depth;
         Ok(())
     }
 
@@ -1071,7 +1097,9 @@ impl Compiler {
         let saved_breaks = std::mem::take(&mut self.break_jumps);
         let saved_continue = self.continue_target.take();
         let saved_in_for = self.in_for_loop;
+        let saved_loop_depth = self.loop_scope_depth;
         self.in_for_loop = false;
+        self.loop_scope_depth = self.scope_depth;
 
         let loop_start = self.chunk.len();
         self.continue_target = Some(loop_start);
@@ -1092,6 +1120,7 @@ impl Compiler {
         self.break_jumps = saved_breaks;
         self.continue_target = saved_continue;
         self.in_for_loop = saved_in_for;
+        self.loop_scope_depth = saved_loop_depth;
         Ok(())
     }
 
