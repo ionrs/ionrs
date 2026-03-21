@@ -473,6 +473,76 @@ fn test_vm_dict_comp() {
 }
 
 // ============================================================
+// If-let / While-let (VM-native)
+// ============================================================
+
+#[test]
+fn test_vm_if_let_some() {
+    assert_eq!(vm_eval("if let Some(x) = Some(42) { x } else { 0 }"), Value::Int(42));
+    assert_eq!(vm_eval("if let Some(x) = None { x } else { 0 }"), Value::Int(0));
+}
+
+#[test]
+fn test_vm_if_let_ok() {
+    assert_eq!(vm_eval("if let Ok(x) = Ok(10) { x + 1 } else { 0 }"), Value::Int(11));
+    assert_eq!(vm_eval("if let Ok(x) = Err(\"bad\") { x } else { -1 }"), Value::Int(-1));
+}
+
+#[test]
+fn test_vm_if_let_no_else() {
+    assert_eq!(vm_eval("if let Some(x) = Some(5) { x }"), Value::Int(5));
+    assert_eq!(vm_eval("if let Some(x) = None { x }"), Value::Unit);
+}
+
+#[test]
+fn test_vm_while_let() {
+    assert_eq!(vm_eval(r#"
+        let mut items = [Some(1), Some(2), Some(3), None];
+        let mut sum = 0;
+        let mut i = 0;
+        while let Some(x) = items[i] {
+            sum += x;
+            i += 1;
+        }
+        sum
+    "#), Value::Int(6));
+}
+
+// ============================================================
+// Index/field assignment (VM-native)
+// ============================================================
+
+#[test]
+fn test_vm_list_index_assign() {
+    assert_eq!(vm_eval("let mut a = [1, 2, 3]; a[0] = 10; a"),
+        Value::List(vec![Value::Int(10), Value::Int(2), Value::Int(3)]));
+}
+
+#[test]
+fn test_vm_list_index_compound_assign() {
+    assert_eq!(vm_eval("let mut a = [1, 2, 3]; a[1] += 10; a"),
+        Value::List(vec![Value::Int(1), Value::Int(12), Value::Int(3)]));
+}
+
+#[test]
+fn test_vm_dict_field_assign() {
+    let result = vm_eval("let mut d = #{\"x\": 1}; d.x = 42; d.x");
+    assert_eq!(result, Value::Int(42));
+}
+
+#[test]
+fn test_vm_dict_index_assign() {
+    let result = vm_eval("let mut d = #{\"a\": 1, \"b\": 2}; d[\"a\"] = 99; d[\"a\"]");
+    assert_eq!(result, Value::Int(99));
+}
+
+#[test]
+fn test_vm_dict_field_compound_assign() {
+    let result = vm_eval("let mut d = #{\"x\": 10}; d.x += 5; d.x");
+    assert_eq!(result, Value::Int(15));
+}
+
+// ============================================================
 // Bitwise operators (VM path)
 // ============================================================
 

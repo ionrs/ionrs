@@ -320,11 +320,98 @@ impl Interpreter {
                             IonError::runtime(msg, stmt.span.line, stmt.span.col)
                         })?;
                     }
-                    AssignTarget::Index(_, _) | AssignTarget::Field(_, _) => {
-                        return Err(IonError::runtime(
-                            ion_str!("index/field assignment not yet supported").to_string(),
-                            stmt.span.line, stmt.span.col,
-                        ).into());
+                    AssignTarget::Index(obj_expr, index_expr) => {
+                        let var_name = match &obj_expr.kind {
+                            ExprKind::Ident(name) => name.clone(),
+                            _ => return Err(IonError::runtime(
+                                "index assignment only supported on variables".to_string(),
+                                stmt.span.line, stmt.span.col,
+                            ).into()),
+                        };
+                        let mut container = self.env.get(&var_name).ok_or_else(|| {
+                            IonError::name(
+                                format!("{}{}", ion_str!("undefined variable: "), var_name),
+                                stmt.span.line, stmt.span.col,
+                            )
+                        })?.clone();
+                        let index = self.eval_expr(index_expr)?;
+                        let final_val = match op {
+                            AssignOp::Eq => rhs,
+                            _ => {
+                                let old = self.index_access(&container, &index, stmt.span)?;
+                                // index_access returns Option-wrapped values; unwrap for compound assign
+                                let old = match old {
+                                    Value::Option(Some(v)) => *v,
+                                    other => other,
+                                };
+                                self.apply_compound_op(*op, &old, &rhs, stmt.span)?
+                            }
+                        };
+                        match (&mut container, &index) {
+                            (Value::List(items), Value::Int(i)) => {
+                                let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
+                                if idx >= items.len() {
+                                    return Err(IonError::runtime(
+                                        format!("index {} out of range", i), stmt.span.line, stmt.span.col,
+                                    ).into());
+                                }
+                                items[idx] = final_val;
+                            }
+                            (Value::Dict(map), Value::Str(key)) => {
+                                map.insert(key.clone(), final_val);
+                            }
+                            _ => return Err(IonError::type_err(
+                                format!("cannot set index on {}", container.type_name()),
+                                stmt.span.line, stmt.span.col,
+                            ).into()),
+                        }
+                        self.env.set(&var_name, container).map_err(|msg| {
+                            IonError::runtime(msg, stmt.span.line, stmt.span.col)
+                        })?;
+                    }
+                    AssignTarget::Field(obj_expr, field) => {
+                        let var_name = match &obj_expr.kind {
+                            ExprKind::Ident(name) => name.clone(),
+                            _ => return Err(IonError::runtime(
+                                "field assignment only supported on variables".to_string(),
+                                stmt.span.line, stmt.span.col,
+                            ).into()),
+                        };
+                        let mut container = self.env.get(&var_name).ok_or_else(|| {
+                            IonError::name(
+                                format!("{}{}", ion_str!("undefined variable: "), var_name),
+                                stmt.span.line, stmt.span.col,
+                            )
+                        })?.clone();
+                        let final_val = match op {
+                            AssignOp::Eq => rhs,
+                            _ => {
+                                let old = self.field_access(&container, field, stmt.span)?;
+                                self.apply_compound_op(*op, &old, &rhs, stmt.span)?
+                            }
+                        };
+                        match &mut container {
+                            Value::Dict(map) => {
+                                map.insert(field.clone(), final_val);
+                            }
+                            Value::HostStruct { fields, .. } => {
+                                if fields.contains_key(field.as_str()) {
+                                    fields.insert(field.clone(), final_val);
+                                } else {
+                                    return Err(IonError::runtime(
+                                        format!("field '{}' not found", field),
+                                        stmt.span.line, stmt.span.col,
+                                    ).into());
+                                }
+                            }
+                            _ => return Err(IonError::type_err(
+                                format!("cannot set field on {}", container.type_name()),
+                                stmt.span.line, stmt.span.col,
+                            ).into()),
+                        }
+                        self.env.set(&var_name, container).map_err(|msg| {
+                            IonError::runtime(msg, stmt.span.line, stmt.span.col)
+                        })?;
                     }
                 }
                 Ok(Value::Unit)

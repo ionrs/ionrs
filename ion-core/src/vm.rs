@@ -358,6 +358,22 @@ impl Vm {
                     let obj = self.pop(line)?;
                     self.stack.push(self.get_index(obj, index, line)?);
                 }
+                Op::SetField => {
+                    let field_idx = chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    let field = self.const_as_str(&chunk.constants[field_idx], line)?;
+                    let value = self.pop(line)?;
+                    let obj = self.pop(line)?;
+                    let result = self.set_field(obj, &field, value, line)?;
+                    self.stack.push(result);
+                }
+                Op::SetIndex => {
+                    let value = self.pop(line)?;
+                    let index = self.pop(line)?;
+                    let obj = self.pop(line)?;
+                    let result = self.set_index(obj, index, value, line)?;
+                    self.stack.push(result);
+                }
                 Op::MethodCall => {
                     let method_idx = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
@@ -908,6 +924,48 @@ impl Vm {
             _ => Err(IonError::type_err(
                 format!("cannot index {} with {}", obj.type_name(), index.type_name()),
                 line, 0,
+            )),
+        }
+    }
+
+    /// Set index on a container, returning the modified container.
+    fn set_index(&self, obj: Value, index: Value, value: Value, line: usize) -> Result<Value, IonError> {
+        match (obj, &index) {
+            (Value::List(mut items), Value::Int(i)) => {
+                let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
+                if idx >= items.len() {
+                    return Err(IonError::runtime(format!("index {} out of range", i), line, 0));
+                }
+                items[idx] = value;
+                Ok(Value::List(items))
+            }
+            (Value::Dict(mut map), Value::Str(key)) => {
+                map.insert(key.clone(), value);
+                Ok(Value::Dict(map))
+            }
+            (obj, _) => Err(IonError::type_err(
+                format!("cannot set index on {}", obj.type_name()), line, 0,
+            )),
+        }
+    }
+
+    /// Set field on an object, returning the modified object.
+    fn set_field(&self, obj: Value, field: &str, value: Value, line: usize) -> Result<Value, IonError> {
+        match obj {
+            Value::Dict(mut map) => {
+                map.insert(field.to_string(), value);
+                Ok(Value::Dict(map))
+            }
+            Value::HostStruct { type_name, mut fields } => {
+                if fields.contains_key(field) {
+                    fields.insert(field.to_string(), value);
+                    Ok(Value::HostStruct { type_name, fields })
+                } else {
+                    Err(IonError::runtime(format!("field '{}' not found on {}", field, type_name), line, 0))
+                }
+            }
+            _ => Err(IonError::type_err(
+                format!("cannot set field on {}", obj.type_name()), line, 0,
             )),
         }
     }

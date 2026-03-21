@@ -91,10 +91,33 @@ impl Compiler {
                 self.compile_assign(target, op, value, line)?;
                 self.chunk.emit_op(Op::Pop, line); // discard assignment result
             }
-            StmtKind::WhileLet { .. } => {
-                return Err(IonError::runtime(
-                    "while-let not yet supported in bytecode VM".to_string(), line, 0,
-                ));
+            StmtKind::WhileLet { pattern, expr, body } => {
+                let loop_start = self.chunk.len();
+
+                // Evaluate expression
+                self.compile_expr(expr)?;
+
+                // Test pattern
+                self.chunk.emit_op(Op::Dup, line); // keep value for binding
+                self.compile_pattern_test(pattern, line)?;
+
+                let exit_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+
+                // Pattern matched — bind and execute body
+                self.chunk.emit_op(Op::PushScope, line);
+                self.compile_pattern_bind(pattern, line)?;
+                for stmt in body {
+                    self.compile_stmt(stmt)?;
+                }
+                self.chunk.emit_op(Op::PopScope, line);
+
+                let offset = self.chunk.len() - loop_start + 3;
+                self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
+
+                self.chunk.patch_jump(exit_jump);
+                self.chunk.emit_op(Op::Pop, line); // pop false
+                self.chunk.emit_op(Op::Pop, line); // pop the duped value
             }
         }
         Ok(())
@@ -381,8 +404,41 @@ impl Compiler {
                 self.compile_dict_comp(key, value, pattern, iter, cond.as_deref(), line)?;
             }
 
+            ExprKind::IfLet { pattern, expr: inner, then_body, else_body } => {
+                // Evaluate the expression
+                self.compile_expr(inner)?;
+
+                // Test pattern
+                self.chunk.emit_op(Op::Dup, line); // keep value for binding
+                self.compile_pattern_test(pattern, line)?;
+
+                let else_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+
+                // Pattern matched — bind variables in new scope
+                self.chunk.emit_op(Op::PushScope, line);
+                self.compile_pattern_bind(pattern, line)?;
+                self.compile_block_expr(then_body, line)?;
+                self.chunk.emit_op(Op::PopScope, line);
+
+                let end_jump = self.chunk.emit_jump(Op::Jump, line);
+
+                self.chunk.patch_jump(else_jump);
+                self.chunk.emit_op(Op::Pop, line); // pop false
+                self.chunk.emit_op(Op::Pop, line); // pop the duped value
+
+                if let Some(else_stmts) = else_body {
+                    self.chunk.emit_op(Op::PushScope, line);
+                    self.compile_block_expr(else_stmts, line)?;
+                    self.chunk.emit_op(Op::PopScope, line);
+                } else {
+                    self.chunk.emit_op(Op::Unit, line);
+                }
+
+                self.chunk.patch_jump(end_jump);
+            }
+
             // Features that fall back to tree-walk for now
-            ExprKind::IfLet { .. } |
             ExprKind::StructConstruct { .. } |
             ExprKind::EnumVariant { .. } |
             ExprKind::EnumVariantCall { .. } => {
@@ -599,11 +655,83 @@ impl Compiler {
                 let idx = self.chunk.add_constant(Value::Str(name.clone()));
                 self.chunk.emit_op_u16(Op::SetLocal, idx, line);
             }
-            _ => {
-                return Err(IonError::runtime(
-                    "complex assignment target not yet supported in bytecode VM".to_string(),
-                    line, 0,
-                ));
+            AssignTarget::Index(obj_expr, index_expr) => {
+                // For index assignment, we need to:
+                // 1. Get the container, 2. Modify it, 3. Write it back
+                // This only works when obj_expr is an Ident (variable)
+                let var_name = match &obj_expr.kind {
+                    ExprKind::Ident(name) => name.clone(),
+                    _ => return Err(IonError::runtime(
+                        "index assignment only supported on variables".to_string(), line, 0,
+                    )),
+                };
+
+                // Get the container
+                self.compile_expr(obj_expr)?;
+                self.compile_expr(index_expr)?;
+
+                // Compute new value
+                match op {
+                    AssignOp::Eq => {
+                        self.compile_expr(value)?;
+                    }
+                    _ => {
+                        // Get old value for compound assignment
+                        self.compile_expr(obj_expr)?;
+                        self.compile_expr(index_expr)?;
+                        self.chunk.emit_op(Op::GetIndex, line);
+                        self.compile_expr(value)?;
+                        match op {
+                            AssignOp::PlusEq => self.chunk.emit_op(Op::Add, line),
+                            AssignOp::MinusEq => self.chunk.emit_op(Op::Sub, line),
+                            AssignOp::StarEq => self.chunk.emit_op(Op::Mul, line),
+                            AssignOp::SlashEq => self.chunk.emit_op(Op::Div, line),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+
+                // Stack: [..., obj, index, new_value]
+                self.chunk.emit_op(Op::SetIndex, line);
+                // SetIndex returns the modified container — write it back
+                let name_idx = self.chunk.add_constant(Value::Str(var_name));
+                self.chunk.emit_op_u16(Op::SetLocal, name_idx, line);
+            }
+            AssignTarget::Field(obj_expr, field) => {
+                let var_name = match &obj_expr.kind {
+                    ExprKind::Ident(name) => name.clone(),
+                    _ => return Err(IonError::runtime(
+                        "field assignment only supported on variables".to_string(), line, 0,
+                    )),
+                };
+
+                self.compile_expr(obj_expr)?;
+
+                match op {
+                    AssignOp::Eq => {
+                        self.compile_expr(value)?;
+                    }
+                    _ => {
+                        self.chunk.emit_op(Op::Dup, line);
+                        let get_idx = self.chunk.add_constant(Value::Str(field.clone()));
+                        self.chunk.emit_op_u16(Op::GetField, get_idx, line);
+                        self.compile_expr(value)?;
+                        match op {
+                            AssignOp::PlusEq => self.chunk.emit_op(Op::Add, line),
+                            AssignOp::MinusEq => self.chunk.emit_op(Op::Sub, line),
+                            AssignOp::StarEq => self.chunk.emit_op(Op::Mul, line),
+                            AssignOp::SlashEq => self.chunk.emit_op(Op::Div, line),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+
+                // Stack: [..., obj, new_value]
+                let field_idx = self.chunk.add_constant(Value::Str(field.clone()));
+                self.chunk.emit_op_u16(Op::SetField, field_idx, line);
+                // SetField returns the modified container — write it back
+                let name_idx = self.chunk.add_constant(Value::Str(var_name));
+                self.chunk.emit_op_u16(Op::SetLocal, name_idx, line);
             }
         }
         Ok(())

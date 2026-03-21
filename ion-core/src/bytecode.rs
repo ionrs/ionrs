@@ -87,6 +87,10 @@ pub enum Op {
     GetField,       // u16 field name constant index
     /// Index access: pop index, pop object, push object[index].
     GetIndex,
+    /// Set field: pop value, pop object, mutate, push value.
+    SetField,       // u16 field name constant index
+    /// Set index: pop value, pop index, pop object, mutate, push value.
+    SetIndex,
     /// Method call: pop args + receiver, push result.
     MethodCall,     // u16 method name constant index, u8 arg count
 

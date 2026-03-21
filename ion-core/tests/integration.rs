@@ -2053,3 +2053,32 @@ fn test_vm_for_bytes() {
     let mut engine = Engine::new();
     assert_eq!(engine.vm_eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#).unwrap(), Value::Int(97 + 98 + 99));
 }
+
+// ============================================================
+// Index/field assignment (tree-walk)
+// ============================================================
+
+#[test]
+fn test_list_index_assign() {
+    assert_eq!(eval("let mut a = [1, 2, 3]; a[0] = 10; a"),
+        Value::List(vec![Value::Int(10), Value::Int(2), Value::Int(3)]));
+    assert_eq!(eval("let mut a = [10, 20, 30]; a[1] += 5; a"),
+        Value::List(vec![Value::Int(10), Value::Int(25), Value::Int(30)]));
+}
+
+#[test]
+fn test_dict_index_assign() {
+    assert_eq!(eval("let mut d = #{\"x\": 1}; d[\"x\"] = 42; d.x"), Value::Int(42));
+}
+
+#[test]
+fn test_dict_field_assign() {
+    assert_eq!(eval("let mut d = #{\"x\": 1, \"y\": 2}; d.x = 99; d.x"), Value::Int(99));
+    assert_eq!(eval("let mut d = #{\"count\": 0}; d.count += 1; d.count += 1; d.count"), Value::Int(2));
+}
+
+#[test]
+fn test_index_assign_negative() {
+    assert_eq!(eval("let mut a = [1, 2, 3]; a[-1] = 99; a"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(99)]));
+}
