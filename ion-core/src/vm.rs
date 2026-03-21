@@ -1213,6 +1213,51 @@ impl Vm {
                     .collect();
                 Ok(Value::List(pairs))
             }
+            "first" => {
+                Ok(match items.first() {
+                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    None => Value::Option(None),
+                })
+            }
+            "last" => {
+                Ok(match items.last() {
+                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    None => Value::Option(None),
+                })
+            }
+            "sort" => {
+                let mut sorted = items.to_vec();
+                sorted.sort_by(|a, b| {
+                    match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                        _ => std::cmp::Ordering::Equal,
+                    }
+                });
+                Ok(Value::List(sorted))
+            }
+            "flatten" => {
+                let mut result = Vec::new();
+                for item in items {
+                    if let Value::List(inner) = item {
+                        result.extend(inner.iter().cloned());
+                    } else {
+                        result.push(item.clone());
+                    }
+                }
+                Ok(Value::List(result))
+            }
+            "zip" => {
+                if let Some(Value::List(other)) = args.first() {
+                    let result: Vec<Value> = items.iter().zip(other.iter())
+                        .map(|(a, b)| Value::Tuple(vec![a.clone(), b.clone()]))
+                        .collect();
+                    Ok(Value::List(result))
+                } else {
+                    Err(IonError::type_err("zip requires a list argument".to_string(), line, 0))
+                }
+            }
             _ => Err(IonError::type_err(format!("list has no method '{}'", method), line, 0)),
         }
     }
@@ -1327,6 +1372,33 @@ impl Vm {
                 Ok(map.get(key).cloned().unwrap_or(default))
             }
             "is_empty" => Ok(Value::Bool(map.is_empty())),
+            "entries" => Ok(Value::List(
+                map.iter().map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()])).collect()
+            )),
+            "insert" => {
+                let key = args.first().and_then(|a| a.as_str()).unwrap_or("");
+                let val = args.get(1).cloned().unwrap_or(Value::Unit);
+                let mut new_map = map.clone();
+                new_map.insert(key.to_string(), val);
+                Ok(Value::Dict(new_map))
+            }
+            "remove" => {
+                let key = args.first().and_then(|a| a.as_str()).unwrap_or("");
+                let mut new_map = map.clone();
+                new_map.shift_remove(key);
+                Ok(Value::Dict(new_map))
+            }
+            "merge" => {
+                if let Some(Value::Dict(other)) = args.first() {
+                    let mut new_map = map.clone();
+                    for (k, v) in other {
+                        new_map.insert(k.clone(), v.clone());
+                    }
+                    Ok(Value::Dict(new_map))
+                } else {
+                    Err(IonError::type_err("merge requires a dict argument".to_string(), line, 0))
+                }
+            }
             _ => Err(IonError::type_err(format!("dict has no method '{}'", method), line, 0)),
         }
     }

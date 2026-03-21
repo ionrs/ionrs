@@ -699,3 +699,92 @@ fn test_vm_bitwise() {
     assert_eq!(vm_eval("1 << 4"), Value::Int(16));
     assert_eq!(vm_eval("16 >> 2"), Value::Int(4));
 }
+
+// ============================================================
+// Missing stdlib methods (VM path)
+// ============================================================
+
+#[test]
+fn test_vm_list_first_last() {
+    assert_eq!(vm_eval("[1, 2, 3].first()"), Value::Option(Some(Box::new(Value::Int(1)))));
+    assert_eq!(vm_eval("[1, 2, 3].last()"), Value::Option(Some(Box::new(Value::Int(3)))));
+    assert_eq!(vm_eval("[].first()"), Value::Option(None));
+    assert_eq!(vm_eval("[].last()"), Value::Option(None));
+}
+
+#[test]
+fn test_vm_list_sort() {
+    assert_eq!(vm_eval("[3, 1, 2].sort()"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        vm_eval(r#"["banana", "apple", "cherry"].sort()"#),
+        Value::List(vec![Value::Str("apple".into()), Value::Str("banana".into()), Value::Str("cherry".into())])
+    );
+}
+
+#[test]
+fn test_vm_list_flatten() {
+    assert_eq!(
+        vm_eval("[[1, 2], [3, 4], [5]].flatten()"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4), Value::Int(5)])
+    );
+    assert_eq!(
+        vm_eval("[[1], 2, [3]].flatten()"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_vm_list_zip() {
+    assert_eq!(
+        vm_eval("[1, 2, 3].zip([\"a\", \"b\", \"c\"])"),
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(1), Value::Str("a".into())]),
+            Value::Tuple(vec![Value::Int(2), Value::Str("b".into())]),
+            Value::Tuple(vec![Value::Int(3), Value::Str("c".into())]),
+        ])
+    );
+}
+
+#[test]
+fn test_vm_dict_entries() {
+    let result = vm_eval(r#"let d = #{"a": 1}; d.entries()"#);
+    assert_eq!(
+        result,
+        Value::List(vec![Value::Tuple(vec![Value::Str("a".into()), Value::Int(1)])])
+    );
+}
+
+#[test]
+fn test_vm_dict_insert() {
+    let result = vm_eval(r#"let d = #{"a": 1}; d.insert("b", 2)"#);
+    if let Value::Dict(map) = result {
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("b"), Some(&Value::Int(2)));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_vm_dict_remove() {
+    let result = vm_eval(r#"let d = #{"a": 1, "b": 2}; d.remove("a")"#);
+    if let Value::Dict(map) = result {
+        assert_eq!(map.len(), 1);
+        assert!(map.get("a").is_none());
+        assert_eq!(map.get("b"), Some(&Value::Int(2)));
+    } else {
+        panic!("expected dict");
+    }
+}
+
+#[test]
+fn test_vm_dict_merge() {
+    let result = vm_eval(r#"let a = #{"x": 1}; let b = #{"y": 2}; a.merge(b)"#);
+    if let Value::Dict(map) = result {
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("x"), Some(&Value::Int(1)));
+        assert_eq!(map.get("y"), Some(&Value::Int(2)));
+    } else {
+        panic!("expected dict");
+    }
+}
