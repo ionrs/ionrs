@@ -250,6 +250,30 @@ fn cross_result() {
 }
 
 // ============================================================
+// ? operator
+// ============================================================
+
+#[test]
+fn cross_try_ok() {
+    assert_both_eq("fn f() { let x = Ok(42); x? } f()", Value::Int(42));
+}
+
+#[test]
+fn cross_try_some() {
+    assert_both_eq("fn f() { let x = Some(10); x? } f()", Value::Int(10));
+}
+
+#[test]
+fn cross_try_err_propagates() {
+    assert_both(r#"fn f() { let x = Err("fail"); x? } f()"#);
+}
+
+#[test]
+fn cross_try_none_propagates() {
+    assert_both("fn f() { let x = None; x? } f()");
+}
+
+// ============================================================
 // Pattern matching
 // ============================================================
 
@@ -295,6 +319,43 @@ fn cross_fstring() {
 fn cross_string_methods() {
     assert_both_eq(r#""hello".len()"#, Value::Int(5));
     assert_both_eq(r#""hello".contains("ell")"#, Value::Bool(true));
+    assert_both_eq(r#""hello".starts_with("hel")"#, Value::Bool(true));
+    assert_both_eq(r#""hello".ends_with("llo")"#, Value::Bool(true));
+    assert_both_eq(r#""  hi  ".trim()"#, Value::Str("hi".to_string()));
+    assert_both_eq(r#""  hi  ".trim_start()"#, Value::Str("hi  ".to_string()));
+    assert_both_eq(r#""  hi  ".trim_end()"#, Value::Str("  hi".to_string()));
+    assert_both_eq(r#""hi".to_upper()"#, Value::Str("HI".to_string()));
+    assert_both_eq(r#""HI".to_lower()"#, Value::Str("hi".to_string()));
+    assert_both_eq(r#""ab".repeat(3)"#, Value::Str("ababab".to_string()));
+    assert_both_eq(r#""hello".reverse()"#, Value::Str("olleh".to_string()));
+    assert_both_eq(r#""hello".is_empty()"#, Value::Bool(false));
+    assert_both_eq(r#""".is_empty()"#, Value::Bool(true));
+}
+
+#[test]
+fn cross_string_find() {
+    assert_both_eq(r#""hello".find("ell")"#, Value::Option(Some(Box::new(Value::Int(1)))));
+    assert_both_eq(r#""hello".find("xyz")"#, Value::Option(None));
+}
+
+#[test]
+fn cross_string_split_replace() {
+    assert_both_eq(r#""a,b,c".split(",")"#, Value::List(vec![
+        Value::Str("a".to_string()), Value::Str("b".to_string()), Value::Str("c".to_string()),
+    ]));
+    assert_both_eq(r#""hello".replace("l", "r")"#, Value::Str("herro".to_string()));
+}
+
+#[test]
+fn cross_string_chars() {
+    assert_both_eq(r#""hi".chars()"#, Value::List(vec![
+        Value::Str("h".to_string()), Value::Str("i".to_string()),
+    ]));
+}
+
+#[test]
+fn cross_string_slice() {
+    assert_both_eq(r#""hello".slice(1, 4)"#, Value::Str("ell".to_string()));
 }
 
 // ============================================================

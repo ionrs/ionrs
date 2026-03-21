@@ -1345,6 +1345,45 @@ impl Interpreter {
                 Ok(Value::List(chars))
             }
             "is_empty" => Ok(Value::Bool(s.is_empty())),
+            "trim_start" => Ok(Value::Str(s.trim_start().to_string())),
+            "trim_end" => Ok(Value::Str(s.trim_end().to_string())),
+            "repeat" => {
+                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| IonError::type_err(
+                    ion_str!("repeat requires int argument").to_string(), span.line, span.col,
+                ))?;
+                Ok(Value::Str(s.repeat(n as usize)))
+            }
+            "find" => {
+                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
+                    ion_str!("find requires string argument").to_string(), span.line, span.col,
+                ))?;
+                Ok(match s.find(sub) {
+                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
+                    None => Value::Option(None),
+                })
+            }
+            "to_int" => {
+                Ok(match s.trim().parse::<i64>() {
+                    std::result::Result::Ok(n) => Value::Result(Ok(Box::new(Value::Int(n)))),
+                    std::result::Result::Err(e) => Value::Result(Err(Box::new(Value::Str(e.to_string())))),
+                })
+            }
+            "to_float" => {
+                Ok(match s.trim().parse::<f64>() {
+                    std::result::Result::Ok(f) => Value::Result(Ok(Box::new(Value::Float(f)))),
+                    std::result::Result::Err(e) => Value::Result(Err(Box::new(Value::Str(e.to_string())))),
+                })
+            }
+            "reverse" => Ok(Value::Str(s.chars().rev().collect())),
+            "slice" => {
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
+                let end = args.get(1).and_then(|a| a.as_int())
+                    .map(|n| n as usize)
+                    .unwrap_or(s.len());
+                let start = start.min(s.len());
+                let end = end.min(s.len());
+                Ok(Value::Str(s[start..end].to_string()))
+            }
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on string")),
                 span.line, span.col,

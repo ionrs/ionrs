@@ -876,6 +876,40 @@ fn test_string_replace() {
         Value::Str("hello ion".into()));
 }
 
+#[test]
+fn test_string_trim_variants() {
+    assert_eq!(eval(r#""  hello  ".trim_start()"#), Value::Str("hello  ".into()));
+    assert_eq!(eval(r#""  hello  ".trim_end()"#), Value::Str("  hello".into()));
+}
+
+#[test]
+fn test_string_repeat() {
+    assert_eq!(eval(r#""ab".repeat(3)"#), Value::Str("ababab".into()));
+    assert_eq!(eval(r#""x".repeat(0)"#), Value::Str("".into()));
+}
+
+#[test]
+fn test_string_find() {
+    assert_eq!(eval(r#""hello world".find("world")"#), Value::Option(Some(Box::new(Value::Int(6)))));
+    assert_eq!(eval(r#""hello".find("xyz")"#), Value::Option(None));
+}
+
+#[test]
+fn test_string_to_int() {
+    assert_eq!(eval(r#""42".to_int()"#), Value::Result(Ok(Box::new(Value::Int(42)))));
+    assert_eq!(eval(r#"" -7 ".to_int()"#), Value::Result(Ok(Box::new(Value::Int(-7)))));
+}
+
+#[test]
+fn test_string_to_float() {
+    assert_eq!(eval(r#""3.14".to_float()"#), Value::Result(Ok(Box::new(Value::Float(3.14)))));
+}
+
+#[test]
+fn test_string_reverse() {
+    assert_eq!(eval(r#""hello".reverse()"#), Value::Str("olleh".into()));
+}
+
 // ============================================================
 // Section 20: Engine API
 // ============================================================
