@@ -50,6 +50,8 @@ pub struct Interpreter {
     call_depth: usize,
     #[cfg(feature = "concurrency")]
     nursery: Option<crate::async_rt::Nursery>,
+    #[cfg(feature = "concurrency")]
+    cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Interpreter {
@@ -63,6 +65,8 @@ impl Interpreter {
             call_depth: 0,
             #[cfg(feature = "concurrency")]
             nursery: None,
+            #[cfg(feature = "concurrency")]
+            cancel_flag: None,
         }
     }
 
@@ -89,6 +93,8 @@ impl Interpreter {
             call_depth: 0,
             #[cfg(feature = "concurrency")]
             nursery: None,
+            #[cfg(feature = "concurrency")]
+            cancel_flag: None,
         }
     }
 
@@ -117,6 +123,16 @@ impl Interpreter {
             Err(SignalOrError::Signal(Signal::Break(v))) => Ok(v),
             Err(SignalOrError::Signal(Signal::Continue)) => Ok(Value::Unit),
         }
+    }
+
+    #[cfg(feature = "concurrency")]
+    fn check_cancelled(&self, line: usize, col: usize) -> Result<(), SignalOrError> {
+        if let Some(flag) = &self.cancel_flag {
+            if flag.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(IonError::runtime("task cancelled".to_string(), line, col).into());
+            }
+        }
+        Ok(())
     }
 
     fn eval_stmts(&mut self, stmts: &[Stmt]) -> SignalResult {
@@ -167,6 +183,8 @@ impl Interpreter {
                 let iter_val = self.eval_expr(iter)?;
                 let items = self.value_to_iter(&iter_val, iter.span)?;
                 for item in items {
+                    #[cfg(feature = "concurrency")]
+                    self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     self.env.push_scope();
                     self.bind_pattern(pattern, &item, false, iter.span)?;
                     match self.eval_stmts(body) {
@@ -191,6 +209,8 @@ impl Interpreter {
             StmtKind::While { cond, body } => {
                 let mut iters = 0usize;
                 loop {
+                    #[cfg(feature = "concurrency")]
+                    self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     let c = self.eval_expr(cond)?;
                     if !c.is_truthy() { break; }
                     iters += 1;
@@ -223,6 +243,8 @@ impl Interpreter {
             StmtKind::WhileLet { pattern, expr, body } => {
                 let mut iters = 0usize;
                 loop {
+                    #[cfg(feature = "concurrency")]
+                    self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     let val = self.eval_expr(expr)?;
                     if !self.pattern_matches(pattern, &val) { break; }
                     iters += 1;
@@ -1105,7 +1127,7 @@ impl Interpreter {
             Value::Option(opt) => self.option_method(opt.clone(), method, args, span),
             Value::Result(res) => self.result_method(res.clone(), method, args, span),
             #[cfg(feature = "concurrency")]
-            Value::Task(handle) => self.task_method(handle, method, span),
+            Value::Task(handle) => self.task_method(handle, method, args, span),
             #[cfg(feature = "concurrency")]
             Value::Channel(ch) => self.channel_method(ch, method, args, span),
             _ => Err(IonError::type_err(
@@ -1807,6 +1829,7 @@ impl Interpreter {
     fn eval_spawn(&mut self, expr: &Expr, span: Span) -> SignalResult {
         use crate::async_rt::TaskHandle;
         use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
 
         // Require being inside an async block
         if self.nursery.is_none() {
@@ -1821,11 +1844,14 @@ impl Interpreter {
         let expr_clone = expr.clone();
         let limits = self.limits.clone();
         let types = self.types.clone();
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = cancel_flag.clone();
 
         let handle = std::thread::spawn(move || {
             let mut child = Interpreter::new();
             child.limits = limits;
             child.types = types;
+            child.cancel_flag = Some(flag_clone);
             // Load captured environment
             for (name, val) in captured_env {
                 child.env.define(name, val, false);
@@ -1840,7 +1866,7 @@ impl Interpreter {
             child.eval_program(&program)
         });
 
-        let task_handle = Arc::new(TaskHandle::new(handle));
+        let task_handle = Arc::new(TaskHandle::new(handle, cancel_flag));
 
         // Register with nursery
         if let Some(nursery) = &mut self.nursery {
@@ -1854,7 +1880,7 @@ impl Interpreter {
         let val = self.eval_expr(expr)?;
         match val {
             Value::Task(handle) => {
-                handle.join().map_err(|e| SignalOrError::Error(e))
+                handle.join().map_err(SignalOrError::Error)
             }
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot await "), val.type_name()),
@@ -1890,7 +1916,8 @@ impl Interpreter {
                 };
                 child.eval_program(&program)
             });
-            tasks.push((i, Arc::new(TaskHandle::new(handle))));
+            let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            tasks.push((i, Arc::new(TaskHandle::new(handle, flag))));
         }
 
         // Poll until one finishes (simple busy-wait with yield)
@@ -1911,9 +1938,28 @@ impl Interpreter {
         }
     }
 
-    fn task_method(&self, handle: &std::sync::Arc<crate::async_rt::TaskHandle>, method: &str, span: Span) -> SignalResult {
+    fn task_method(&self, handle: &std::sync::Arc<crate::async_rt::TaskHandle>, method: &str, args: &[Value], span: Span) -> SignalResult {
         match method {
             "is_finished" => Ok(Value::Bool(handle.is_finished())),
+            "cancel" => {
+                handle.cancel();
+                Ok(Value::Unit)
+            }
+            "is_cancelled" => Ok(Value::Bool(handle.is_cancelled())),
+            "await_timeout" => {
+                let ms = args.first()
+                    .and_then(|v| v.as_int())
+                    .ok_or_else(|| IonError::runtime(
+                        ion_str!("await_timeout requires int (ms)").to_string(), span.line, span.col,
+                    ))?;
+                match handle.join_timeout(std::time::Duration::from_millis(ms as u64)) {
+                    Some(result) => {
+                        let val = result.map_err(SignalOrError::Error)?;
+                        Ok(Value::Option(Some(Box::new(val))))
+                    }
+                    None => Ok(Value::Option(None)),
+                }
+            }
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Task")),
                 span.line, span.col,
@@ -1930,27 +1976,51 @@ impl Interpreter {
                         ion_str!("send requires a value").to_string(), span.line, span.col,
                     ).into());
                 }
-                let mut sender = tx.lock().unwrap();
-                // Use try_send for synchronous send
-                sender.try_send(args[0].clone()).map_err(|e| {
-                    IonError::runtime(format!("{}{}", ion_str!("channel send failed: "), e), span.line, span.col)
-                })?;
-                Ok(Value::Unit)
+                let guard = tx.lock().unwrap();
+                match guard.as_ref() {
+                    Some(sender) => {
+                        sender.send(args[0].clone()).map_err(|e| {
+                            IonError::runtime(format!("{}{}", ion_str!("channel send failed: "), e), span.line, span.col)
+                        })?;
+                        Ok(Value::Unit)
+                    }
+                    None => Err(IonError::runtime(
+                        ion_str!("channel is closed").to_string(), span.line, span.col,
+                    ).into()),
+                }
             }
             (ChannelEnd::Sender(tx), "close") => {
-                let mut sender = tx.lock().unwrap();
-                sender.close_channel();
+                let mut guard = tx.lock().unwrap();
+                *guard = None; // Drop the sender, closing the channel
                 Ok(Value::Unit)
             }
             (ChannelEnd::Receiver(rx), "recv") => {
-                let mut receiver = rx.lock().unwrap();
-                // Use try_next for synchronous receive (blocking via spin)
-                use futures::StreamExt;
-                // Block on the future using futures executor
-                let val = futures::executor::block_on(receiver.next());
-                match val {
-                    Some(v) => Ok(Value::Option(Some(Box::new(v)))),
-                    None => Ok(Value::Option(None)),
+                let receiver = rx.lock().unwrap();
+                match receiver.recv() {
+                    Ok(v) => Ok(Value::Option(Some(Box::new(v)))),
+                    Err(_) => Ok(Value::Option(None)), // channel closed
+                }
+            }
+            (ChannelEnd::Receiver(rx), "try_recv") => {
+                let receiver = rx.lock().unwrap();
+                match receiver.try_recv() {
+                    Ok(v) => Ok(Value::Option(Some(Box::new(v)))),
+                    Err(_) => Ok(Value::Option(None)),
+                }
+            }
+            (ChannelEnd::Receiver(rx), "recv_timeout") => {
+                if args.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!("recv_timeout requires a timeout in ms").to_string(), span.line, span.col,
+                    ).into());
+                }
+                let ms = args[0].as_int().ok_or_else(|| IonError::runtime(
+                    ion_str!("recv_timeout requires int (ms)").to_string(), span.line, span.col,
+                ))?;
+                let receiver = rx.lock().unwrap();
+                match receiver.recv_timeout(std::time::Duration::from_millis(ms as u64)) {
+                    Ok(v) => Ok(Value::Option(Some(Box::new(v)))),
+                    Err(_) => Ok(Value::Option(None)),
                 }
             }
             _ => Err(IonError::type_err(
