@@ -543,6 +543,117 @@ fn test_vm_dict_field_compound_assign() {
 }
 
 // ============================================================
+// Closure-based methods (VM-native)
+// ============================================================
+
+#[test]
+fn test_vm_list_map() {
+    assert_eq!(vm_eval("[1, 2, 3].map(|x| x * 2)"),
+        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+}
+
+#[test]
+fn test_vm_list_filter() {
+    assert_eq!(vm_eval("[1, 2, 3, 4, 5].filter(|x| x > 2)"),
+        Value::List(vec![Value::Int(3), Value::Int(4), Value::Int(5)]));
+}
+
+#[test]
+fn test_vm_list_fold() {
+    assert_eq!(vm_eval("[1, 2, 3, 4].fold(0, |acc, x| acc + x)"), Value::Int(10));
+}
+
+#[test]
+fn test_vm_list_flat_map() {
+    assert_eq!(vm_eval("[1, 2, 3].flat_map(|x| [x, x * 10])"),
+        Value::List(vec![Value::Int(1), Value::Int(10), Value::Int(2), Value::Int(20), Value::Int(3), Value::Int(30)]));
+}
+
+#[test]
+fn test_vm_list_any_all() {
+    assert_eq!(vm_eval("[1, 2, 3].any(|x| x > 2)"), Value::Bool(true));
+    assert_eq!(vm_eval("[1, 2, 3].any(|x| x > 5)"), Value::Bool(false));
+    assert_eq!(vm_eval("[1, 2, 3].all(|x| x > 0)"), Value::Bool(true));
+    assert_eq!(vm_eval("[1, 2, 3].all(|x| x > 2)"), Value::Bool(false));
+}
+
+#[test]
+fn test_vm_option_map() {
+    assert_eq!(vm_eval("Some(5).map(|x| x * 2)"),
+        Value::Option(Some(Box::new(Value::Int(10)))));
+    assert_eq!(vm_eval("None.map(|x| x * 2)"), Value::Option(None));
+}
+
+#[test]
+fn test_vm_option_and_then() {
+    assert_eq!(vm_eval("Some(5).and_then(|x| Some(x + 1))"),
+        Value::Option(Some(Box::new(Value::Int(6)))));
+    assert_eq!(vm_eval("None.and_then(|x| Some(x + 1))"), Value::Option(None));
+}
+
+#[test]
+fn test_vm_result_map() {
+    assert_eq!(vm_eval("Ok(10).map(|x| x + 1)"),
+        Value::Result(Ok(Box::new(Value::Int(11)))));
+}
+
+#[test]
+fn test_vm_result_map_err() {
+    assert_eq!(vm_eval("Err(\"bad\").map_err(|e| f\"error: {e}\")"),
+        Value::Result(Err(Box::new(Value::Str("error: bad".to_string())))));
+}
+
+// ============================================================
+// List pattern matching (VM-native)
+// ============================================================
+
+#[test]
+fn test_vm_match_list() {
+    assert_eq!(vm_eval("match [1, 2, 3] { [a, b, c] => a + b + c, _ => 0 }"), Value::Int(6));
+}
+
+#[test]
+fn test_vm_match_list_rest() {
+    assert_eq!(vm_eval("match [1, 2, 3, 4] { [first, ...rest] => first, _ => 0 }"), Value::Int(1));
+}
+
+#[test]
+fn test_vm_match_list_rest_binding() {
+    assert_eq!(vm_eval("match [1, 2, 3, 4] { [h, ...t] => t }"),
+        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)]));
+}
+
+#[test]
+fn test_vm_match_list_empty() {
+    assert_eq!(vm_eval("match [] { [] => \"empty\", _ => \"nonempty\" }"),
+        Value::Str("empty".to_string()));
+    assert_eq!(vm_eval("match [1] { [] => \"empty\", _ => \"nonempty\" }"),
+        Value::Str("nonempty".to_string()));
+}
+
+#[test]
+fn test_vm_match_list_length_mismatch() {
+    assert_eq!(vm_eval("match [1, 2] { [a, b, c] => 0, [a, b] => a + b, _ => -1 }"), Value::Int(3));
+}
+
+#[test]
+fn test_vm_let_list_destructure() {
+    assert_eq!(vm_eval("let [a, b, c] = [10, 20, 30]; b"), Value::Int(20));
+}
+
+#[test]
+fn test_vm_let_list_rest() {
+    assert_eq!(vm_eval("let [h, ...t] = [1, 2, 3, 4]; t"),
+        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)]));
+}
+
+#[test]
+fn test_vm_for_list_destructure() {
+    assert_eq!(vm_eval("let mut sum = 0; for [a, b] in [[1, 2], [3, 4]] { sum += a + b; } sum"),
+        Value::Int(10));
+}
+
+// ============================================================
 // Bitwise operators (VM path)
 // ============================================================
 

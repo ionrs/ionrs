@@ -513,6 +513,21 @@ impl Compiler {
                 }
                 self.chunk.emit_op(Op::Pop, line); // pop the original tuple
             }
+            Pattern::List(pats, rest) => {
+                for (i, pat) in pats.iter().enumerate() {
+                    self.chunk.emit_op(Op::Dup, line);
+                    self.chunk.emit_constant(Value::Int(i as i64), line);
+                    self.chunk.emit_op(Op::GetIndex, line);
+                    self.compile_let_pattern(pat, mutable, line)?;
+                }
+                if let Some(rest_pat) = rest {
+                    self.chunk.emit_op(Op::Dup, line);
+                    self.chunk.emit_constant(Value::Int(pats.len() as i64), line);
+                    self.chunk.emit_op_u8(Op::Slice, 1, line); // has_start only
+                    self.compile_let_pattern(rest_pat, mutable, line)?;
+                }
+                self.chunk.emit_op(Op::Pop, line);
+            }
             Pattern::Wildcard => {
                 self.chunk.emit_op(Op::Pop, line);
             }
@@ -905,8 +920,37 @@ impl Compiler {
                 // false stays
                 self.chunk.patch_jump(end);
             }
+            Pattern::List(pats, rest) => {
+                // Check: is it a list with at least pats.len() elements (or exact if no rest)?
+                let has_rest = rest.is_some();
+                self.chunk.emit_op_u8(Op::MatchBegin, 5, line); // 5 = test List
+                self.chunk.emit(pats.len() as u8, line); // min/exact length
+                self.chunk.emit(if has_rest { 1 } else { 0 }, line); // has_rest flag
+                let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+                // Test each element pattern
+                for (i, pat) in pats.iter().enumerate() {
+                    self.chunk.emit_op_u8(Op::MatchArm, 5, line); // 5 = get list element
+                    self.chunk.emit(i as u8, line);
+                    self.compile_pattern_test(pat, line)?;
+                    let sub_fail = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                    self.chunk.emit_op(Op::Pop, line); // pop true
+                    if i == pats.len() - 1 {
+                        self.chunk.emit_op(Op::True, line);
+                    }
+                    let sub_end = self.chunk.emit_jump(Op::Jump, line);
+                    self.chunk.patch_jump(sub_fail);
+                    self.chunk.patch_jump(sub_end);
+                }
+                if pats.is_empty() {
+                    self.chunk.emit_op(Op::True, line);
+                }
+                let end = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(fail_jump);
+                self.chunk.patch_jump(end);
+            }
             _ => {
-                // For complex patterns (List, EnumVariant, Struct), fall back
+                // For complex patterns (EnumVariant, Struct), fall back
                 return Err(IonError::runtime(
                     "complex pattern not yet supported in bytecode VM match".to_string(),
                     line, 0,
@@ -952,6 +996,25 @@ impl Compiler {
                     self.compile_pattern_bind(pat, line)?;
                 }
                 self.chunk.emit_op(Op::Pop, line); // pop tuple
+            }
+            Pattern::List(pats, rest) => {
+                // Bind each element
+                for (i, pat) in pats.iter().enumerate() {
+                    self.chunk.emit_op(Op::Dup, line); // dup list
+                    self.chunk.emit_constant(Value::Int(i as i64), line);
+                    self.chunk.emit_op(Op::GetIndex, line);
+                    self.compile_pattern_bind(pat, line)?;
+                }
+                // If there's a rest pattern, bind the remaining elements
+                if let Some(rest_pat) = rest {
+                    self.chunk.emit_op(Op::Dup, line); // dup list
+                    // Slice from pats.len() to end
+                    self.chunk.emit_constant(Value::Int(pats.len() as i64), line);
+                    // Use Slice with has_start only
+                    self.chunk.emit_op_u8(Op::Slice, 1, line); // flags: has_start=1
+                    self.compile_pattern_bind(rest_pat, line)?;
+                }
+                self.chunk.emit_op(Op::Pop, line); // pop list
             }
             _ => {
                 return Err(IonError::runtime(

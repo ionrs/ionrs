@@ -463,7 +463,7 @@ impl Vm {
 
                 // --- Pattern matching ---
                 Op::MatchBegin => {
-                    // u8: kind (1=Some, 2=Ok, 3=Err, 4=Tuple)
+                    // u8: kind (1=Some, 2=Ok, 3=Err, 4=Tuple, 5=List)
                     let kind = chunk.read_u8(self.ip);
                     self.ip += 1;
                     let val = self.pop(line)?;
@@ -479,6 +479,19 @@ impl Vm {
                                 _ => false,
                             }
                         }
+                        5 => {
+                            let min_len = chunk.read_u8(self.ip) as usize;
+                            self.ip += 1;
+                            let has_rest = chunk.read_u8(self.ip) != 0;
+                            self.ip += 1;
+                            match &val {
+                                Value::List(items) => {
+                                    if has_rest { items.len() >= min_len }
+                                    else { items.len() == min_len }
+                                }
+                                _ => false,
+                            }
+                        }
                         _ => false,
                     };
                     // Push value back (needed for unwrap) and then bool
@@ -486,7 +499,7 @@ impl Vm {
                     self.stack.push(Value::Bool(result));
                 }
                 Op::MatchArm => {
-                    // u8: kind (1=unwrap Some, 2=unwrap Ok, 3=unwrap Err, 4=get tuple element)
+                    // u8: kind (1=unwrap Some, 2=unwrap Ok, 3=unwrap Err, 4=get tuple element, 5=get list element)
                     let kind = chunk.read_u8(self.ip);
                     self.ip += 1;
                     match kind {
@@ -495,7 +508,7 @@ impl Vm {
                             let val = self.pop(line)?;
                             match val {
                                 Value::Option(Some(v)) => self.stack.push(*v),
-                                other => self.stack.push(other), // shouldn't happen
+                                other => self.stack.push(other),
                             }
                         }
                         2 => {
@@ -512,14 +525,13 @@ impl Vm {
                                 other => self.stack.push(other),
                             }
                         }
-                        4 => {
-                            // Get tuple element: u8 index follows
+                        4 | 5 => {
+                            // Get tuple/list element: u8 index follows
                             let idx = chunk.read_u8(self.ip) as usize;
                             self.ip += 1;
-                            // Peek at the value on top (don't pop — may need more elements)
                             let val = self.peek(line)?;
                             match val {
-                                Value::Tuple(items) => {
+                                Value::Tuple(items) | Value::List(items) => {
                                     self.stack.push(items.get(idx).cloned().unwrap_or(Value::Unit));
                                 }
                                 _ => self.stack.push(Value::Unit),
@@ -973,6 +985,168 @@ impl Vm {
     // ---- Method calls ----
 
     fn call_method(&mut self, receiver: Value, method: &str, args: &[Value], line: usize) -> Result<Value, IonError> {
+        // Handle closure-based methods that need &mut self for invoke_value
+        match (&receiver, method) {
+            // List closure methods
+            (Value::List(items), "map") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("map requires a function argument", line, 0))?;
+                let mut result = Vec::new();
+                for item in items {
+                    result.push(self.invoke_value(func, &[item.clone()], line)?);
+                }
+                return Ok(Value::List(result));
+            }
+            (Value::List(items), "filter") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("filter requires a function argument", line, 0))?;
+                let mut result = Vec::new();
+                for item in items {
+                    let keep = self.invoke_value(func, &[item.clone()], line)?;
+                    if keep.is_truthy() {
+                        result.push(item.clone());
+                    }
+                }
+                return Ok(Value::List(result));
+            }
+            (Value::List(items), "fold") => {
+                let init = args.first().cloned().unwrap_or(Value::Unit);
+                let func = args.get(1).ok_or_else(|| IonError::runtime("fold requires an initial value and a function", line, 0))?;
+                let mut acc = init;
+                for item in items {
+                    acc = self.invoke_value(func, &[acc, item.clone()], line)?;
+                }
+                return Ok(acc);
+            }
+            (Value::List(items), "flat_map") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("flat_map requires a function argument", line, 0))?;
+                let mut result = Vec::new();
+                for item in items {
+                    let mapped = self.invoke_value(func, &[item.clone()], line)?;
+                    match mapped {
+                        Value::List(sub) => result.extend(sub),
+                        other => result.push(other),
+                    }
+                }
+                return Ok(Value::List(result));
+            }
+            (Value::List(items), "any") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("any requires a function argument", line, 0))?;
+                for item in items {
+                    if self.invoke_value(func, &[item.clone()], line)?.is_truthy() {
+                        return Ok(Value::Bool(true));
+                    }
+                }
+                return Ok(Value::Bool(false));
+            }
+            (Value::List(items), "all") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("all requires a function argument", line, 0))?;
+                for item in items {
+                    if !self.invoke_value(func, &[item.clone()], line)?.is_truthy() {
+                        return Ok(Value::Bool(false));
+                    }
+                }
+                return Ok(Value::Bool(true));
+            }
+            (Value::List(items), "sort_by") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("sort_by requires a function argument", line, 0))?;
+                let mut result = items.to_vec();
+                let mut err: Option<IonError> = None;
+                let func_clone = func.clone();
+                result.sort_by(|a, b| {
+                    if err.is_some() { return std::cmp::Ordering::Equal; }
+                    match self.invoke_value(&func_clone, &[a.clone(), b.clone()], line) {
+                        Ok(Value::Int(n)) => {
+                            if n < 0 { std::cmp::Ordering::Less }
+                            else if n > 0 { std::cmp::Ordering::Greater }
+                            else { std::cmp::Ordering::Equal }
+                        }
+                        Ok(_) => { err = Some(IonError::type_err("sort_by function must return int", line, 0)); std::cmp::Ordering::Equal }
+                        Err(e) => { err = Some(e); std::cmp::Ordering::Equal }
+                    }
+                });
+                if let Some(e) = err { return Err(e); }
+                return Ok(Value::List(result));
+            }
+
+            // Option closure methods
+            (Value::Option(opt), "map") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("map requires a function argument", line, 0))?;
+                return match opt {
+                    Some(v) => {
+                        let result = self.invoke_value(func, &[*v.clone()], line)?;
+                        Ok(Value::Option(Some(Box::new(result))))
+                    }
+                    None => Ok(Value::Option(None)),
+                };
+            }
+            (Value::Option(opt), "and_then") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("and_then requires a function argument", line, 0))?;
+                return match opt {
+                    Some(v) => self.invoke_value(func, &[*v.clone()], line),
+                    None => Ok(Value::Option(None)),
+                };
+            }
+            (Value::Option(opt), "or_else") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("or_else requires a function argument", line, 0))?;
+                return match opt {
+                    Some(v) => Ok(Value::Option(Some(v.clone()))),
+                    None => self.invoke_value(func, &[], line),
+                };
+            }
+            (Value::Option(opt), "unwrap_or_else") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("unwrap_or_else requires a function argument", line, 0))?;
+                return match opt {
+                    Some(v) => Ok(*v.clone()),
+                    None => self.invoke_value(func, &[], line),
+                };
+            }
+
+            // Result closure methods
+            (Value::Result(res), "map") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("map requires a function argument", line, 0))?;
+                return match res {
+                    Ok(v) => {
+                        let result = self.invoke_value(func, &[*v.clone()], line)?;
+                        Ok(Value::Result(Ok(Box::new(result))))
+                    }
+                    Err(e) => Ok(Value::Result(Err(e.clone()))),
+                };
+            }
+            (Value::Result(res), "map_err") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("map_err requires a function argument", line, 0))?;
+                return match res {
+                    Ok(v) => Ok(Value::Result(Ok(v.clone()))),
+                    Err(e) => {
+                        let result = self.invoke_value(func, &[*e.clone()], line)?;
+                        Ok(Value::Result(Err(Box::new(result))))
+                    }
+                };
+            }
+            (Value::Result(res), "and_then") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("and_then requires a function argument", line, 0))?;
+                return match res {
+                    Ok(v) => self.invoke_value(func, &[*v.clone()], line),
+                    Err(e) => Ok(Value::Result(Err(e.clone()))),
+                };
+            }
+            (Value::Result(res), "or_else") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("or_else requires a function argument", line, 0))?;
+                return match res {
+                    Ok(v) => Ok(Value::Result(Ok(v.clone()))),
+                    Err(e) => self.invoke_value(func, &[*e.clone()], line),
+                };
+            }
+            (Value::Result(res), "unwrap_or_else") => {
+                let func = args.first().ok_or_else(|| IonError::runtime("unwrap_or_else requires a function argument", line, 0))?;
+                return match res {
+                    Ok(v) => Ok(*v.clone()),
+                    Err(e) => self.invoke_value(func, &[*e.clone()], line),
+                };
+            }
+
+            _ => {}
+        }
+
+        // Non-closure methods
         match &receiver {
             Value::List(items) => self.list_method(items, method, args, line),
             Value::Str(s) => self.str_method(s, method, args, line),
@@ -1165,13 +1339,6 @@ impl Vm {
                     }
                 }
             }
-            // Closure-based methods require tree-walk fallback; the hybrid engine handles this.
-            "map" | "and_then" | "or_else" | "unwrap_or_else" => {
-                Err(IonError::runtime(
-                    format!("Option.{} requires tree-walk fallback", method),
-                    line, 0,
-                ))
-            }
             _ => Err(IonError::type_err(format!("Option has no method '{}'", method), line, 0)),
         }
     }
@@ -1200,18 +1367,22 @@ impl Vm {
                     }
                 }
             }
-            // Closure-based methods require tree-walk fallback; the hybrid engine handles this.
-            "map" | "map_err" | "and_then" | "or_else" | "unwrap_or_else" => {
-                Err(IonError::runtime(
-                    format!("Result.{} requires tree-walk fallback", method),
-                    line, 0,
-                ))
-            }
             _ => Err(IonError::type_err(format!("Result has no method '{}'", method), line, 0)),
         }
     }
 
     // ---- Function calls ----
+
+    /// Invoke a function value with arguments directly (not from the stack).
+    fn invoke_value(&mut self, func: &Value, args: &[Value], line: usize) -> Result<Value, IonError> {
+        // Push func and args onto stack, then call
+        self.stack.push(func.clone());
+        for arg in args {
+            self.stack.push(arg.clone());
+        }
+        self.call_function(args.len(), line)?;
+        self.pop(line)
+    }
 
     fn call_function(&mut self, arg_count: usize, line: usize) -> Result<(), IonError> {
         // Stack: [..., func, arg0, arg1, ..., argN-1]
