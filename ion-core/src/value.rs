@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use indexmap::IndexMap;
 use serde_json;
 
 use crate::ast::{Param, Stmt};
+
+static NEXT_FN_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Runtime value representation.
 #[derive(Debug, Clone)]
@@ -36,11 +39,24 @@ pub enum Value {
 /// A function value.
 #[derive(Debug, Clone)]
 pub struct IonFn {
+    pub fn_id: u64,
     pub name: String,
     pub params: Vec<Param>,
     pub body: Vec<Stmt>,
     /// Captured environment for closures
     pub captures: HashMap<String, Value>,
+}
+
+impl IonFn {
+    pub fn new(name: String, params: Vec<Param>, body: Vec<Stmt>, captures: HashMap<String, Value>) -> Self {
+        Self {
+            fn_id: NEXT_FN_ID.fetch_add(1, Ordering::Relaxed),
+            name,
+            params,
+            body,
+            captures,
+        }
+    }
 }
 
 /// A built-in function: Rust-side callback.

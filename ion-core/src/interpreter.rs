@@ -150,12 +150,12 @@ impl Interpreter {
             }
             StmtKind::FnDecl { name, params, body } => {
                 let captures = self.env.capture();
-                let func = Value::Fn(IonFn {
-                    name: name.clone(),
-                    params: params.clone(),
-                    body: body.clone(),
+                let func = Value::Fn(IonFn::new(
+                    name.clone(),
+                    params.clone(),
+                    body.clone(),
                     captures,
-                });
+                ));
                 self.env.define(name.clone(), func, false);
                 Ok(Value::Unit)
             }
@@ -698,12 +698,12 @@ impl Interpreter {
                     kind: StmtKind::ExprStmt { expr: (**body).clone(), has_semi: false },
                     span,
                 }];
-                Ok(Value::Fn(IonFn {
-                    name: ion_str!("<lambda>").to_string(),
-                    params: fn_params,
-                    body: body_stmts,
+                Ok(Value::Fn(IonFn::new(
+                    ion_str!("<lambda>").to_string(),
+                    fn_params,
+                    body_stmts,
                     captures,
-                }))
+                )))
             }
 
             ExprKind::If { cond, then_body, else_body } => {

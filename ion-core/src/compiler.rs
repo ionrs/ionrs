@@ -125,6 +125,7 @@ impl Compiler {
 
     fn compile_expr(&mut self, expr: &Expr) -> Result<(), IonError> {
         let line = expr.span.line;
+        let col = expr.span.col;
         match &expr.kind {
             ExprKind::Int(n) => {
                 self.chunk.emit_constant(Value::Int(*n), line);
@@ -185,11 +186,11 @@ impl Compiler {
                         self.compile_expr(left)?;
                         self.compile_expr(right)?;
                         match op {
-                            BinOp::Add => self.chunk.emit_op(Op::Add, line),
-                            BinOp::Sub => self.chunk.emit_op(Op::Sub, line),
-                            BinOp::Mul => self.chunk.emit_op(Op::Mul, line),
-                            BinOp::Div => self.chunk.emit_op(Op::Div, line),
-                            BinOp::Mod => self.chunk.emit_op(Op::Mod, line),
+                            BinOp::Add => self.chunk.emit_op_span(Op::Add, line, col),
+                            BinOp::Sub => self.chunk.emit_op_span(Op::Sub, line, col),
+                            BinOp::Mul => self.chunk.emit_op_span(Op::Mul, line, col),
+                            BinOp::Div => self.chunk.emit_op_span(Op::Div, line, col),
+                            BinOp::Mod => self.chunk.emit_op_span(Op::Mod, line, col),
                             BinOp::Eq => self.chunk.emit_op(Op::Eq, line),
                             BinOp::Ne => self.chunk.emit_op(Op::NotEq, line),
                             BinOp::Lt => self.chunk.emit_op(Op::Lt, line),
@@ -210,8 +211,8 @@ impl Compiler {
             ExprKind::UnaryOp { op, expr: inner } => {
                 self.compile_expr(inner)?;
                 match op {
-                    UnaryOp::Neg => self.chunk.emit_op(Op::Neg, line),
-                    UnaryOp::Not => self.chunk.emit_op(Op::Not, line),
+                    UnaryOp::Neg => self.chunk.emit_op_span(Op::Neg, line, col),
+                    UnaryOp::Not => self.chunk.emit_op_span(Op::Not, line, col),
                 }
             }
 
@@ -246,7 +247,7 @@ impl Compiler {
                 for arg in args {
                     self.compile_expr(&arg.value)?;
                 }
-                self.chunk.emit_op_u8(Op::Call, args.len() as u8, line);
+                self.chunk.emit_op_u8_span(Op::Call, args.len() as u8, line, col);
             }
 
             ExprKind::List(items) => {
@@ -287,13 +288,13 @@ impl Compiler {
             ExprKind::FieldAccess { expr: inner, field } => {
                 self.compile_expr(inner)?;
                 let idx = self.chunk.add_constant(Value::Str(field.clone()));
-                self.chunk.emit_op_u16(Op::GetField, idx, line);
+                self.chunk.emit_op_u16_span(Op::GetField, idx, line, col);
             }
 
             ExprKind::Index { expr: inner, index } => {
                 self.compile_expr(inner)?;
                 self.compile_expr(index)?;
-                self.chunk.emit_op(Op::GetIndex, line);
+                self.chunk.emit_op_span(Op::GetIndex, line, col);
             }
 
             ExprKind::Slice { expr: inner, start, end, inclusive } => {
@@ -319,8 +320,8 @@ impl Compiler {
                     self.compile_expr(&arg.value)?;
                 }
                 let idx = self.chunk.add_constant(Value::Str(method.clone()));
-                self.chunk.emit_op_u16(Op::MethodCall, idx, line);
-                self.chunk.emit(args.len() as u8, line);
+                self.chunk.emit_op_u16_span(Op::MethodCall, idx, line, col);
+                self.chunk.emit_span(args.len() as u8, line, col);
             }
 
             ExprKind::Lambda { params, body } => {
@@ -329,15 +330,15 @@ impl Compiler {
                     kind: StmtKind::ExprStmt { expr: *body.clone(), has_semi: false },
                     span: expr.span,
                 };
-                let fn_value = Value::Fn(crate::value::IonFn {
-                    name: "<lambda>".to_string(),
-                    params: params.iter().map(|n| crate::ast::Param {
+                let fn_value = Value::Fn(crate::value::IonFn::new(
+                    "<lambda>".to_string(),
+                    params.iter().map(|n| crate::ast::Param {
                         name: n.clone(),
                         default: None,
                     }).collect(),
-                    body: vec![body_stmt],
-                    captures: std::collections::HashMap::new(),
-                });
+                    vec![body_stmt],
+                    std::collections::HashMap::new(),
+                ));
                 let fn_idx = self.chunk.add_constant(fn_value);
                 self.chunk.emit_op_u16(Op::Closure, fn_idx, line);
             }
@@ -548,12 +549,12 @@ impl Compiler {
         fn_compiler.compile_block_expr(body, line)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
 
-        let fn_value = Value::Fn(crate::value::IonFn {
-            name: name.to_string(),
-            params: params.to_vec(),
-            body: body.to_vec(), // Keep AST body for tree-walk fallback
-            captures: std::collections::HashMap::new(),
-        });
+        let fn_value = Value::Fn(crate::value::IonFn::new(
+            name.to_string(),
+            params.to_vec(),
+            body.to_vec(), // Keep AST body for tree-walk fallback
+            std::collections::HashMap::new(),
+        ));
 
         // Define the function in the current scope
         self.chunk.emit_constant(fn_value, line);

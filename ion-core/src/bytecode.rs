@@ -155,6 +155,8 @@ pub struct Chunk {
     pub constants: Vec<Value>,
     /// Line number for each instruction (for error reporting).
     pub lines: Vec<usize>,
+    /// Column number for each instruction (for error reporting).
+    pub cols: Vec<usize>,
 }
 
 impl Chunk {
@@ -163,18 +165,32 @@ impl Chunk {
             code: Vec::new(),
             constants: Vec::new(),
             lines: Vec::new(),
+            cols: Vec::new(),
         }
     }
 
-    /// Emit a single byte.
+    /// Emit a single byte with source location.
     pub fn emit(&mut self, byte: u8, line: usize) {
         self.code.push(byte);
         self.lines.push(line);
+        self.cols.push(0);
+    }
+
+    /// Emit a single byte with full source span (line + col).
+    pub fn emit_span(&mut self, byte: u8, line: usize, col: usize) {
+        self.code.push(byte);
+        self.lines.push(line);
+        self.cols.push(col);
     }
 
     /// Emit an opcode.
     pub fn emit_op(&mut self, op: Op, line: usize) {
         self.emit(op as u8, line);
+    }
+
+    /// Emit an opcode with full span.
+    pub fn emit_op_span(&mut self, op: Op, line: usize, col: usize) {
+        self.emit_span(op as u8, line, col);
     }
 
     /// Emit an opcode followed by a u16 operand.
@@ -184,10 +200,23 @@ impl Chunk {
         self.emit((operand & 0xff) as u8, line);
     }
 
+    /// Emit an opcode followed by a u16 operand with full span.
+    pub fn emit_op_u16_span(&mut self, op: Op, operand: u16, line: usize, col: usize) {
+        self.emit_span(op as u8, line, col);
+        self.emit_span((operand >> 8) as u8, line, col);
+        self.emit_span((operand & 0xff) as u8, line, col);
+    }
+
     /// Emit an opcode followed by a u8 operand.
     pub fn emit_op_u8(&mut self, op: Op, operand: u8, line: usize) {
         self.emit(op as u8, line);
         self.emit(operand, line);
+    }
+
+    /// Emit an opcode followed by a u8 operand with full span.
+    pub fn emit_op_u8_span(&mut self, op: Op, operand: u8, line: usize, col: usize) {
+        self.emit_span(op as u8, line, col);
+        self.emit_span(operand, line, col);
     }
 
     /// Add a constant to the pool, returning its index.

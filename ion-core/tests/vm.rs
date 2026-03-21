@@ -788,3 +788,50 @@ fn test_vm_dict_merge() {
         panic!("expected dict");
     }
 }
+
+// ============================================================
+// Compilation caching (VM path)
+// ============================================================
+
+#[test]
+fn test_vm_fn_cache_recursive() {
+    // fibonacci exercises the cache: same function compiled once, called many times
+    assert_eq!(vm_eval(r#"
+        fn fib(n) { if n <= 1 { n } else { fib(n - 1) + fib(n - 2) } }
+        fib(15)
+    "#), Value::Int(610));
+}
+
+#[test]
+fn test_vm_fn_cache_repeated_calls() {
+    assert_eq!(vm_eval(r#"
+        fn double(x) { x * 2 }
+        let a = double(1);
+        let b = double(2);
+        let c = double(3);
+        a + b + c
+    "#), Value::Int(12));
+}
+
+// ============================================================
+// Error source spans (VM path)
+// ============================================================
+
+#[test]
+fn test_vm_error_has_col_info() {
+    use ion_core::error::IonError;
+    let mut engine = Engine::new();
+    let err: IonError = engine.vm_eval("1 / 0").unwrap_err();
+    assert_eq!(err.message, "division by zero");
+    assert_eq!(err.line, 1);
+    assert!(err.col > 0, "expected non-zero column, got {}", err.col);
+}
+
+#[test]
+fn test_vm_error_field_access_col() {
+    use ion_core::error::IonError;
+    let mut engine = Engine::new();
+    let err: IonError = engine.vm_eval("let x = 42; x.foo").unwrap_err();
+    assert_eq!(err.line, 1);
+    assert!(err.col > 0, "expected non-zero column for field error, got {}", err.col);
+}
