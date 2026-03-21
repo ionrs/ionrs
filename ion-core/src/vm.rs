@@ -19,6 +19,8 @@ pub struct Vm {
     iterators: Vec<Box<dyn Iterator<Item = Value>>>,
     /// Compilation cache: fn_id -> compiled bytecode chunk.
     fn_cache: std::collections::HashMap<u64, crate::bytecode::Chunk>,
+    /// Pending tail call: (func, args) to be executed by the trampoline.
+    pending_tail_call: Option<(Value, Vec<Value>)>,
 }
 
 impl Vm {
@@ -29,6 +31,7 @@ impl Vm {
             ip: 0,
             iterators: Vec::new(),
             fn_cache: std::collections::HashMap::new(),
+            pending_tail_call: None,
         }
     }
 
@@ -40,6 +43,7 @@ impl Vm {
             ip: 0,
             iterators: Vec::new(),
             fn_cache: std::collections::HashMap::new(),
+            pending_tail_call: None,
         }
     }
 
@@ -309,6 +313,18 @@ impl Vm {
                     let arg_count = chunk.read_u8(self.ip) as usize;
                     self.ip += 1;
                     self.call_function(arg_count, line, col)?;
+                }
+                Op::TailCall => {
+                    let arg_count = chunk.read_u8(self.ip) as usize;
+                    self.ip += 1;
+                    // Extract func and args for trampoline
+                    let args_start = self.stack.len() - arg_count;
+                    let func_idx = args_start - 1;
+                    let func = self.stack[func_idx].clone();
+                    let args: Vec<Value> = self.stack[args_start..].to_vec();
+                    self.stack.truncate(func_idx);
+                    self.pending_tail_call = Some((func, args));
+                    return Ok(Value::Unit); // value is unused; caller checks pending_tail_call
                 }
                 Op::Return => {
                     // Return the top of stack value
@@ -1482,80 +1498,86 @@ impl Vm {
 
     fn call_function(&mut self, arg_count: usize, line: usize, col: usize) -> Result<(), IonError> {
         // Stack: [..., func, arg0, arg1, ..., argN-1]
-        // But we pushed func first, then args
         let args_start = self.stack.len() - arg_count;
         let func_idx = args_start - 1;
-        let func = self.stack[func_idx].clone();
-        let args: Vec<Value> = self.stack[args_start..].to_vec();
-        // Remove func + args from stack
+        let mut func = self.stack[func_idx].clone();
+        let mut args: Vec<Value> = self.stack[args_start..].to_vec();
         self.stack.truncate(func_idx);
 
-        match func {
-            Value::BuiltinFn(_name, f) => {
-                let result = f(&args).map_err(|e| IonError::runtime(e, line, col))?;
-                self.stack.push(result);
-            }
-            Value::Fn(ion_fn) => {
-                self.env.push_scope();
-
-                // Bind captures
-                for (name, val) in &ion_fn.captures {
-                    self.env.define(name.clone(), val.clone(), false);
+        // Trampoline loop: handles tail calls without growing the Rust stack
+        loop {
+            match func {
+                Value::BuiltinFn(_name, f) => {
+                    let result = f(&args).map_err(|e| IonError::runtime(e, line, col))?;
+                    self.stack.push(result);
+                    return Ok(());
                 }
+                Value::Fn(ion_fn) => {
+                    self.env.push_scope();
 
-                // Bind parameters
-                for (i, param) in ion_fn.params.iter().enumerate() {
-                    let val = if i < args.len() {
-                        args[i].clone()
-                    } else if let Some(default) = &param.default {
-                        let mut interp = crate::interpreter::Interpreter::new();
-                        interp.eval_single_expr(default).unwrap_or(Value::Unit)
+                    for (name, val) in &ion_fn.captures {
+                        self.env.define(name.clone(), val.clone(), false);
+                    }
+
+                    for (i, param) in ion_fn.params.iter().enumerate() {
+                        let val = if i < args.len() {
+                            args[i].clone()
+                        } else if let Some(default) = &param.default {
+                            let mut interp = crate::interpreter::Interpreter::new();
+                            interp.eval_single_expr(default).unwrap_or(Value::Unit)
+                        } else {
+                            Value::Unit
+                        };
+                        self.env.define(param.name.clone(), val, false);
+                    }
+
+                    let fn_id = ion_fn.fn_id;
+                    let chunk_opt = if let Some(chunk) = self.fn_cache.get(&fn_id) {
+                        Some(chunk.clone())
                     } else {
-                        Value::Unit
+                        let compiler = crate::compiler::Compiler::new();
+                        compiler.compile_fn_body(&ion_fn.body, line).ok()
                     };
-                    self.env.define(param.name.clone(), val, false);
-                }
+                    if let Some(chunk) = chunk_opt {
+                        self.fn_cache.entry(fn_id).or_insert_with(|| chunk.clone());
+                        let saved_ip = self.ip;
+                        let saved_iters = std::mem::take(&mut self.iterators);
+                        self.ip = 0;
+                        let result = self.run_chunk(&chunk);
+                        self.ip = saved_ip;
+                        self.iterators = saved_iters;
+                        self.env.pop_scope();
 
-                // Use cached (precompiled or previously compiled) chunk, or compile on demand
-                let fn_id = ion_fn.fn_id;
-                let chunk_opt = if let Some(chunk) = self.fn_cache.get(&fn_id) {
-                    Some(chunk.clone())
-                } else {
-                    let compiler = crate::compiler::Compiler::new();
-                    compiler.compile_fn_body(&ion_fn.body, line).ok()
-                };
-                if let Some(chunk) = chunk_opt {
-                    self.fn_cache.entry(fn_id).or_insert_with(|| chunk.clone());
-                    let saved_ip = self.ip;
-                    let saved_iters = std::mem::take(&mut self.iterators);
-                    self.ip = 0;
-                    let result = self.run_chunk(&chunk);
-                    self.ip = saved_ip;
-                    self.iterators = saved_iters;
-                    self.env.pop_scope();
-                    match result {
-                        Ok(val) => self.stack.push(val),
-                        Err(e) => return Err(e),
+                        // Check for pending tail call (trampoline)
+                        if let Some((tail_func, tail_args)) = self.pending_tail_call.take() {
+                            func = tail_func;
+                            args = tail_args;
+                            continue; // loop back without growing Rust stack
+                        }
+
+                        match result {
+                            Ok(val) => self.stack.push(val),
+                            Err(e) => return Err(e),
+                        }
+                    } else {
+                        let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
+                        let result = interp.eval_block(&ion_fn.body);
+                        self.env = interp.take_env();
+                        self.env.pop_scope();
+                        match result {
+                            Ok(val) => self.stack.push(val),
+                            Err(e) => return Err(e),
+                        }
                     }
-                } else {
-                    // Fallback to tree-walk for complex function bodies
-                    let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
-                    let result = interp.eval_block(&ion_fn.body);
-                    self.env = interp.take_env();
-                    self.env.pop_scope();
-                    match result {
-                        Ok(val) => self.stack.push(val),
-                        Err(e) => return Err(e),
-                    }
+                    return Ok(());
                 }
-            }
-            _ => {
-                return Err(IonError::type_err(
-                    format!("cannot call {}", func.type_name()),
-                    line, col,
-                ));
+                _ => {
+                    return Err(IonError::type_err(
+                        format!("cannot call {}", func.type_name()),
+                        line, col,
+                    ));
+                }
             }
         }
-        Ok(())
     }
 }

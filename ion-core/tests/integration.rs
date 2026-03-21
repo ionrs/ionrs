@@ -2082,3 +2082,31 @@ fn test_index_assign_negative() {
     assert_eq!(eval("let mut a = [1, 2, 3]; a[-1] = 99; a"),
         Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(99)]));
 }
+
+// --- Multi-error reporting ---
+
+#[test]
+fn test_multi_error_reports_all() {
+    let mut engine = Engine::new();
+    let err = engine.eval("let x = ; let y = ; 42").unwrap_err();
+    // Should have the first error plus at least one additional
+    assert!(!err.additional.is_empty(), "expected multiple errors, got just one: {}", err.message);
+}
+
+#[test]
+fn test_multi_error_single_error_no_additional() {
+    let mut engine = Engine::new();
+    let err = engine.eval("let x = ;").unwrap_err();
+    // Single error should have no additional errors
+    assert!(err.additional.is_empty(), "expected single error, got additional: {:?}", err.additional);
+}
+
+#[test]
+fn test_multi_error_format_with_source() {
+    let mut engine = Engine::new();
+    let src = "let x = ;\nlet y = ;";
+    let err = engine.eval(src).unwrap_err();
+    let formatted = err.format_with_source(src);
+    // Should contain error text for both lines
+    assert!(formatted.contains("error[parse]"), "formatted: {}", formatted);
+}

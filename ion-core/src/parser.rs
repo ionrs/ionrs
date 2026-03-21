@@ -5,19 +5,50 @@ use crate::token::{SpannedToken, Token};
 pub struct Parser {
     tokens: Vec<SpannedToken>,
     pos: usize,
+    errors: Vec<IonError>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<SpannedToken>) -> Self {
-        Self { tokens, pos: 0 }
+        Self { tokens, pos: 0, errors: Vec::new() }
     }
 
     pub fn parse_program(&mut self) -> Result<Program, IonError> {
         let mut stmts = Vec::new();
         while !self.is_at_end() {
-            stmts.push(self.parse_stmt()?);
+            match self.parse_stmt() {
+                Ok(stmt) => stmts.push(stmt),
+                Err(e) => {
+                    self.errors.push(e);
+                    self.synchronize();
+                }
+            }
         }
-        Ok(Program { stmts })
+        if self.errors.is_empty() {
+            Ok(Program { stmts })
+        } else {
+            let mut first = self.errors.remove(0);
+            first.additional = std::mem::take(&mut self.errors);
+            Err(first)
+        }
+    }
+
+    /// Advance past the current error to the next statement boundary.
+    fn synchronize(&mut self) {
+        while !self.is_at_end() {
+            // If we just passed a semicolon, we're at a new statement
+            if self.pos > 0 {
+                if let Token::Semicolon = &self.tokens[self.pos - 1].token {
+                    return;
+                }
+            }
+            // Stop at tokens that typically begin a new statement
+            match self.peek() {
+                Token::Let | Token::Fn | Token::For | Token::While |
+                Token::If | Token::Return | Token::Match | Token::Loop => return,
+                _ => { self.advance(); }
+            }
+        }
     }
 
     // --- Helpers ---

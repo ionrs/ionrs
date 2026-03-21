@@ -835,3 +835,29 @@ fn test_vm_error_field_access_col() {
     assert_eq!(err.line, 1);
     assert!(err.col > 0, "expected non-zero column for field error, got {}", err.col);
 }
+
+// ============================================================
+// Tail call optimization (VM path)
+// ============================================================
+
+#[test]
+fn test_vm_tail_call_deep_recursion() {
+    // This would stack overflow without TCO — 10,000 recursive calls
+    assert_eq!(vm_eval(r#"
+        fn countdown(n) {
+            if n <= 0 { 0 } else { countdown(n - 1) }
+        }
+        countdown(10000)
+    "#), Value::Int(0));
+}
+
+#[test]
+fn test_vm_tail_call_accumulator() {
+    // Tail-recursive sum with accumulator
+    assert_eq!(vm_eval(r#"
+        fn sum_acc(n, acc) {
+            if n <= 0 { acc } else { sum_acc(n - 1, acc + n) }
+        }
+        sum_acc(10000, 0)
+    "#), Value::Int(50005000));
+}

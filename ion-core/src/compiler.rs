@@ -9,11 +9,13 @@ pub struct Compiler {
     chunk: Chunk,
     /// Precompiled function body chunks, keyed by fn_id.
     pub fn_chunks: FnChunkCache,
+    /// Whether the next expression is in tail position (for TCO).
+    in_tail_position: bool,
 }
 
 impl Compiler {
     pub fn new() -> Self {
-        Self { chunk: Chunk::new(), fn_chunks: FnChunkCache::new() }
+        Self { chunk: Chunk::new(), fn_chunks: FnChunkCache::new(), in_tail_position: false }
     }
 
     pub fn compile_program(mut self, program: &Program) -> Result<(Chunk, FnChunkCache), IonError> {
@@ -83,7 +85,10 @@ impl Compiler {
             }
             StmtKind::Return { value } => {
                 if let Some(expr) = value {
+                    let saved = self.in_tail_position;
+                    self.in_tail_position = true;
                     self.compile_expr(expr)?;
+                    self.in_tail_position = saved;
                 } else {
                     self.chunk.emit_op(Op::Unit, line);
                 }
@@ -128,6 +133,9 @@ impl Compiler {
     fn compile_expr(&mut self, expr: &Expr) -> Result<(), IonError> {
         let line = expr.span.line;
         let col = expr.span.col;
+        // Save tail position — only Call, If, Block, Match, IfLet propagate it
+        let was_tail = self.in_tail_position;
+        self.in_tail_position = false;
         match &expr.kind {
             ExprKind::Int(n) => {
                 self.chunk.emit_constant(Value::Int(*n), line);
@@ -219,10 +227,13 @@ impl Compiler {
             }
 
             ExprKind::If { cond, then_body, else_body } => {
+                // Condition is not in tail position (already cleared)
                 self.compile_expr(cond)?;
                 let then_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
                 self.chunk.emit_op(Op::Pop, line); // pop condition
                 self.chunk.emit_op(Op::PushScope, line);
+                // Both branches inherit tail position
+                self.in_tail_position = was_tail;
                 self.compile_block_expr(then_body, line)?;
                 self.chunk.emit_op(Op::PopScope, line);
                 let else_jump = self.chunk.emit_jump(Op::Jump, line);
@@ -230,6 +241,7 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // pop condition
                 if let Some(else_stmts) = else_body {
                     self.chunk.emit_op(Op::PushScope, line);
+                    self.in_tail_position = was_tail;
                     self.compile_block_expr(else_stmts, line)?;
                     self.chunk.emit_op(Op::PopScope, line);
                 } else {
@@ -240,16 +252,19 @@ impl Compiler {
 
             ExprKind::Block(stmts) => {
                 self.chunk.emit_op(Op::PushScope, line);
+                self.in_tail_position = was_tail;
                 self.compile_block_expr(stmts, line)?;
                 self.chunk.emit_op(Op::PopScope, line);
             }
 
             ExprKind::Call { func, args } => {
+                // Sub-expressions are not in tail position (already cleared above)
                 self.compile_expr(func)?;
                 for arg in args {
                     self.compile_expr(&arg.value)?;
                 }
-                self.chunk.emit_op_u8_span(Op::Call, args.len() as u8, line, col);
+                let op = if was_tail { Op::TailCall } else { Op::Call };
+                self.chunk.emit_op_u8_span(op, args.len() as u8, line, col);
             }
 
             ExprKind::List(items) => {
@@ -334,6 +349,7 @@ impl Compiler {
                 };
                 // Precompile lambda body
                 let mut fn_compiler = Compiler::new();
+                fn_compiler.in_tail_position = true; // lambda body is in tail position
                 fn_compiler.compile_expr(body)?;
                 fn_compiler.chunk.emit_op(Op::Return, line);
                 let compiled_chunk = fn_compiler.chunk;
@@ -419,7 +435,7 @@ impl Compiler {
             }
 
             ExprKind::IfLet { pattern, expr: inner, then_body, else_body } => {
-                // Evaluate the expression
+                // Evaluate the expression (not in tail position — already cleared)
                 self.compile_expr(inner)?;
 
                 // Test pattern
@@ -432,6 +448,7 @@ impl Compiler {
                 // Pattern matched — bind variables in new scope
                 self.chunk.emit_op(Op::PushScope, line);
                 self.compile_pattern_bind(pattern, line)?;
+                self.in_tail_position = was_tail;
                 self.compile_block_expr(then_body, line)?;
                 self.chunk.emit_op(Op::PopScope, line);
 
@@ -443,6 +460,7 @@ impl Compiler {
 
                 if let Some(else_stmts) = else_body {
                     self.chunk.emit_op(Op::PushScope, line);
+                    self.in_tail_position = was_tail;
                     self.compile_block_expr(else_stmts, line)?;
                     self.chunk.emit_op(Op::PopScope, line);
                 } else {
@@ -479,6 +497,7 @@ impl Compiler {
                 ));
             }
         }
+        self.in_tail_position = was_tail;
         Ok(())
     }
 
@@ -488,10 +507,20 @@ impl Compiler {
             return Ok(());
         }
         let len = stmts.len();
+        let saved_tail = self.in_tail_position;
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == len - 1;
+            // Only the last expression (without semicolon) inherits tail position
+            if !is_last {
+                self.in_tail_position = false;
+            } else {
+                self.in_tail_position = saved_tail;
+            }
             match &stmt.kind {
                 StmtKind::ExprStmt { expr, has_semi } => {
+                    if is_last && *has_semi {
+                        self.in_tail_position = false;
+                    }
                     self.compile_expr(expr)?;
                     if is_last && !has_semi {
                         // Keep value
@@ -500,6 +529,7 @@ impl Compiler {
                     }
                 }
                 _ => {
+                    self.in_tail_position = false;
                     self.compile_stmt(stmt)?;
                     if is_last {
                         self.chunk.emit_op(Op::Unit, stmt.span.line);
@@ -507,6 +537,7 @@ impl Compiler {
                 }
             }
         }
+        self.in_tail_position = saved_tail;
         Ok(())
     }
 
@@ -558,6 +589,7 @@ impl Compiler {
     fn compile_fn_decl(&mut self, name: &str, params: &[Param], body: &[Stmt], line: usize) -> Result<(), IonError> {
         // Compile function body into a separate chunk
         let mut fn_compiler = Compiler::new();
+        fn_compiler.in_tail_position = true; // function body is in tail position
         fn_compiler.compile_block_expr(body, line)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
         let compiled_chunk = fn_compiler.chunk;
@@ -774,14 +806,17 @@ impl Compiler {
 
     /// Compile a function body to a standalone chunk (for VM-native function execution).
     pub fn compile_fn_body(mut self, body: &[Stmt], line: usize) -> Result<Chunk, IonError> {
+        self.in_tail_position = true; // function body is in tail position
         self.compile_block_expr(body, line)?;
         self.chunk.emit_op(Op::Return, line);
         Ok(self.chunk)
     }
 
     fn compile_match(&mut self, subject: &Expr, arms: &[MatchArm], line: usize) -> Result<(), IonError> {
-        // Store subject in a hidden temp variable
+        let was_tail = self.in_tail_position;
+        // Store subject in a hidden temp variable (not in tail position)
         self.chunk.emit_op(Op::PushScope, line);
+        self.in_tail_position = false;
         self.compile_expr(subject)?;
         let tmp_name = "__match_subject__";
         let tmp_idx = self.chunk.add_constant(Value::Str(tmp_name.to_string()));
@@ -818,7 +853,8 @@ impl Compiler {
             self.chunk.emit_op_u16(Op::GetLocal, bind_idx, line);
             self.compile_pattern_bind(&arm.pattern, line)?;
 
-            // Compile arm body
+            // Compile arm body — inherits tail position
+            self.in_tail_position = was_tail;
             self.compile_expr(&arm.body)?;
             self.chunk.emit_op(Op::PopScope, line);
 
