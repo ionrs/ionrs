@@ -1592,8 +1592,10 @@ impl Vm {
             }
             "get" => {
                 let key = args.first().and_then(|a| a.as_str()).unwrap_or("");
-                let default = args.get(1).cloned().unwrap_or(Value::Option(None));
-                Ok(map.get(key).cloned().unwrap_or(default))
+                Ok(match map.get(key) {
+                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    None => Value::Option(None),
+                })
             }
             "is_empty" => Ok(Value::Bool(map.is_empty())),
             "entries" => Ok(Value::List(

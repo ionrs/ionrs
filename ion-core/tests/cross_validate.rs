@@ -511,6 +511,73 @@ fn cross_dict_methods() {
 }
 
 #[test]
+fn cross_dict_shorthand_keys() {
+    assert_both_eq("#{a: 1, b: 2}.len()", Value::Int(2));
+    assert_both(r#"#{a: 1}.a"#);
+}
+
+// ============================================================
+// List methods
+// ============================================================
+
+#[test]
+fn cross_list_methods() {
+    assert_both_eq("[3, 1, 2].sort()", Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_both_eq("[1, 2, 3].reverse()", Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)]));
+    assert_both_eq("[1, 2, 3].contains(2)", Value::Bool(true));
+    assert_both_eq("[1, 2, 3].contains(5)", Value::Bool(false));
+    assert_both_eq("[1, 2, 3].is_empty()", Value::Bool(false));
+    assert_both_eq("[].is_empty()", Value::Bool(true));
+    assert_both_eq(r#"[1, 2, 3].join(",")"#, Value::Str("1,2,3".to_string()));
+}
+
+#[test]
+fn cross_list_first_last() {
+    assert_both_eq("[1, 2, 3].first()", Value::Option(Some(Box::new(Value::Int(1)))));
+    assert_both_eq("[1, 2, 3].last()", Value::Option(Some(Box::new(Value::Int(3)))));
+    assert_both_eq("[].first()", Value::Option(None));
+}
+
+#[test]
+fn cross_list_closure_methods() {
+    assert_both_eq("[1, 2, 3].map(|x| x * 2)", Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+    assert_both_eq("[1, 2, 3, 4].filter(|x| x > 2)", Value::List(vec![Value::Int(3), Value::Int(4)]));
+    assert_both_eq("[1, 2, 3].fold(0, |acc, x| acc + x)", Value::Int(6));
+    assert_both_eq("[1, 2, 3].any(|x| x > 2)", Value::Bool(true));
+    assert_both_eq("[1, 2, 3].any(|x| x > 5)", Value::Bool(false));
+    assert_both_eq("[1, 2, 3].all(|x| x > 0)", Value::Bool(true));
+    assert_both_eq("[1, 2, 3].all(|x| x > 1)", Value::Bool(false));
+}
+
+#[test]
+fn cross_list_flatten_zip() {
+    assert_both_eq("[[1, 2], [3, 4]].flatten()", Value::List(vec![
+        Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4),
+    ]));
+    assert_both_eq("[1, 2].zip([3, 4])", Value::List(vec![
+        Value::Tuple(vec![Value::Int(1), Value::Int(3)]),
+        Value::Tuple(vec![Value::Int(2), Value::Int(4)]),
+    ]));
+}
+
+#[test]
+fn cross_list_enumerate() {
+    assert_both_eq("[10, 20].enumerate()", Value::List(vec![
+        Value::Tuple(vec![Value::Int(0), Value::Int(10)]),
+        Value::Tuple(vec![Value::Int(1), Value::Int(20)]),
+    ]));
+}
+
+#[test]
+fn cross_dict_get() {
+    assert_both_eq(
+        r#"#{"a": 1}.get("a")"#,
+        Value::Option(Some(Box::new(Value::Int(1)))),
+    );
+    assert_both_eq(r#"#{"a": 1}.get("b")"#, Value::Option(None));
+}
+
+#[test]
 fn cross_dict_keys_values() {
     assert_both_eq(r#"#{"a": 1, "b": 2}.keys()"#, Value::List(vec![
         Value::Str("a".to_string()), Value::Str("b".to_string()),

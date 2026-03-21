@@ -779,7 +779,7 @@ impl Parser {
                 if self.check(&Token::DotDotDot) {
                     return self.parse_dict_entries(span);
                 }
-                let first_key = self.parse_expr()?;
+                let first_key = self.parse_dict_key()?;
                 self.eat(&Token::Colon)?;
                 let first_val = self.parse_expr()?;
                 // Check for dict comprehension: #{ key: val for pat in iter }
@@ -808,7 +808,7 @@ impl Parser {
                         self.advance();
                         entries.push(DictEntry::Spread(self.parse_expr()?));
                     } else {
-                        let key = self.parse_expr()?;
+                        let key = self.parse_dict_key()?;
                         self.eat(&Token::Colon)?;
                         let value = self.parse_expr()?;
                         entries.push(DictEntry::KeyValue(key, value));
@@ -961,6 +961,19 @@ impl Parser {
     }
 
     /// Parse dict entries when the first token is `...` (spread).
+    /// Parse a dict key: if it's an identifier followed by `:`, treat as string literal.
+    fn parse_dict_key(&mut self) -> Result<Expr, IonError> {
+        let span = self.span();
+        if let Token::Ident(name) = self.peek().clone() {
+            // Lookahead: if next token is `:`, this is a shorthand key
+            if self.tokens.get(self.pos + 1).map(|t| &t.token) == Some(&Token::Colon) {
+                self.advance(); // consume the identifier
+                return Ok(Expr { kind: ExprKind::Str(name), span });
+            }
+        }
+        self.parse_expr()
+    }
+
     fn parse_dict_entries(&mut self, span: Span) -> Result<Expr, IonError> {
         let mut entries = Vec::new();
         // First entry is a spread
@@ -973,7 +986,7 @@ impl Parser {
                 self.advance();
                 entries.push(DictEntry::Spread(self.parse_expr()?));
             } else {
-                let key = self.parse_expr()?;
+                let key = self.parse_dict_key()?;
                 self.eat(&Token::Colon)?;
                 let value = self.parse_expr()?;
                 entries.push(DictEntry::KeyValue(key, value));
