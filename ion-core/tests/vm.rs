@@ -918,3 +918,56 @@ fn test_vm_dict_spread_non_dict_error() {
     let err = vm_eval_err(r#"#{ ...[1, 2, 3] }"#);
     assert!(err.contains("spread requires a dict"), "got: {}", err);
 }
+
+// ============================================================
+// Constant folding
+// ============================================================
+
+#[test]
+fn test_vm_const_fold_arithmetic() {
+    assert_eq!(vm_eval("2 + 3"), Value::Int(5));
+    assert_eq!(vm_eval("10 - 3"), Value::Int(7));
+    assert_eq!(vm_eval("4 * 5"), Value::Int(20));
+    assert_eq!(vm_eval("10 / 3"), Value::Int(3));
+    assert_eq!(vm_eval("10 % 3"), Value::Int(1));
+}
+
+#[test]
+fn test_vm_const_fold_float() {
+    assert_eq!(vm_eval("1.5 + 2.5"), Value::Float(4.0));
+    assert_eq!(vm_eval("2 + 1.5"), Value::Float(3.5));
+    assert_eq!(vm_eval("1.5 * 2"), Value::Float(3.0));
+}
+
+#[test]
+fn test_vm_const_fold_string_concat() {
+    assert_eq!(vm_eval(r#""hello" + " world""#), Value::Str("hello world".into()));
+}
+
+#[test]
+fn test_vm_const_fold_comparison() {
+    assert_eq!(vm_eval("3 > 2"), Value::Bool(true));
+    assert_eq!(vm_eval("1 == 2"), Value::Bool(false));
+    assert_eq!(vm_eval("5 <= 5"), Value::Bool(true));
+}
+
+#[test]
+fn test_vm_const_fold_bool_logic() {
+    assert_eq!(vm_eval("true && false"), Value::Bool(false));
+    assert_eq!(vm_eval("true || false"), Value::Bool(true));
+}
+
+#[test]
+fn test_vm_const_fold_unary() {
+    assert_eq!(vm_eval("-42"), Value::Int(-42));
+    assert_eq!(vm_eval("!true"), Value::Bool(false));
+    assert_eq!(vm_eval("-3.14"), Value::Float(-3.14));
+}
+
+#[test]
+fn test_vm_const_fold_nested() {
+    // Nested constant expressions should fold through AST structure
+    // (2 + 3) is folded to 5, then 5 * 4 can't fold because AST is (2+3)*4
+    // but the inner fold still helps
+    assert_eq!(vm_eval("(2 + 3) * 4"), Value::Int(20));
+}

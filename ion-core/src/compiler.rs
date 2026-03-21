@@ -124,6 +124,66 @@ impl Compiler {
         }
     }
 
+    /// Try to constant-fold a binary operation on two literal operands.
+    fn try_fold_binop(left: &Expr, op: &BinOp, right: &Expr) -> Option<Value> {
+        match (&left.kind, op, &right.kind) {
+            // Int op Int
+            (ExprKind::Int(a), BinOp::Add, ExprKind::Int(b)) => Some(Value::Int(a.wrapping_add(*b))),
+            (ExprKind::Int(a), BinOp::Sub, ExprKind::Int(b)) => Some(Value::Int(a.wrapping_sub(*b))),
+            (ExprKind::Int(a), BinOp::Mul, ExprKind::Int(b)) => Some(Value::Int(a.wrapping_mul(*b))),
+            (ExprKind::Int(a), BinOp::Div, ExprKind::Int(b)) if *b != 0 => Some(Value::Int(a / b)),
+            (ExprKind::Int(a), BinOp::Mod, ExprKind::Int(b)) if *b != 0 => Some(Value::Int(a % b)),
+            (ExprKind::Int(a), BinOp::Eq, ExprKind::Int(b)) => Some(Value::Bool(a == b)),
+            (ExprKind::Int(a), BinOp::Ne, ExprKind::Int(b)) => Some(Value::Bool(a != b)),
+            (ExprKind::Int(a), BinOp::Lt, ExprKind::Int(b)) => Some(Value::Bool(a < b)),
+            (ExprKind::Int(a), BinOp::Gt, ExprKind::Int(b)) => Some(Value::Bool(a > b)),
+            (ExprKind::Int(a), BinOp::Le, ExprKind::Int(b)) => Some(Value::Bool(a <= b)),
+            (ExprKind::Int(a), BinOp::Ge, ExprKind::Int(b)) => Some(Value::Bool(a >= b)),
+            (ExprKind::Int(a), BinOp::BitAnd, ExprKind::Int(b)) => Some(Value::Int(a & b)),
+            (ExprKind::Int(a), BinOp::BitOr, ExprKind::Int(b)) => Some(Value::Int(a | b)),
+            (ExprKind::Int(a), BinOp::BitXor, ExprKind::Int(b)) => Some(Value::Int(a ^ b)),
+            (ExprKind::Int(a), BinOp::Shl, ExprKind::Int(b)) => Some(Value::Int(a << (*b as u32))),
+            (ExprKind::Int(a), BinOp::Shr, ExprKind::Int(b)) => Some(Value::Int(a >> (*b as u32))),
+            // Float op Float
+            (ExprKind::Float(a), BinOp::Add, ExprKind::Float(b)) => Some(Value::Float(a + b)),
+            (ExprKind::Float(a), BinOp::Sub, ExprKind::Float(b)) => Some(Value::Float(a - b)),
+            (ExprKind::Float(a), BinOp::Mul, ExprKind::Float(b)) => Some(Value::Float(a * b)),
+            (ExprKind::Float(a), BinOp::Div, ExprKind::Float(b)) => Some(Value::Float(a / b)),
+            (ExprKind::Float(a), BinOp::Mod, ExprKind::Float(b)) => Some(Value::Float(a % b)),
+            // Int op Float / Float op Int
+            (ExprKind::Int(a), BinOp::Add, ExprKind::Float(b)) => Some(Value::Float(*a as f64 + b)),
+            (ExprKind::Float(a), BinOp::Add, ExprKind::Int(b)) => Some(Value::Float(a + *b as f64)),
+            (ExprKind::Int(a), BinOp::Sub, ExprKind::Float(b)) => Some(Value::Float(*a as f64 - b)),
+            (ExprKind::Float(a), BinOp::Sub, ExprKind::Int(b)) => Some(Value::Float(a - *b as f64)),
+            (ExprKind::Int(a), BinOp::Mul, ExprKind::Float(b)) => Some(Value::Float(*a as f64 * b)),
+            (ExprKind::Float(a), BinOp::Mul, ExprKind::Int(b)) => Some(Value::Float(a * *b as f64)),
+            (ExprKind::Int(a), BinOp::Div, ExprKind::Float(b)) => Some(Value::Float(*a as f64 / b)),
+            (ExprKind::Float(a), BinOp::Div, ExprKind::Int(b)) => Some(Value::Float(a / *b as f64)),
+            // String concat
+            (ExprKind::Str(a), BinOp::Add, ExprKind::Str(b)) => {
+                let mut s = a.clone();
+                s.push_str(b);
+                Some(Value::Str(s))
+            }
+            // Bool logic
+            (ExprKind::Bool(a), BinOp::And, ExprKind::Bool(b)) => Some(Value::Bool(*a && *b)),
+            (ExprKind::Bool(a), BinOp::Or, ExprKind::Bool(b)) => Some(Value::Bool(*a || *b)),
+            (ExprKind::Bool(a), BinOp::Eq, ExprKind::Bool(b)) => Some(Value::Bool(a == b)),
+            (ExprKind::Bool(a), BinOp::Ne, ExprKind::Bool(b)) => Some(Value::Bool(a != b)),
+            _ => None,
+        }
+    }
+
+    /// Try to constant-fold a unary operation on a literal operand.
+    fn try_fold_unary(op: &UnaryOp, inner: &Expr) -> Option<Value> {
+        match (op, &inner.kind) {
+            (UnaryOp::Neg, ExprKind::Int(v)) => Some(Value::Int(-v)),
+            (UnaryOp::Neg, ExprKind::Float(v)) => Some(Value::Float(-v)),
+            (UnaryOp::Not, ExprKind::Bool(v)) => Some(Value::Bool(!v)),
+            _ => None,
+        }
+    }
+
     /// Resolve a local variable name to its slot index (searching innermost first).
     fn resolve_local(&self, name: &str) -> Option<usize> {
         for (i, local) in self.locals.iter().enumerate().rev() {
@@ -354,52 +414,61 @@ impl Compiler {
             }
 
             ExprKind::BinOp { left, op, right } => {
-                match op {
-                    BinOp::And => {
-                        self.compile_expr(left)?;
-                        let jump = self.chunk.emit_jump(Op::And, line);
-                        self.chunk.emit_op(Op::Pop, line);
-                        self.compile_expr(right)?;
-                        self.chunk.patch_jump(jump);
-                    }
-                    BinOp::Or => {
-                        self.compile_expr(left)?;
-                        let jump = self.chunk.emit_jump(Op::Or, line);
-                        self.chunk.emit_op(Op::Pop, line);
-                        self.compile_expr(right)?;
-                        self.chunk.patch_jump(jump);
-                    }
-                    _ => {
-                        self.compile_expr(left)?;
-                        self.compile_expr(right)?;
-                        match op {
-                            BinOp::Add => self.chunk.emit_op_span(Op::Add, line, col),
-                            BinOp::Sub => self.chunk.emit_op_span(Op::Sub, line, col),
-                            BinOp::Mul => self.chunk.emit_op_span(Op::Mul, line, col),
-                            BinOp::Div => self.chunk.emit_op_span(Op::Div, line, col),
-                            BinOp::Mod => self.chunk.emit_op_span(Op::Mod, line, col),
-                            BinOp::Eq => self.chunk.emit_op(Op::Eq, line),
-                            BinOp::Ne => self.chunk.emit_op(Op::NotEq, line),
-                            BinOp::Lt => self.chunk.emit_op(Op::Lt, line),
-                            BinOp::Gt => self.chunk.emit_op(Op::Gt, line),
-                            BinOp::Le => self.chunk.emit_op(Op::LtEq, line),
-                            BinOp::Ge => self.chunk.emit_op(Op::GtEq, line),
-                            BinOp::BitAnd => self.chunk.emit_op(Op::BitAnd, line),
-                            BinOp::BitOr => self.chunk.emit_op(Op::BitOr, line),
-                            BinOp::BitXor => self.chunk.emit_op(Op::BitXor, line),
-                            BinOp::Shl => self.chunk.emit_op(Op::Shl, line),
-                            BinOp::Shr => self.chunk.emit_op(Op::Shr, line),
-                            _ => unreachable!(),
+                // Constant folding: evaluate at compile time if both sides are literals
+                if let Some(val) = Self::try_fold_binop(left, op, right) {
+                    self.chunk.emit_constant(val, line);
+                } else {
+                    match op {
+                        BinOp::And => {
+                            self.compile_expr(left)?;
+                            let jump = self.chunk.emit_jump(Op::And, line);
+                            self.chunk.emit_op(Op::Pop, line);
+                            self.compile_expr(right)?;
+                            self.chunk.patch_jump(jump);
+                        }
+                        BinOp::Or => {
+                            self.compile_expr(left)?;
+                            let jump = self.chunk.emit_jump(Op::Or, line);
+                            self.chunk.emit_op(Op::Pop, line);
+                            self.compile_expr(right)?;
+                            self.chunk.patch_jump(jump);
+                        }
+                        _ => {
+                            self.compile_expr(left)?;
+                            self.compile_expr(right)?;
+                            match op {
+                                BinOp::Add => self.chunk.emit_op_span(Op::Add, line, col),
+                                BinOp::Sub => self.chunk.emit_op_span(Op::Sub, line, col),
+                                BinOp::Mul => self.chunk.emit_op_span(Op::Mul, line, col),
+                                BinOp::Div => self.chunk.emit_op_span(Op::Div, line, col),
+                                BinOp::Mod => self.chunk.emit_op_span(Op::Mod, line, col),
+                                BinOp::Eq => self.chunk.emit_op(Op::Eq, line),
+                                BinOp::Ne => self.chunk.emit_op(Op::NotEq, line),
+                                BinOp::Lt => self.chunk.emit_op(Op::Lt, line),
+                                BinOp::Gt => self.chunk.emit_op(Op::Gt, line),
+                                BinOp::Le => self.chunk.emit_op(Op::LtEq, line),
+                                BinOp::Ge => self.chunk.emit_op(Op::GtEq, line),
+                                BinOp::BitAnd => self.chunk.emit_op(Op::BitAnd, line),
+                                BinOp::BitOr => self.chunk.emit_op(Op::BitOr, line),
+                                BinOp::BitXor => self.chunk.emit_op(Op::BitXor, line),
+                                BinOp::Shl => self.chunk.emit_op(Op::Shl, line),
+                                BinOp::Shr => self.chunk.emit_op(Op::Shr, line),
+                                _ => unreachable!(),
+                            }
                         }
                     }
                 }
             }
 
             ExprKind::UnaryOp { op, expr: inner } => {
-                self.compile_expr(inner)?;
-                match op {
-                    UnaryOp::Neg => self.chunk.emit_op_span(Op::Neg, line, col),
-                    UnaryOp::Not => self.chunk.emit_op_span(Op::Not, line, col),
+                if let Some(val) = Self::try_fold_unary(op, inner) {
+                    self.chunk.emit_constant(val, line);
+                } else {
+                    self.compile_expr(inner)?;
+                    match op {
+                        UnaryOp::Neg => self.chunk.emit_op_span(Op::Neg, line, col),
+                        UnaryOp::Not => self.chunk.emit_op_span(Op::Not, line, col),
+                    }
                 }
             }
 
