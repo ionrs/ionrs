@@ -1521,6 +1521,7 @@ impl Interpreter {
                     ).into())
                 }
             }
+            "is_empty" => Ok(Value::Bool(map.is_empty())),
             _ => Err(IonError::type_err(
                 format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on dict")),
                 span.line, span.col,

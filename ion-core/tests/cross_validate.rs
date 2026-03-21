@@ -496,3 +496,61 @@ fn cross_nested_loops() {
         sum
     "#, Value::Int(180));
 }
+
+// ============================================================
+// Dict methods
+// ============================================================
+
+#[test]
+fn cross_dict_methods() {
+    assert_both_eq(r#"#{"a": 1, "b": 2}.len()"#, Value::Int(2));
+    assert_both_eq(r#"#{"a": 1, "b": 2}.contains_key("a")"#, Value::Bool(true));
+    assert_both_eq(r#"#{"a": 1, "b": 2}.contains_key("c")"#, Value::Bool(false));
+    assert_both_eq(r#"#{"a": 1}.is_empty()"#, Value::Bool(false));
+    assert_both_eq(r#"#{}.is_empty()"#, Value::Bool(true));
+}
+
+#[test]
+fn cross_dict_keys_values() {
+    assert_both_eq(r#"#{"a": 1, "b": 2}.keys()"#, Value::List(vec![
+        Value::Str("a".to_string()), Value::Str("b".to_string()),
+    ]));
+    assert_both_eq(r#"#{"a": 1, "b": 2}.values()"#, Value::List(vec![Value::Int(1), Value::Int(2)]));
+}
+
+#[test]
+fn cross_dict_entries() {
+    assert_both_eq(r#"#{"a": 1}.entries()"#, Value::List(vec![
+        Value::Tuple(vec![Value::Str("a".to_string()), Value::Int(1)]),
+    ]));
+}
+
+// ============================================================
+// Math builtins
+// ============================================================
+
+#[test]
+fn cross_math_builtins() {
+    assert_both_eq("abs(-5)", Value::Int(5));
+    assert_both_eq("abs(3.5)", Value::Float(3.5));
+    assert_both_eq("min(3, 7)", Value::Int(3));
+    assert_both_eq("max(3, 7)", Value::Int(7));
+    assert_both_eq("floor(3.7)", Value::Float(3.0));
+    assert_both_eq("ceil(3.2)", Value::Float(4.0));
+    assert_both_eq("round(3.5)", Value::Float(4.0));
+    assert_both_eq("sqrt(16.0)", Value::Float(4.0));
+    assert_both_eq("pow(2, 10)", Value::Int(1024));
+}
+
+// ============================================================
+// Type checking
+// ============================================================
+
+#[test]
+fn cross_type_of() {
+    assert_both_eq(r#"type_of(42)"#, Value::Str("int".to_string()));
+    assert_both_eq(r#"type_of("hello")"#, Value::Str("string".to_string()));
+    assert_both_eq(r#"type_of(true)"#, Value::Str("bool".to_string()));
+    assert_both_eq(r#"type_of([])"#, Value::Str("list".to_string()));
+    assert_both_eq(r#"type_of(#{})"#, Value::Str("dict".to_string()));
+}
