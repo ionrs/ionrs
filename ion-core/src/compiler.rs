@@ -24,6 +24,12 @@ pub struct Compiler {
     scope_depth: usize,
     /// Whether locals must also be defined in env (needed when closures exist).
     needs_env_locals: bool,
+    /// Pending break jump offsets to patch when loop ends.
+    break_jumps: Vec<usize>,
+    /// Loop start offset for continue jumps.
+    continue_target: Option<usize>,
+    /// Whether we're inside a for-loop (break needs iterator cleanup).
+    in_for_loop: bool,
 }
 
 impl Compiler {
@@ -35,6 +41,9 @@ impl Compiler {
             locals: Vec::new(),
             scope_depth: 0,
             needs_env_locals: true, // conservative default for top-level
+            break_jumps: Vec::new(),
+            continue_target: None,
+            in_for_loop: false,
         }
     }
 
@@ -184,6 +193,11 @@ impl Compiler {
         }
     }
 
+    /// Check if a statement is terminal (control never continues past it).
+    fn stmt_is_terminal(stmt: &Stmt) -> bool {
+        matches!(&stmt.kind, StmtKind::Return { .. } | StmtKind::Break { .. } | StmtKind::Continue)
+    }
+
     /// Resolve a local variable name to its slot index (searching innermost first).
     fn resolve_local(&self, name: &str) -> Option<usize> {
         for (i, local) in self.locals.iter().enumerate().rev() {
@@ -272,6 +286,9 @@ impl Compiler {
                     }
                 }
             }
+            if !is_last && Self::stmt_is_terminal(stmt) {
+                break;
+            }
         }
         if program.stmts.is_empty() {
             self.chunk.emit_op(Op::Unit, 0);
@@ -309,12 +326,21 @@ impl Compiler {
                 } else {
                     self.chunk.emit_op(Op::Unit, line);
                 }
-                // Break is handled via jump patching — emit placeholder
-                // The loop compilation will patch this
-                self.chunk.emit_jump(Op::Jump, line);
+                if self.in_for_loop {
+                    self.chunk.emit_op(Op::IterDrop, line);
+                }
+                let jump = self.chunk.emit_jump(Op::Jump, line);
+                self.break_jumps.push(jump);
             }
             StmtKind::Continue => {
-                self.chunk.emit_jump(Op::Jump, line);
+                if let Some(target) = self.continue_target {
+                    // Emit loop-back jump to loop start
+                    let offset = self.chunk.len() - target + 3;
+                    self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
+                } else {
+                    // No loop context — emit placeholder (shouldn't happen in valid code)
+                    self.chunk.emit_jump(Op::Jump, line);
+                }
             }
             StmtKind::Return { value } => {
                 if let Some(expr) = value {
@@ -332,7 +358,13 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // discard assignment result
             }
             StmtKind::WhileLet { pattern, expr, body } => {
+                let saved_breaks = std::mem::take(&mut self.break_jumps);
+                let saved_in_for = self.in_for_loop;
+                self.in_for_loop = false;
+                let saved_continue = self.continue_target.take();
+
                 let loop_start = self.chunk.len();
+                self.continue_target = Some(loop_start);
 
                 // Evaluate expression
                 self.compile_expr(expr)?;
@@ -349,6 +381,7 @@ impl Compiler {
                 self.compile_pattern_bind(pattern, line)?;
                 for stmt in body {
                     self.compile_stmt(stmt)?;
+                    if Self::stmt_is_terminal(stmt) { break; }
                 }
                 self.end_scope(line);
 
@@ -358,6 +391,13 @@ impl Compiler {
                 self.chunk.patch_jump(exit_jump);
                 self.chunk.emit_op(Op::Pop, line); // pop false
                 self.chunk.emit_op(Op::Pop, line); // pop the duped value
+
+                for jump in &self.break_jumps {
+                    self.chunk.patch_jump(*jump);
+                }
+                self.break_jumps = saved_breaks;
+                self.continue_target = saved_continue;
+                self.in_for_loop = saved_in_for;
             }
         }
         Ok(())
@@ -732,13 +772,56 @@ impl Compiler {
             }
 
             // Features that fall back to tree-walk for now
-            ExprKind::StructConstruct { .. } |
-            ExprKind::EnumVariant { .. } |
-            ExprKind::EnumVariantCall { .. } => {
-                return Err(IonError::runtime(
-                    format!("expression not yet supported in bytecode VM"),
-                    line, 0,
-                ));
+            ExprKind::StructConstruct { name, fields, spread } => {
+                if let Some(spread_expr) = spread {
+                    self.compile_expr(spread_expr)?;
+                    for (fname, fexpr) in fields {
+                        self.chunk.emit_constant(Value::Str(fname.clone()), line);
+                        self.compile_expr(fexpr)?;
+                    }
+                    let type_idx = self.chunk.add_constant(Value::Str(name.clone()));
+                    let field_count = (0x8000 | fields.len()) as u16;
+                    self.chunk.emit_op(Op::ConstructStruct, line);
+                    self.chunk.emit((type_idx >> 8) as u8, line);
+                    self.chunk.emit((type_idx & 0xff) as u8, line);
+                    self.chunk.emit((field_count >> 8) as u8, line);
+                    self.chunk.emit((field_count & 0xff) as u8, line);
+                } else {
+                    for (fname, fexpr) in fields {
+                        self.chunk.emit_constant(Value::Str(fname.clone()), line);
+                        self.compile_expr(fexpr)?;
+                    }
+                    let type_idx = self.chunk.add_constant(Value::Str(name.clone()));
+                    let count = fields.len() as u16;
+                    self.chunk.emit_op(Op::ConstructStruct, line);
+                    self.chunk.emit((type_idx >> 8) as u8, line);
+                    self.chunk.emit((type_idx & 0xff) as u8, line);
+                    self.chunk.emit((count >> 8) as u8, line);
+                    self.chunk.emit((count & 0xff) as u8, line);
+                }
+            }
+            ExprKind::EnumVariant { enum_name, variant } => {
+                let enum_idx = self.chunk.add_constant(Value::Str(enum_name.clone()));
+                let variant_idx = self.chunk.add_constant(Value::Str(variant.clone()));
+                self.chunk.emit_op(Op::ConstructEnum, line);
+                self.chunk.emit((enum_idx >> 8) as u8, line);
+                self.chunk.emit((enum_idx & 0xff) as u8, line);
+                self.chunk.emit((variant_idx >> 8) as u8, line);
+                self.chunk.emit((variant_idx & 0xff) as u8, line);
+                self.chunk.emit(0u8, line);
+            }
+            ExprKind::EnumVariantCall { enum_name, variant, args } => {
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                let enum_idx = self.chunk.add_constant(Value::Str(enum_name.clone()));
+                let variant_idx = self.chunk.add_constant(Value::Str(variant.clone()));
+                self.chunk.emit_op(Op::ConstructEnum, line);
+                self.chunk.emit((enum_idx >> 8) as u8, line);
+                self.chunk.emit((enum_idx & 0xff) as u8, line);
+                self.chunk.emit((variant_idx >> 8) as u8, line);
+                self.chunk.emit((variant_idx & 0xff) as u8, line);
+                self.chunk.emit(args.len() as u8, line);
             }
 
             #[cfg(feature = "concurrency")]
@@ -796,6 +879,10 @@ impl Compiler {
                         self.chunk.emit_op(Op::Unit, stmt.span.line);
                     }
                 }
+            }
+            // Dead code elimination: skip remaining statements after terminal
+            if !is_last && Self::stmt_is_terminal(stmt) {
+                break;
             }
         }
         self.in_tail_position = saved_tail;
@@ -893,6 +980,12 @@ impl Compiler {
     }
 
     fn compile_for(&mut self, pattern: &Pattern, iter: &Expr, body: &[Stmt], line: usize) -> Result<(), IonError> {
+        // Save outer loop context
+        let saved_breaks = std::mem::take(&mut self.break_jumps);
+        let saved_continue = self.continue_target.take();
+        let saved_in_for = self.in_for_loop;
+        self.in_for_loop = true;
+
         // Evaluate the iterator expression
         self.compile_expr(iter)?;
 
@@ -900,6 +993,8 @@ impl Compiler {
         self.chunk.emit_op(Op::IterInit, line);
 
         let loop_start = self.chunk.len();
+        self.continue_target = Some(loop_start);
+
         // Get next item or jump to end
         let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
 
@@ -907,9 +1002,10 @@ impl Compiler {
         self.begin_scope(line);
         self.compile_let_pattern(pattern, false, line)?;
 
-        // Execute body
+        // Execute body (with dead code elimination)
         for stmt in body {
             self.compile_stmt(stmt)?;
+            if Self::stmt_is_terminal(stmt) { break; }
         }
         self.end_scope(line);
 
@@ -923,11 +1019,27 @@ impl Compiler {
         self.chunk.patch_jump(exit_jump);
         // Pop the iterator placeholder
         self.chunk.emit_op(Op::Pop, line);
+
+        // Patch all break jumps to after the loop
+        for jump in &self.break_jumps {
+            self.chunk.patch_jump(*jump);
+        }
+
+        // Restore outer loop context
+        self.break_jumps = saved_breaks;
+        self.continue_target = saved_continue;
+        self.in_for_loop = saved_in_for;
         Ok(())
     }
 
     fn compile_while(&mut self, cond: &Expr, body: &[Stmt], line: usize) -> Result<(), IonError> {
+        let saved_breaks = std::mem::take(&mut self.break_jumps);
+        let saved_continue = self.continue_target.take();
+        let saved_in_for = self.in_for_loop;
+        self.in_for_loop = false;
+
         let loop_start = self.chunk.len();
+        self.continue_target = Some(loop_start);
 
         self.compile_expr(cond)?;
         let exit_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
@@ -936,6 +1048,7 @@ impl Compiler {
         self.begin_scope(line);
         for stmt in body {
             self.compile_stmt(stmt)?;
+            if Self::stmt_is_terminal(stmt) { break; }
         }
         self.end_scope(line);
 
@@ -944,20 +1057,41 @@ impl Compiler {
 
         self.chunk.patch_jump(exit_jump);
         self.chunk.emit_op(Op::Pop, line); // pop condition
+
+        for jump in &self.break_jumps {
+            self.chunk.patch_jump(*jump);
+        }
+        self.break_jumps = saved_breaks;
+        self.continue_target = saved_continue;
+        self.in_for_loop = saved_in_for;
         Ok(())
     }
 
     fn compile_loop(&mut self, body: &[Stmt], line: usize) -> Result<(), IonError> {
+        let saved_breaks = std::mem::take(&mut self.break_jumps);
+        let saved_continue = self.continue_target.take();
+        let saved_in_for = self.in_for_loop;
+        self.in_for_loop = false;
+
         let loop_start = self.chunk.len();
+        self.continue_target = Some(loop_start);
 
         self.begin_scope(line);
         for stmt in body {
             self.compile_stmt(stmt)?;
+            if Self::stmt_is_terminal(stmt) { break; }
         }
         self.end_scope(line);
 
         let offset = self.chunk.len() - loop_start + 3;
         self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
+
+        for jump in &self.break_jumps {
+            self.chunk.patch_jump(*jump);
+        }
+        self.break_jumps = saved_breaks;
+        self.continue_target = saved_continue;
+        self.in_for_loop = saved_in_for;
         Ok(())
     }
 

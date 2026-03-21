@@ -91,7 +91,7 @@ impl Engine {
     }
 
     /// Evaluate a script via the bytecode VM. Falls back to tree-walk for
-    /// unsupported features (match, comprehensions, host types, concurrency).
+    /// unsupported features (concurrency).
     pub fn vm_eval(&mut self, source: &str) -> Result<Value, IonError> {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize()?;
@@ -107,6 +107,8 @@ impl Engine {
                 );
                 // Pre-populate the VM's function cache with compiled chunks
                 vm.preload_fn_chunks(fn_chunks);
+                // Pass host type registry to VM
+                vm.set_types(self.interpreter.types.clone());
                 // Register builtins in VM env
                 crate::interpreter::register_builtins(vm.env_mut());
                 let result = vm.execute(&chunk);

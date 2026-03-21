@@ -142,6 +142,8 @@ pub enum Op {
     DictInsert,
     /// Merge a dict into the dict below it on the stack (for spread).
     DictMerge,
+    /// Drop the current iterator (for break in for-loops).
+    IterDrop,
 
     /// Slice access: pop end (or sentinel), pop start (or sentinel), pop object, push slice.
     Slice,          // u8: flags (bit 0 = has_start, bit 1 = has_end, bit 2 = inclusive)

@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use crate::bytecode::{Chunk, Op};
 use crate::env::Env;
 use crate::error::IonError;
+use crate::host_types::TypeRegistry;
 use crate::value::Value;
 
 /// A local variable stored in a stack slot.
@@ -34,6 +35,8 @@ pub struct Vm {
     local_frames: Vec<usize>,
     /// Base offset for the current function's locals (slot indices are relative to this).
     locals_base: usize,
+    /// Host type registry for struct/enum construction.
+    types: TypeRegistry,
 }
 
 impl Vm {
@@ -48,6 +51,7 @@ impl Vm {
             locals: Vec::with_capacity(64),
             local_frames: Vec::with_capacity(16),
             locals_base: 0,
+            types: TypeRegistry::default(),
         }
     }
 
@@ -63,7 +67,13 @@ impl Vm {
             locals: Vec::with_capacity(64),
             local_frames: Vec::with_capacity(16),
             locals_base: 0,
+            types: TypeRegistry::default(),
         }
+    }
+
+    /// Set the type registry for host type construction.
+    pub fn set_types(&mut self, types: TypeRegistry) {
+        self.types = types;
     }
 
     /// Get a reference to the environment.
@@ -642,8 +652,81 @@ impl Vm {
                 }
 
                 // --- Host types ---
-                Op::ConstructStruct | Op::ConstructEnum => {
-                    return Err(IonError::runtime("host types not yet supported in bytecode VM", line, col));
+                Op::ConstructStruct => {
+                    let type_name_idx = chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    let raw_count = chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    let type_name = match &chunk.constants[type_name_idx] {
+                        Value::Str(s) => s.clone(),
+                        _ => return Err(IonError::runtime("invalid type name", line, col)),
+                    };
+                    let has_spread = raw_count & 0x8000 != 0;
+                    let field_count = raw_count & 0x7FFF;
+                    let mut fields = IndexMap::new();
+                    if has_spread {
+                        // Stack: [..., spread_struct, field_name, field_value, ...]
+                        // Pop override fields first
+                        let override_start = self.stack.len() - field_count * 2;
+                        let overrides: Vec<Value> = self.stack.drain(override_start..).collect();
+                        // Pop spread struct
+                        let spread_val = self.pop(line, col)?;
+                        match spread_val {
+                            Value::HostStruct { fields: sf, .. } => {
+                                for (k, v) in sf {
+                                    fields.insert(k, v);
+                                }
+                            }
+                            _ => return Err(IonError::type_err(
+                                "spread in struct constructor requires a struct", line, col
+                            )),
+                        }
+                        // Apply overrides
+                        for pair in overrides.chunks(2) {
+                            let fname = match &pair[0] {
+                                Value::Str(s) => s.clone(),
+                                _ => return Err(IonError::runtime("invalid field name", line, col)),
+                            };
+                            fields.insert(fname, pair[1].clone());
+                        }
+                    } else {
+                        // No spread: fields are pushed as name, value pairs
+                        let start = self.stack.len() - field_count * 2;
+                        let items: Vec<Value> = self.stack.drain(start..).collect();
+                        for pair in items.chunks(2) {
+                            let fname = match &pair[0] {
+                                Value::Str(s) => s.clone(),
+                                _ => return Err(IonError::runtime("invalid field name", line, col)),
+                            };
+                            fields.insert(fname, pair[1].clone());
+                        }
+                    }
+                    match self.types.construct_struct(&type_name, fields) {
+                        Ok(val) => self.stack.push(val),
+                        Err(msg) => return Err(IonError::runtime(msg, line, col)),
+                    }
+                }
+                Op::ConstructEnum => {
+                    let enum_name_idx = chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    let variant_name_idx = chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    let arg_count = chunk.read_u8(self.ip) as usize;
+                    self.ip += 1;
+                    let enum_name = match &chunk.constants[enum_name_idx] {
+                        Value::Str(s) => s.clone(),
+                        _ => return Err(IonError::runtime("invalid enum name", line, col)),
+                    };
+                    let variant_name = match &chunk.constants[variant_name_idx] {
+                        Value::Str(s) => s.clone(),
+                        _ => return Err(IonError::runtime("invalid variant name", line, col)),
+                    };
+                    let start = self.stack.len() - arg_count;
+                    let args: Vec<Value> = self.stack.drain(start..).collect();
+                    match self.types.construct_enum(&enum_name, &variant_name, args) {
+                        Ok(val) => self.stack.push(val),
+                        Err(msg) => return Err(IonError::runtime(msg, line, col)),
+                    }
                 }
 
                 // --- Comprehensions ---
@@ -692,6 +775,9 @@ impl Vm {
                             self.ip += offset;
                         }
                     }
+                }
+                Op::IterDrop => {
+                    self.iterators.pop();
                 }
                 Op::ListAppend => {
                     // Stack: [..., list, iter_placeholder, ..., item]

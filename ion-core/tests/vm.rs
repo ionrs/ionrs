@@ -1,6 +1,7 @@
 //! Tests for the bytecode VM execution path.
 
 use ion_core::engine::Engine;
+use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef};
 use ion_core::value::Value;
 
 fn vm_eval(src: &str) -> Value {
@@ -970,4 +971,113 @@ fn test_vm_const_fold_nested() {
     // (2 + 3) is folded to 5, then 5 * 4 can't fold because AST is (2+3)*4
     // but the inner fold still helps
     assert_eq!(vm_eval("(2 + 3) * 4"), Value::Int(20));
+}
+
+// ============================================================
+// Host types
+// ============================================================
+
+fn vm_engine_with_types() -> Engine {
+    let mut engine = Engine::new();
+    engine.register_struct(HostStructDef {
+        name: "Config".into(),
+        fields: vec!["host".into(), "port".into(), "debug".into()],
+    });
+    engine.register_enum(HostEnumDef {
+        name: "Color".into(),
+        variants: vec![
+            HostVariantDef { name: "Red".into(), arity: 0 },
+            HostVariantDef { name: "Custom".into(), arity: 3 },
+        ],
+    });
+    engine
+}
+
+#[test]
+fn test_vm_host_struct_construct() {
+    let mut engine = vm_engine_with_types();
+    let val = engine.vm_eval(r#"Config { host: "localhost", port: 8080, debug: true }"#).unwrap();
+    if let Value::HostStruct { type_name, fields } = &val {
+        assert_eq!(type_name, "Config");
+        assert_eq!(fields["host"], Value::Str("localhost".into()));
+        assert_eq!(fields["port"], Value::Int(8080));
+        assert_eq!(fields["debug"], Value::Bool(true));
+    } else {
+        panic!("expected HostStruct, got: {:?}", val);
+    }
+}
+
+#[test]
+fn test_vm_host_struct_field_access() {
+    let mut engine = vm_engine_with_types();
+    let val = engine.vm_eval(r#"
+        let c = Config { host: "localhost", port: 8080, debug: false };
+        c.port
+    "#).unwrap();
+    assert_eq!(val, Value::Int(8080));
+}
+
+#[test]
+fn test_vm_host_struct_spread() {
+    let mut engine = vm_engine_with_types();
+    let val = engine.vm_eval(r#"
+        let base = Config { host: "localhost", port: 8080, debug: false };
+        let updated = Config { ...base, debug: true };
+        updated.debug
+    "#).unwrap();
+    assert_eq!(val, Value::Bool(true));
+}
+
+#[test]
+fn test_vm_host_enum_variant() {
+    let mut engine = vm_engine_with_types();
+    let val = engine.vm_eval("Color::Red").unwrap();
+    if let Value::HostEnum { enum_name, variant, data } = &val {
+        assert_eq!(enum_name, "Color");
+        assert_eq!(variant, "Red");
+        assert!(data.is_empty());
+    } else {
+        panic!("expected HostEnum, got: {:?}", val);
+    }
+}
+
+#[test]
+fn test_vm_dead_code_after_return() {
+    // Code after return should be eliminated — function should still work
+    assert_eq!(vm_eval(r#"
+        fn foo() {
+            return 42;
+            let x = 100;
+            x + 1
+        }
+        foo()
+    "#), Value::Int(42));
+}
+
+#[test]
+fn test_vm_dead_code_after_break() {
+    assert_eq!(vm_eval(r#"
+        let mut sum = 0;
+        for i in [1, 2, 3, 4, 5] {
+            if i > 3 {
+                break;
+                sum = sum + 999;
+            }
+            sum = sum + i;
+        }
+        sum
+    "#), Value::Int(6));
+}
+
+#[test]
+fn test_vm_host_enum_variant_with_data() {
+    let mut engine = vm_engine_with_types();
+    let val = engine.vm_eval("Color::Custom(255, 128, 0)").unwrap();
+    if let Value::HostEnum { enum_name, variant, data } = &val {
+        assert_eq!(enum_name, "Color");
+        assert_eq!(variant, "Custom");
+        assert_eq!(data, &vec![Value::Int(255), Value::Int(128), Value::Int(0)]);
+    } else {
+        panic!("expected HostEnum, got: {:?}", val);
+    }
 }
