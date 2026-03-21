@@ -227,43 +227,49 @@ impl Vm {
                     self.ip += 2;
                     let mutable = chunk.read_u8(self.ip) != 0;
                     self.ip += 1;
-                    let name = self.const_as_str(&chunk.constants[name_idx], line)?;
+                    let sym = self.const_to_sym(&chunk.constants[name_idx], line)?;
                     let val = self.pop(line)?;
-                    self.env.define(name, val, mutable);
+                    self.env.define_sym(sym, val, mutable);
                 }
                 Op::GetLocal => {
                     let name_idx = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
-                    let name = self.const_as_str(&chunk.constants[name_idx], line)?;
-                    let val = self.env.get(&name)
+                    let sym = self.const_to_sym(&chunk.constants[name_idx], line)?;
+                    let val = self.env.get_sym(sym)
                         .cloned()
-                        .ok_or_else(|| IonError::name(format!("undefined variable: {}", name), line, 0))?;
+                        .ok_or_else(|| {
+                            let name = self.env.resolve(sym);
+                            IonError::name(format!("undefined variable: {}", name), line, 0)
+                        })?;
                     self.stack.push(val);
                 }
                 Op::SetLocal => {
                     let name_idx = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
-                    let name = self.const_as_str(&chunk.constants[name_idx], line)?;
+                    let sym = self.const_to_sym(&chunk.constants[name_idx], line)?;
                     let val = self.pop(line)?;
-                    self.env.set(&name, val.clone())
+                    self.env.set_sym(sym, val.clone())
                         .map_err(|e| IonError::runtime(e, line, 0))?;
                     self.stack.push(val); // assignment is an expression
                 }
                 Op::GetGlobal => {
                     let name_idx = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
-                    let name = self.const_as_str(&chunk.constants[name_idx], line)?;
-                    let val = self.env.get(&name)
+                    let sym = self.const_to_sym(&chunk.constants[name_idx], line)?;
+                    let val = self.env.get_sym(sym)
                         .cloned()
-                        .ok_or_else(|| IonError::name(format!("undefined variable: {}", name), line, 0))?;
+                        .ok_or_else(|| {
+                            let name = self.env.resolve(sym);
+                            IonError::name(format!("undefined variable: {}", name), line, 0)
+                        })?;
                     self.stack.push(val);
                 }
                 Op::SetGlobal => {
                     let name_idx = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
-                    let name = self.const_as_str(&chunk.constants[name_idx], line)?;
+                    let sym = self.const_to_sym(&chunk.constants[name_idx], line)?;
                     let val = self.pop(line)?;
-                    self.env.set(&name, val.clone())
+                    self.env.set_sym(sym, val.clone())
                         .map_err(|e| IonError::runtime(e, line, 0))?;
                     self.stack.push(val);
                 }
@@ -756,6 +762,14 @@ impl Vm {
     fn const_as_str(&self, val: &Value, line: usize) -> Result<String, IonError> {
         match val {
             Value::Str(s) => Ok(s.clone()),
+            _ => Err(IonError::runtime("expected string constant", line, 0)),
+        }
+    }
+
+    /// Resolve a constant pool string to a Symbol, interning it in the env's string pool.
+    fn const_to_sym(&mut self, val: &Value, line: usize) -> Result<crate::intern::Symbol, IonError> {
+        match val {
+            Value::Str(s) => Ok(self.env.intern(s)),
             _ => Err(IonError::runtime("expected string constant", line, 0)),
         }
     }

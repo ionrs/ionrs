@@ -191,7 +191,18 @@ impl Chunk {
     }
 
     /// Add a constant to the pool, returning its index.
+    /// Deduplicates string constants (used for variable names).
     pub fn add_constant(&mut self, value: Value) -> u16 {
+        // Deduplicate string constants for variable name lookups
+        if let Value::Str(ref s) = value {
+            for (i, c) in self.constants.iter().enumerate() {
+                if let Value::Str(ref cs) = c {
+                    if cs == s {
+                        return i as u16;
+                    }
+                }
+            }
+        }
         self.constants.push(value);
         (self.constants.len() - 1) as u16
     }

@@ -654,6 +654,40 @@ fn test_vm_for_list_destructure() {
 }
 
 // ============================================================
+// String interning / perf (VM-native)
+// ============================================================
+
+#[test]
+fn test_vm_many_variable_accesses() {
+    // Exercises the interned symbol lookup path heavily
+    assert_eq!(vm_eval(r#"
+        let mut x = 0;
+        let mut y = 0;
+        let mut z = 0;
+        for i in 0..100 {
+            x += 1;
+            y += 2;
+            z += 3;
+        }
+        x + y + z
+    "#), Value::Int(600));
+}
+
+#[test]
+fn test_vm_nested_scopes_many_vars() {
+    assert_eq!(vm_eval(r#"
+        let a = 1;
+        let b = 2;
+        let result = {
+            let a = 10;
+            let c = 3;
+            a + b + c
+        };
+        result + a
+    "#), Value::Int(16));
+}
+
+// ============================================================
 // Bitwise operators (VM path)
 // ============================================================
 

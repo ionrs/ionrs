@@ -29,6 +29,7 @@ pub mod lexer;
 pub mod ast;
 pub mod parser;
 pub mod value;
+pub mod intern;
 pub mod env;
 pub mod error;
 pub mod interpreter;
