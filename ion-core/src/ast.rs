@@ -120,6 +120,8 @@ pub enum ExprKind {
     FieldAccess { expr: Box<Expr>, field: String },
     /// `expr[index]`
     Index { expr: Box<Expr>, index: Box<Expr> },
+    /// `expr[start..end]`, `expr[..end]`, `expr[start..]`
+    Slice { expr: Box<Expr>, start: Option<Box<Expr>>, end: Option<Box<Expr>>, inclusive: bool },
     /// `expr.method(args)`
     MethodCall { expr: Box<Expr>, method: String, args: Vec<CallArg> },
 

@@ -569,6 +569,19 @@ impl Interpreter {
                 self.index_access(&val, &idx, span)
             }
 
+            ExprKind::Slice { expr, start, end, inclusive } => {
+                let val = self.eval_expr(expr)?;
+                let s = match start {
+                    Some(e) => Some(self.eval_expr(e)?),
+                    None => None,
+                };
+                let e = match end {
+                    Some(e) => Some(self.eval_expr(e)?),
+                    None => None,
+                };
+                self.slice_access(&val, s.as_ref(), e.as_ref(), *inclusive, span)
+            }
+
             ExprKind::MethodCall { expr, method, args } => {
                 let receiver = self.eval_expr(expr)?;
                 let mut arg_vals = Vec::new();
@@ -946,6 +959,51 @@ impl Interpreter {
                     ion_str!(" with "),
                     idx.type_name(),
                 ),
+                span.line, span.col,
+            ).into()),
+        }
+    }
+
+    fn slice_access(&self, val: &Value, start: Option<&Value>, end: Option<&Value>, inclusive: bool, span: Span) -> SignalResult {
+        let get_idx = |v: Option<&Value>, default: i64| -> Result<i64, SignalOrError> {
+            match v {
+                Some(Value::Int(n)) => Ok(*n),
+                None => Ok(default),
+                Some(other) => Err(IonError::type_err(
+                    format!("{}{}", ion_str!("slice index must be int, got "), other.type_name()),
+                    span.line, span.col,
+                ).into()),
+            }
+        };
+
+        match val {
+            Value::List(items) => {
+                let len = items.len() as i64;
+                let s = get_idx(start, 0)?;
+                let e = get_idx(end, len)?;
+                let s = s.max(0).min(len) as usize;
+                let e = if inclusive { (e + 1).max(0).min(len) as usize } else { e.max(0).min(len) as usize };
+                Ok(Value::List(items[s..e].to_vec()))
+            }
+            Value::Str(string) => {
+                let chars: Vec<char> = string.chars().collect();
+                let len = chars.len() as i64;
+                let s = get_idx(start, 0)?;
+                let e = get_idx(end, len)?;
+                let s = s.max(0).min(len) as usize;
+                let e = if inclusive { (e + 1).max(0).min(len) as usize } else { e.max(0).min(len) as usize };
+                Ok(Value::Str(chars[s..e].iter().collect()))
+            }
+            Value::Bytes(bytes) => {
+                let len = bytes.len() as i64;
+                let s = get_idx(start, 0)?;
+                let e = get_idx(end, len)?;
+                let s = s.max(0).min(len) as usize;
+                let e = if inclusive { (e + 1).max(0).min(len) as usize } else { e.max(0).min(len) as usize };
+                Ok(Value::Bytes(bytes[s..e].to_vec()))
+            }
+            _ => Err(IonError::type_err(
+                format!("{}{}", ion_str!("cannot slice "), val.type_name()),
                 span.line, span.col,
             ).into()),
         }
@@ -1509,10 +1567,12 @@ impl Interpreter {
     fn value_to_iter(&self, val: &Value, span: Span) -> Result<Vec<Value>, SignalOrError> {
         match val {
             Value::List(items) => Ok(items.clone()),
+            Value::Tuple(items) => Ok(items.clone()),
             Value::Dict(map) => Ok(map.iter()
                 .map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()]))
                 .collect()),
             Value::Str(s) => Ok(s.chars().map(|c| Value::Str(c.to_string())).collect()),
+            Value::Bytes(bytes) => Ok(bytes.iter().map(|&b| Value::Int(b as i64)).collect()),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot iterate over "), val.type_name()),
                 span.line, span.col,

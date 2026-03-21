@@ -1922,3 +1922,134 @@ fn test_bytes_for_loop() {
 fn test_bytes_display() {
     assert_eq!(eval("let x = b\"hello\"; f\"{x}\""), Value::Str("b\"hello\"".to_string()));
 }
+
+// ============================================================
+// 36. Slice syntax
+// ============================================================
+
+#[test]
+fn test_list_slice() {
+    assert_eq!(eval("[1, 2, 3, 4, 5][1..3]"), Value::List(vec![Value::Int(2), Value::Int(3)]));
+}
+
+#[test]
+fn test_list_slice_from_start() {
+    assert_eq!(eval("[1, 2, 3, 4, 5][..2]"), Value::List(vec![Value::Int(1), Value::Int(2)]));
+}
+
+#[test]
+fn test_list_slice_to_end() {
+    assert_eq!(eval("[1, 2, 3, 4, 5][3..]"), Value::List(vec![Value::Int(4), Value::Int(5)]));
+}
+
+#[test]
+fn test_list_slice_inclusive() {
+    assert_eq!(eval("[1, 2, 3, 4, 5][1..=3]"), Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)]));
+}
+
+#[test]
+fn test_list_slice_full() {
+    assert_eq!(eval("[1, 2, 3][..]"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+}
+
+#[test]
+fn test_string_slice() {
+    assert_eq!(eval(r#""hello"[1..3]"#), Value::Str("el".to_string()));
+    assert_eq!(eval(r#""hello"[..2]"#), Value::Str("he".to_string()));
+    assert_eq!(eval(r#""hello"[3..]"#), Value::Str("lo".to_string()));
+}
+
+#[test]
+fn test_bytes_slice_syntax() {
+    assert_eq!(eval(r#"b"hello"[1..3]"#), Value::Bytes(b"el".to_vec()));
+    assert_eq!(eval(r#"b"hello"[..2]"#), Value::Bytes(b"he".to_vec()));
+    assert_eq!(eval(r#"b"hello"[3..]"#), Value::Bytes(b"lo".to_vec()));
+}
+
+#[test]
+fn test_slice_out_of_bounds_clamps() {
+    assert_eq!(eval("[1, 2, 3][0..100]"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(eval("[1, 2, 3][5..10]"), Value::List(vec![]));
+}
+
+#[test]
+fn test_slice_with_variables() {
+    assert_eq!(eval("let start = 1; let end = 3; [10, 20, 30, 40][start..end]"),
+        Value::List(vec![Value::Int(20), Value::Int(30)]));
+}
+
+// ============================================================
+// 37. Iterator protocol
+// ============================================================
+
+#[test]
+fn test_for_over_bytes() {
+    assert_eq!(eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#),
+        Value::Int(97 + 98 + 99));
+}
+
+#[test]
+fn test_for_over_tuple() {
+    assert_eq!(eval("let mut sum = 0; for x in (1, 2, 3) { sum += x; } sum"),
+        Value::Int(6));
+}
+
+#[test]
+fn test_for_over_string() {
+    assert_eq!(eval(r#"let mut s = ""; for c in "abc" { s = s + c + "-"; } s"#),
+        Value::Str("a-b-c-".to_string()));
+}
+
+// ============================================================
+// 38. VM function compilation
+// ============================================================
+
+#[test]
+fn test_vm_fn_simple() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval("fn add(a, b) { a + b } add(3, 4)").unwrap(), Value::Int(7));
+}
+
+#[test]
+fn test_vm_fn_nested_calls() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval("fn double(x) { x * 2 } fn quad(x) { double(double(x)) } quad(5)").unwrap(), Value::Int(20));
+}
+
+#[test]
+fn test_vm_fn_closure() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval("let x = 10; fn add_x(y) { x + y } add_x(5)").unwrap(), Value::Int(15));
+}
+
+#[test]
+fn test_vm_fn_default_params() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval("fn greet(name = \"world\") { name } greet()").unwrap(), Value::Str("world".to_string()));
+}
+
+#[test]
+fn test_vm_fn_if_in_body() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval("fn abs(x) { if x < 0 { -x } else { x } } abs(-5)").unwrap(), Value::Int(5));
+}
+
+#[test]
+fn test_vm_fn_loop_in_body() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval("fn sum(n) { let mut s = 0; let mut i = 0; while i < n { s += i; i += 1; } s } sum(5)").unwrap(), Value::Int(10));
+}
+
+#[test]
+fn test_vm_slice() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval("[1, 2, 3, 4, 5][1..3]").unwrap(), Value::List(vec![Value::Int(2), Value::Int(3)]));
+    assert_eq!(engine.vm_eval("[1, 2, 3][..2]").unwrap(), Value::List(vec![Value::Int(1), Value::Int(2)]));
+    assert_eq!(engine.vm_eval("[1, 2, 3][1..]").unwrap(), Value::List(vec![Value::Int(2), Value::Int(3)]));
+}
+
+#[test]
+fn test_vm_for_bytes() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.vm_eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#).unwrap(), Value::Int(97 + 98 + 99));
+}

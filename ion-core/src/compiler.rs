@@ -272,6 +272,23 @@ impl Compiler {
                 self.chunk.emit_op(Op::GetIndex, line);
             }
 
+            ExprKind::Slice { expr: inner, start, end, inclusive } => {
+                self.compile_expr(inner)?;
+                let mut flags: u8 = 0;
+                if let Some(s) = start {
+                    self.compile_expr(s)?;
+                    flags |= 1; // has_start
+                }
+                if let Some(e) = end {
+                    self.compile_expr(e)?;
+                    flags |= 2; // has_end
+                }
+                if *inclusive {
+                    flags |= 4; // inclusive
+                }
+                self.chunk.emit_op_u8(Op::Slice, flags, line);
+            }
+
             ExprKind::MethodCall { expr: inner, method, args } => {
                 self.compile_expr(inner)?;
                 for arg in args {
@@ -574,6 +591,13 @@ impl Compiler {
             }
         }
         Ok(())
+    }
+
+    /// Compile a function body to a standalone chunk (for VM-native function execution).
+    pub fn compile_fn_body(mut self, body: &[Stmt], line: usize) -> Result<Chunk, IonError> {
+        self.compile_block_expr(body, line)?;
+        self.chunk.emit_op(Op::Return, line);
+        Ok(self.chunk)
     }
 
     fn compile_match(&mut self, _subject: &Expr, _arms: &[MatchArm], line: usize) -> Result<(), IonError> {

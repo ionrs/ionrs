@@ -539,13 +539,45 @@ impl Parser {
                 }
                 Token::LBracket => {
                     self.advance();
-                    let index = self.parse_expr()?;
-                    self.eat(&Token::RBracket)?;
                     let span = expr.span;
-                    expr = Expr {
-                        kind: ExprKind::Index { expr: Box::new(expr), index: Box::new(index) },
-                        span,
-                    };
+                    // Check for [..end] or [..=end] or [..]
+                    if self.check(&Token::DotDot) || self.check(&Token::DotDotEq) {
+                        let inclusive = self.check(&Token::DotDotEq);
+                        self.advance();
+                        let end = if self.check(&Token::RBracket) {
+                            None
+                        } else {
+                            Some(Box::new(self.parse_expr()?))
+                        };
+                        self.eat(&Token::RBracket)?;
+                        expr = Expr {
+                            kind: ExprKind::Slice { expr: Box::new(expr), start: None, end, inclusive },
+                            span,
+                        };
+                        continue;
+                    }
+                    // Parse index/start using parse_addition (stops before ..)
+                    let first = self.parse_addition()?;
+                    if self.check(&Token::DotDot) || self.check(&Token::DotDotEq) {
+                        let inclusive = self.check(&Token::DotDotEq);
+                        self.advance();
+                        let end = if self.check(&Token::RBracket) {
+                            None
+                        } else {
+                            Some(Box::new(self.parse_expr()?))
+                        };
+                        self.eat(&Token::RBracket)?;
+                        expr = Expr {
+                            kind: ExprKind::Slice { expr: Box::new(expr), start: Some(Box::new(first)), end, inclusive },
+                            span,
+                        };
+                    } else {
+                        self.eat(&Token::RBracket)?;
+                        expr = Expr {
+                            kind: ExprKind::Index { expr: Box::new(expr), index: Box::new(first) },
+                            span,
+                        };
+                    }
                 }
                 Token::LParen => {
                     // Check if this is truly a call (the expr must be callable)

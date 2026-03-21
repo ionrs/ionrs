@@ -135,6 +135,9 @@ pub enum Op {
     ListAppend,
     DictInsert,
 
+    /// Slice access: pop end (or sentinel), pop start (or sentinel), pop object, push slice.
+    Slice,          // u8: flags (bit 0 = has_start, bit 1 = has_end, bit 2 = inclusive)
+
     /// Print (for testing/debugging)
     Print,          // u8: 0 = print, 1 = println
 }

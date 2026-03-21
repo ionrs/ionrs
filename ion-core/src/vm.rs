@@ -53,7 +53,11 @@ impl Vm {
     pub fn execute(&mut self, chunk: &Chunk) -> Result<Value, IonError> {
         self.ip = 0;
         self.stack.clear();
+        self.run_chunk(chunk)
+    }
 
+    /// Run a chunk without resetting state (used for recursive function calls).
+    fn run_chunk(&mut self, chunk: &Chunk) -> Result<Value, IonError> {
         while self.ip < chunk.code.len() {
             let op_byte = chunk.code[self.ip];
             let line = chunk.lines[self.ip];
@@ -481,6 +485,10 @@ impl Vm {
                             let chars: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
                             Box::new(chars.into_iter())
                         }
+                        Value::Bytes(bytes) => {
+                            let vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                            Box::new(vals.into_iter())
+                        }
                         other => {
                             return Err(IonError::type_err(
                                 format!("cannot iterate over {}", other.type_name()),
@@ -514,6 +522,20 @@ impl Vm {
                     return Err(IonError::runtime("comprehensions not yet supported in bytecode VM", line, 0));
                 }
 
+                // --- Slice ---
+                Op::Slice => {
+                    let flags = chunk.read_u8(self.ip);
+                    self.ip += 1;
+                    let has_start = flags & 1 != 0;
+                    let has_end = flags & 2 != 0;
+                    let inclusive = flags & 4 != 0;
+                    let end_val = if has_end { Some(self.pop(line)?) } else { None };
+                    let start_val = if has_start { Some(self.pop(line)?) } else { None };
+                    let obj = self.pop(line)?;
+                    let result = self.slice_access(obj, start_val, end_val, inclusive, line)?;
+                    self.stack.push(result);
+                }
+
                 // --- Print ---
                 Op::Print => {
                     let newline = chunk.read_u8(self.ip) != 0;
@@ -536,12 +558,50 @@ impl Vm {
     // ---- Helpers ----
 
     fn decode_op(&self, byte: u8, line: usize) -> Result<Op, IonError> {
-        // Safety: we trust the compiler to emit valid opcodes
         if byte > Op::Print as u8 {
             return Err(IonError::runtime(format!("invalid opcode: {}", byte), line, 0));
         }
         // SAFETY: Op is repr(u8) and we checked the range
         Ok(unsafe { std::mem::transmute(byte) })
+    }
+
+    fn slice_access(&self, obj: Value, start: Option<Value>, end: Option<Value>, inclusive: bool, line: usize) -> Result<Value, IonError> {
+        let get_idx = |v: Option<Value>, default: i64| -> Result<i64, IonError> {
+            match v {
+                Some(Value::Int(n)) => Ok(n),
+                None => Ok(default),
+                Some(other) => Err(IonError::type_err(
+                    format!("slice index must be int, got {}", other.type_name()), line, 0,
+                )),
+            }
+        };
+        match &obj {
+            Value::List(items) => {
+                let len = items.len() as i64;
+                let s = get_idx(start, 0)?.max(0).min(len) as usize;
+                let e_raw = get_idx(end, len)?;
+                let e = if inclusive { (e_raw + 1).max(0).min(len) as usize } else { e_raw.max(0).min(len) as usize };
+                Ok(Value::List(items[s..e].to_vec()))
+            }
+            Value::Str(string) => {
+                let chars: Vec<char> = string.chars().collect();
+                let len = chars.len() as i64;
+                let s = get_idx(start, 0)?.max(0).min(len) as usize;
+                let e_raw = get_idx(end, len)?;
+                let e = if inclusive { (e_raw + 1).max(0).min(len) as usize } else { e_raw.max(0).min(len) as usize };
+                Ok(Value::Str(chars[s..e].iter().collect()))
+            }
+            Value::Bytes(bytes) => {
+                let len = bytes.len() as i64;
+                let s = get_idx(start, 0)?.max(0).min(len) as usize;
+                let e_raw = get_idx(end, len)?;
+                let e = if inclusive { (e_raw + 1).max(0).min(len) as usize } else { e_raw.max(0).min(len) as usize };
+                Ok(Value::Bytes(bytes[s..e].to_vec()))
+            }
+            _ => Err(IonError::type_err(
+                format!("cannot slice {}", obj.type_name()), line, 0,
+            )),
+        }
     }
 
     fn pop(&mut self, line: usize) -> Result<Value, IonError> {
@@ -1001,8 +1061,6 @@ impl Vm {
                 self.stack.push(result);
             }
             Value::Fn(ion_fn) => {
-                // For tree-walk functions called from VM, we use the interpreter
-                // For now, create a scope, bind params, execute body
                 self.env.push_scope();
 
                 // Bind captures
@@ -1015,7 +1073,6 @@ impl Vm {
                     let val = if i < args.len() {
                         args[i].clone()
                     } else if let Some(default) = &param.default {
-                        // Evaluate default using a temporary interpreter
                         let mut interp = crate::interpreter::Interpreter::new();
                         interp.eval_single_expr(default).unwrap_or(Value::Unit)
                     } else {
@@ -1024,16 +1081,33 @@ impl Vm {
                     self.env.define(param.name.clone(), val, false);
                 }
 
-                // Execute body using tree-walk interpreter with our env
-                // This is the hybrid approach: VM for top-level, tree-walk for function bodies
-                let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
-                let result = interp.eval_block(&ion_fn.body);
-                self.env = interp.take_env();
-                self.env.pop_scope();
-
-                match result {
-                    Ok(val) => self.stack.push(val),
-                    Err(e) => return Err(e),
+                // Try to compile and execute function body as bytecode
+                let compiler = crate::compiler::Compiler::new();
+                match compiler.compile_fn_body(&ion_fn.body, line) {
+                    Ok(chunk) => {
+                        let saved_ip = self.ip;
+                        let saved_iters = std::mem::take(&mut self.iterators);
+                        self.ip = 0;
+                        let result = self.run_chunk(&chunk);
+                        self.ip = saved_ip;
+                        self.iterators = saved_iters;
+                        self.env.pop_scope();
+                        match result {
+                            Ok(val) => self.stack.push(val),
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    Err(_) => {
+                        // Fallback to tree-walk for complex function bodies
+                        let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
+                        let result = interp.eval_block(&ion_fn.body);
+                        self.env = interp.take_env();
+                        self.env.pop_scope();
+                        match result {
+                            Ok(val) => self.stack.push(val),
+                            Err(e) => return Err(e),
+                        }
+                    }
                 }
             }
             _ => {
