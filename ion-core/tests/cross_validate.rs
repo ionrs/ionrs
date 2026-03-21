@@ -226,15 +226,7 @@ fn cross_dict() {
 
 #[test]
 fn cross_index() {
-    // Known divergence: tree-walk wraps list index in Option, VM returns raw value.
-    // TODO: fix tree-walk to not wrap index results in Option.
-    let mut tw = Engine::new();
-    let mut vm = Engine::new();
-    let tw_val = tw.eval("[10, 20, 30][1]").unwrap();
-    let vm_val = vm.vm_eval("[10, 20, 30][1]").unwrap();
-    // Tree-walk returns Some(20), VM returns 20 — VM is correct
-    assert_eq!(vm_val, Value::Int(20));
-    assert_eq!(tw_val, Value::Option(Some(Box::new(Value::Int(20)))));
+    assert_both_eq("[10, 20, 30][1]", Value::Int(20));
 }
 
 #[test]
@@ -403,15 +395,8 @@ fn cross_fibonacci() {
 
 #[test]
 fn cross_nested_closures() {
-    // TODO: VM bug — lambdas returned from functions don't capture the
-    // function's parameters. Tree-walk handles this correctly.
-    // assert_both_eq(
-    //     "fn make_adder(x) { |y| x + y } let add5 = make_adder(5); add5(10)",
-    //     Value::Int(15),
-    // );
-    let mut tw = Engine::new();
-    assert_eq!(
-        tw.eval("fn make_adder(x) { |y| x + y } let add5 = make_adder(5); add5(10)").unwrap(),
+    assert_both_eq(
+        "fn make_adder(x) { |y| x + y } let add5 = make_adder(5); add5(10)",
         Value::Int(15),
     );
 }

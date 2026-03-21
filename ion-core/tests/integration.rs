@@ -676,8 +676,7 @@ fn test_dict_literal() {
 
 #[test]
 fn test_dict_bracket_access() {
-    assert_eq!(eval(r#"let d = #{ "x": 42 }; d["x"]"#),
-        Value::Option(Some(Box::new(Value::Int(42)))));
+    assert_eq!(eval(r#"let d = #{ "x": 42 }; d["x"]"#), Value::Int(42));
 }
 
 #[test]
@@ -1015,8 +1014,8 @@ fn test_list_of_dicts() {
         people.map(|p| p["name"])
     "#);
     assert_eq!(val, Value::List(vec![
-        Value::Option(Some(Box::new(Value::Str("Alice".into())))),
-        Value::Option(Some(Box::new(Value::Str("Bob".into())))),
+        Value::Str("Alice".into()),
+        Value::Str("Bob".into()),
     ]));
 }
 
@@ -1825,8 +1824,8 @@ fn test_bytes_concat() {
 
 #[test]
 fn test_bytes_index() {
-    assert_eq!(eval(r#"b"abc"[0]"#), Value::Option(Some(Box::new(Value::Int(97)))));
-    assert_eq!(eval(r#"b"abc"[-1]"#), Value::Option(Some(Box::new(Value::Int(99)))));
+    assert_eq!(eval(r#"b"abc"[0]"#), Value::Int(97));
+    assert_eq!(eval(r#"b"abc"[-1]"#), Value::Int(99));
 }
 
 #[test]

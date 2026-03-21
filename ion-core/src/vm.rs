@@ -1073,8 +1073,10 @@ impl Vm {
     fn get_field(&self, obj: Value, field: &str, line: usize, col: usize) -> Result<Value, IonError> {
         match &obj {
             Value::Dict(map) => {
-                map.get(field).cloned()
-                    .ok_or_else(|| IonError::runtime(format!("key '{}' not found in dict", field), line, col))
+                Ok(match map.get(field) {
+                    Some(v) => v.clone(),
+                    None => Value::Option(None),
+                })
             }
             Value::HostStruct { fields, .. } => {
                 fields.get(field).cloned()
@@ -1118,8 +1120,10 @@ impl Vm {
                     .ok_or_else(|| IonError::runtime(format!("index {} out of range", i), line, col))
             }
             (Value::Dict(map), Value::Str(key)) => {
-                map.get(key).cloned()
-                    .ok_or_else(|| IonError::runtime(format!("key '{}' not found", key), line, col))
+                Ok(match map.get(key) {
+                    Some(v) => v.clone(),
+                    None => Value::Option(None),
+                })
             }
             (Value::Str(s), Value::Int(i)) => {
                 let idx = if *i < 0 { s.len() as i64 + i } else { *i } as usize;

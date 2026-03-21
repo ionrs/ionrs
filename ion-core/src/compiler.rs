@@ -685,6 +685,15 @@ impl Compiler {
                 for p in params {
                     fn_compiler.add_local(p.clone(), false);
                 }
+                // When closures exist, also define params in env so they can be captured
+                if fn_compiler.needs_env_locals {
+                    for (i, p) in params.iter().enumerate() {
+                        fn_compiler.chunk.emit_op_u16(Op::GetLocalSlot, i as u16, line);
+                        let idx = fn_compiler.chunk.add_constant(Value::Str(p.clone()));
+                        fn_compiler.chunk.emit_op_u16(Op::DefineLocal, idx, line);
+                        fn_compiler.chunk.emit(0, line);
+                    }
+                }
                 fn_compiler.compile_expr(body)?;
                 fn_compiler.chunk.emit_op(Op::Return, line);
                 #[cfg(feature = "optimize")]
@@ -979,6 +988,15 @@ impl Compiler {
         for param in params {
             fn_compiler.add_local(param.name.clone(), false);
         }
+        // When closures exist, also define params in env so they can be captured
+        if fn_compiler.needs_env_locals {
+            for (i, param) in params.iter().enumerate() {
+                fn_compiler.chunk.emit_op_u16(Op::GetLocalSlot, i as u16, line);
+                let idx = fn_compiler.chunk.add_constant(Value::Str(param.name.clone()));
+                fn_compiler.chunk.emit_op_u16(Op::DefineLocal, idx, line);
+                fn_compiler.chunk.emit(0, line); // not mutable
+            }
+        }
         fn_compiler.compile_block_expr(body, line)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
         #[cfg(feature = "optimize")]
@@ -1257,6 +1275,15 @@ impl Compiler {
         // Pre-register parameters as locals
         for param in params {
             self.add_local(param.name.clone(), false);
+        }
+        // When closures exist, also define params in env so they can be captured
+        if self.needs_env_locals {
+            for (i, param) in params.iter().enumerate() {
+                self.chunk.emit_op_u16(Op::GetLocalSlot, i as u16, line);
+                let idx = self.chunk.add_constant(Value::Str(param.name.clone()));
+                self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
+                self.chunk.emit(0, line); // not mutable
+            }
         }
         self.compile_block_expr(body, line)?;
         self.chunk.emit_op(Op::Return, line);

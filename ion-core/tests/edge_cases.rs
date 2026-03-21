@@ -55,13 +55,8 @@ fn edge_div_by_zero_int() {
 
 #[test]
 fn edge_mod_by_zero() {
-    // Mod by zero panics in Rust — tree-walk propagates the panic.
-    // This is a known limitation, not a bug.
-    let result = std::panic::catch_unwind(|| {
-        let mut engine = Engine::new();
-        engine.eval("1 % 0")
-    });
-    assert!(result.is_err(), "expected panic or error for mod by zero");
+    let msg = eval_err("1 % 0");
+    assert!(msg.contains("modulo by zero") || msg.contains("zero"), "got: {}", msg);
 }
 
 // ============================================================
@@ -308,12 +303,7 @@ fn edge_bool_equality() {
 
 #[test]
 fn edge_dict_overwrite_key() {
-    // Tree-walk wraps dict field access in Option
-    let val = eval(r#"#{"a": 1, "a": 2}.a"#);
-    match val {
-        Value::Int(2) | Value::Option(Some(_)) => {} // either is acceptable
-        other => panic!("expected 2 or Some(2), got: {:?}", other),
-    }
+    assert_eq!(eval(r#"#{"a": 1, "a": 2}.a"#), Value::Int(2));
 }
 
 #[test]

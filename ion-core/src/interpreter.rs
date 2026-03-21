@@ -938,7 +938,16 @@ impl Interpreter {
                 _ => Err(self.type_mismatch_err(ion_str!("/"), l, r, span)),
             },
             BinOp::Mod => match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
+                (Value::Int(a), Value::Int(b)) => {
+                    if *b == 0 {
+                        Err(IonError::runtime(
+                            ion_str!("modulo by zero").to_string(),
+                            span.line, span.col,
+                        ).into())
+                    } else {
+                        Ok(Value::Int(a % b))
+                    }
+                }
                 _ => Err(self.type_mismatch_err(ion_str!("%"), l, r, span)),
             },
             BinOp::Eq => Ok(Value::Bool(l == r)),
@@ -1033,23 +1042,27 @@ impl Interpreter {
         match (val, idx) {
             (Value::List(items), Value::Int(i)) => {
                 let index = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
-                Ok(items.get(index)
+                items.get(index)
                     .cloned()
-                    .map(|v| Value::Option(Some(Box::new(v))))
-                    .unwrap_or(Value::Option(None)))
+                    .ok_or_else(|| IonError::runtime(
+                        ion_str!("list index out of bounds").to_string(),
+                        span.line, span.col,
+                    ).into())
             }
             (Value::Dict(map), Value::Str(key)) => {
                 Ok(match map.get(key.as_str()) {
-                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                    Some(v) => v.clone(),
                     None => Value::Option(None),
                 })
             }
             (Value::Bytes(bytes), Value::Int(i)) => {
                 let index = if *i < 0 { bytes.len() as i64 + i } else { *i } as usize;
-                Ok(bytes.get(index)
+                bytes.get(index)
                     .map(|&b| Value::Int(b as i64))
-                    .map(|v| Value::Option(Some(Box::new(v))))
-                    .unwrap_or(Value::Option(None)))
+                    .ok_or_else(|| IonError::runtime(
+                        ion_str!("bytes index out of bounds").to_string(),
+                        span.line, span.col,
+                    ).into())
             }
             (Value::Tuple(items), Value::Int(i)) => {
                 let index = *i as usize;
