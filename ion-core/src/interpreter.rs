@@ -73,6 +73,12 @@ impl Interpreter {
     pub fn eval_program(&mut self, program: &Program) -> IonResult {
         match self.eval_stmts(&program.stmts) {
             Ok(v) => Ok(v),
+            Err(SignalOrError::Error(e)) if e.kind == ErrorKind::PropagatedErr => {
+                Ok(Value::Result(Err(Box::new(Value::Str(e.message.clone())))))
+            }
+            Err(SignalOrError::Error(e)) if e.kind == ErrorKind::PropagatedNone => {
+                Ok(Value::Option(None))
+            }
             Err(SignalOrError::Error(e)) => Err(e),
             Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
             Err(SignalOrError::Signal(Signal::Break(_))) => {
@@ -2511,6 +2517,29 @@ pub fn register_builtins(env: &mut Env) {
                 bytes.push(byte);
             }
             Ok(Value::Bytes(bytes))
+        }),
+        false,
+    );
+
+    env.define(
+        ion_str!("assert").to_string(),
+        Value::BuiltinFn(ion_str!("assert").to_string(), |args| {
+            if args.is_empty() {
+                return Err(ion_str!("assert requires at least 1 argument").to_string());
+            }
+            let condition = match &args[0] {
+                Value::Bool(b) => *b,
+                _ => return Err(format!("{}{}", ion_str!("assert condition must be bool, got "), args[0].type_name())),
+            };
+            if !condition {
+                let msg = if args.len() > 1 {
+                    args[1].to_string()
+                } else {
+                    ion_str!("assertion failed").to_string()
+                };
+                return Err(msg);
+            }
+            Ok(Value::Unit)
         }),
         false,
     );

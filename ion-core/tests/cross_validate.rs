@@ -673,3 +673,22 @@ fn cross_range_iteration() {
 fn cross_multiline_lambda() {
     assert_both_eq("let f = |x| { let y = x * 2; y + 1 }; f(5)", Value::Int(11));
 }
+
+#[test]
+fn cross_string_slice_char() {
+    assert_both_eq(r#""hello"[1..3]"#, Value::Str("el".to_string()));
+    assert_both_eq(r#""hello"[..2]"#, Value::Str("he".to_string()));
+    assert_both_eq(r#""hello"[3..]"#, Value::Str("lo".to_string()));
+    assert_both_eq(r#""hello"[1..=3]"#, Value::Str("ell".to_string()));
+}
+
+#[test]
+fn cross_try_top_level() {
+    assert_both_eq(
+        r#"let x = Err("oops"); x?"#,
+        Value::Result(Err(Box::new(Value::Str("oops".to_string())))),
+    );
+    assert_both_eq("let x = None; x?", Value::Option(None));
+    assert_both_eq("let x = Ok(42); x?", Value::Int(42));
+    assert_both_eq("let x = Some(10); x?", Value::Int(10));
+}

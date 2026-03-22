@@ -95,7 +95,16 @@ impl Vm {
     pub fn execute(&mut self, chunk: &Chunk) -> Result<Value, IonError> {
         self.ip = 0;
         self.stack.clear();
-        self.run_chunk(chunk)
+        match self.run_chunk(chunk) {
+            Ok(v) => Ok(v),
+            Err(e) if e.kind == crate::error::ErrorKind::PropagatedErr => {
+                Ok(Value::Result(Err(Box::new(Value::Str(e.message.clone())))))
+            }
+            Err(e) if e.kind == crate::error::ErrorKind::PropagatedNone => {
+                Ok(Value::Option(None))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Run a chunk without resetting state (used for recursive function calls).

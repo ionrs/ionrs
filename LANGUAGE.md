@@ -485,13 +485,15 @@ let err = Err("something failed");
 
 ### The `?` operator
 
-Inside a function, `?` unwraps `Ok`/`Some` or early-returns `Err`/`None`:
+`?` unwraps `Ok`/`Some` or early-returns `Err`/`None`:
 
 ```
 fn parse_and_double(s) {
     let n = s.to_int()?;   // propagates Err if parse fails
     Ok(n * 2)
 }
+parse_and_double("5")    // Ok(10)
+parse_and_double("abc")  // Err("invalid digit found in string")
 ```
 
 ```
@@ -500,6 +502,8 @@ fn first_item(items) {
     Some(v + 1)
 }
 ```
+
+At the top level (outside a function), `?` on `Err`/`None` returns the error/none as a value rather than crashing.
 
 ### Method chains
 
@@ -551,6 +555,12 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `round(x)` | Round to nearest |
 | `sqrt(x)` | Square root |
 | `pow(base, exp)` | Exponentiation |
+
+### Assertions
+| Function | Description |
+|----------|-------------|
+| `assert(cond)` | Error if `cond` is false |
+| `assert(cond, msg)` | Error with custom message if `cond` is false |
 
 ### JSON
 | Function | Description |

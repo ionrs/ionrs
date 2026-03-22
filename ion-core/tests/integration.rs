@@ -497,6 +497,32 @@ fn test_question_mark_type_error() {
 }
 
 #[test]
+fn test_question_mark_top_level_err() {
+    // ? at top-level returns Result(Err) as value instead of runtime error
+    let result = Engine::new().eval(r#"let x = Err("oops"); x?"#).unwrap();
+    assert_eq!(result, Value::Result(Err(Box::new(Value::Str("oops".to_string())))));
+}
+
+#[test]
+fn test_question_mark_top_level_none() {
+    // ? at top-level returns Option(None) as value instead of runtime error
+    let result = Engine::new().eval("let x = None; x?").unwrap();
+    assert_eq!(result, Value::Option(None));
+}
+
+#[test]
+fn test_question_mark_top_level_ok() {
+    // ? at top-level on Ok unwraps successfully
+    assert_eq!(eval("let x = Ok(42); x?"), Value::Int(42));
+}
+
+#[test]
+fn test_question_mark_top_level_some() {
+    // ? at top-level on Some unwraps successfully
+    assert_eq!(eval("let x = Some(10); x?"), Value::Int(10));
+}
+
+#[test]
 fn test_unwrap_or() {
     assert_eq!(eval("Some(5).unwrap_or(0)"), Value::Int(5));
     assert_eq!(eval("None.unwrap_or(0)"), Value::Int(0));
@@ -2218,6 +2244,35 @@ fn test_string_index() {
 #[test]
 fn test_string_index_negative() {
     assert_eq!(eval(r#""hello"[-1]"#), Value::Str("o".to_string()));
+}
+
+#[test]
+fn test_string_slice_char_based() {
+    assert_eq!(eval(r#""hello"[1..3]"#), Value::Str("el".to_string()));
+    assert_eq!(eval(r#""hello"[..2]"#), Value::Str("he".to_string()));
+    assert_eq!(eval(r#""hello"[3..]"#), Value::Str("lo".to_string()));
+    assert_eq!(eval(r#""hello"[1..=3]"#), Value::Str("ell".to_string()));
+    assert_eq!(eval(r#""abcdef"[0..0]"#), Value::Str("".to_string()));
+}
+
+#[test]
+fn test_assert_pass() {
+    assert_eq!(eval("assert(true)"), Value::Unit);
+    assert_eq!(eval("assert(1 == 1)"), Value::Unit);
+}
+
+#[test]
+fn test_assert_fail() {
+    let result = Engine::new().eval("assert(false)");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("assertion failed"));
+}
+
+#[test]
+fn test_assert_with_message() {
+    let result = Engine::new().eval(r#"assert(false, "x must be positive")"#);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("x must be positive"));
 }
 
 #[test]
