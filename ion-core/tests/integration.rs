@@ -3152,3 +3152,24 @@ fn test_sort_homogeneous() {
 fn test_sort_empty() {
     assert_eq!(eval(r#"[].sort()"#), Value::List(vec![]));
 }
+
+#[test]
+fn test_sort_by() {
+    assert_eq!(
+        eval("[3, 1, 2].sort_by(|a, b| a - b)"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        eval("[3, 1, 2].sort_by(|a, b| b - a)"),
+        Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)])
+    );
+}
+
+#[test]
+fn test_clamp() {
+    assert_eq!(eval("clamp(5, 0, 3)"), Value::Int(3));
+    assert_eq!(eval("clamp(-1, 0, 10)"), Value::Int(0));
+    assert_eq!(eval("clamp(5, 0, 10)"), Value::Int(5));
+    assert_eq!(eval("clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
+    assert_eq!(eval("clamp(0.5, 0.0, 1.0)"), Value::Float(0.5));
+}

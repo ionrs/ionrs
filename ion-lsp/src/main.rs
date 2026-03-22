@@ -237,6 +237,11 @@ const BUILTINS: &[BuiltinInfo] = &[
         description: "Exponentiation",
     },
     BuiltinInfo {
+        name: "clamp",
+        signature: "clamp(val, min, max)",
+        description: "Clamp value to range [min, max]",
+    },
+    BuiltinInfo {
         name: "json_encode",
         signature: "json_encode(value)",
         description: "Value to JSON string",

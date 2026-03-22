@@ -1471,3 +1471,98 @@ fn test_vm_peephole_match_correctness() {
         Value::Int(7)
     );
 }
+
+// === Bytes tests ===
+
+#[test]
+fn test_vm_bytes_literal() {
+    assert_eq!(vm_eval(r#"b"hello""#), Value::Bytes(b"hello".to_vec()));
+    assert_eq!(vm_eval(r#"b"\x48\x49""#), Value::Bytes(vec![0x48, 0x49]));
+    assert_eq!(vm_eval(r#"b"""#), Value::Bytes(vec![]));
+}
+
+#[test]
+fn test_vm_bytes_index() {
+    assert_eq!(vm_eval(r#"b"hello"[0]"#), Value::Int(104));
+    assert_eq!(vm_eval(r#"b"hello"[-1]"#), Value::Int(111));
+}
+
+#[test]
+fn test_vm_bytes_methods() {
+    assert_eq!(vm_eval(r#"b"hello".len()"#), Value::Int(5));
+    assert_eq!(vm_eval(r#"b"".is_empty()"#), Value::Bool(true));
+    assert_eq!(vm_eval(r#"b"hi".is_empty()"#), Value::Bool(false));
+    assert_eq!(vm_eval(r#"b"hello".contains(104)"#), Value::Bool(true));
+    assert_eq!(vm_eval(r#"b"hello".contains(0)"#), Value::Bool(false));
+    assert_eq!(
+        vm_eval(r#"b"hello".to_hex()"#),
+        Value::Str("68656c6c6f".to_string())
+    );
+    assert_eq!(
+        vm_eval(r#"b"hi".to_str()"#),
+        Value::Result(Ok(Box::new(Value::Str("hi".to_string()))))
+    );
+}
+
+#[test]
+fn test_vm_bytes_slice() {
+    assert_eq!(vm_eval(r#"b"hello"[1..3]"#), Value::Bytes(vec![101, 108]));
+}
+
+#[test]
+fn test_vm_bytes_to_list() {
+    assert_eq!(
+        vm_eval(r#"b"AB".to_list()"#),
+        Value::List(vec![Value::Int(65), Value::Int(66)])
+    );
+}
+
+#[test]
+fn test_vm_bytes_find() {
+    assert_eq!(
+        vm_eval(r#"b"hello".find(108)"#),
+        Value::Option(Some(Box::new(Value::Int(2))))
+    );
+    assert_eq!(vm_eval(r#"b"hello".find(0)"#), Value::Option(None));
+}
+
+#[test]
+fn test_vm_bytes_reverse() {
+    assert_eq!(
+        vm_eval(r#"b"abc".reverse()"#),
+        Value::Bytes(vec![99, 98, 97])
+    );
+}
+
+#[test]
+fn test_vm_bytes_push() {
+    assert_eq!(
+        vm_eval(r#"b"hi".push(33)"#),
+        Value::Bytes(vec![104, 105, 33])
+    );
+}
+
+// === sort_by tests ===
+
+#[test]
+fn test_vm_sort_by() {
+    assert_eq!(
+        vm_eval("[3, 1, 2].sort_by(|a, b| a - b)"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    // Descending
+    assert_eq!(
+        vm_eval("[3, 1, 2].sort_by(|a, b| b - a)"),
+        Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)])
+    );
+}
+
+// === clamp tests ===
+
+#[test]
+fn test_vm_clamp() {
+    assert_eq!(vm_eval("clamp(5, 0, 3)"), Value::Int(3));
+    assert_eq!(vm_eval("clamp(-1, 0, 10)"), Value::Int(0));
+    assert_eq!(vm_eval("clamp(5, 0, 10)"), Value::Int(5));
+    assert_eq!(vm_eval("clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
+}

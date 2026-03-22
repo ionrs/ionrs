@@ -585,6 +585,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `round(x)` | Round to nearest |
 | `sqrt(x)` | Square root |
 | `pow(base, exp)` | Exponentiation |
+| `clamp(val, min, max)` | Clamp value to range |
 
 ### Assertions
 | Function | Description |
@@ -661,6 +662,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.flat_map(fn)` | List | Map then flatten results |
 | `.any(fn)` | Bool | True if fn returns true for any element |
 | `.all(fn)` | Bool | True if fn returns true for all elements |
+| `.sort_by(fn)` | List | Sort with custom comparator (fn returns int: neg/0/pos) |
 
 ### Tuple Methods
 

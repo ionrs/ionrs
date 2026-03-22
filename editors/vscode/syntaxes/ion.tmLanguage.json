@@ -156,7 +156,7 @@
       "patterns": [
         {
           "name": "support.function.ion",
-          "match": "\\b(print|println|len|range|enumerate|type_of|str|int|float|abs|min|max|floor|ceil|round|sqrt|pow|json_encode|json_decode|json_encode_pretty|bytes|bytes_from_hex|assert|assert_eq|channel)\\b"
+          "match": "\\b(print|println|len|range|enumerate|type_of|str|int|float|abs|min|max|floor|ceil|round|sqrt|pow|clamp|json_encode|json_decode|json_encode_pretty|bytes|bytes_from_hex|assert|assert_eq|channel)\\b"
         }
       ]
     },

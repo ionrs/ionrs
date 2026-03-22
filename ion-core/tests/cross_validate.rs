@@ -825,3 +825,30 @@ fn cross_sort_homogeneous() {
     );
     assert_both_eq(r#"[].sort()"#, Value::List(vec![]));
 }
+
+#[test]
+fn cross_sort_by() {
+    assert_both_eq(
+        "[3, 1, 2].sort_by(|a, b| a - b)",
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+    assert_both_eq(
+        "[3, 1, 2].sort_by(|a, b| b - a)",
+        Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)]),
+    );
+}
+
+#[test]
+fn cross_clamp() {
+    assert_both_eq("clamp(5, 0, 3)", Value::Int(3));
+    assert_both_eq("clamp(-1, 0, 10)", Value::Int(0));
+    assert_both_eq("clamp(5, 0, 10)", Value::Int(5));
+}
+
+#[test]
+fn cross_bytes_basic() {
+    assert_both_eq(r#"b"hello".len()"#, Value::Int(5));
+    assert_both_eq(r#"b"hello"[0]"#, Value::Int(104));
+    assert_both_eq(r#"b"hello"[-1]"#, Value::Int(111));
+    assert_both_eq(r#"b"hello".to_hex()"#, Value::Str("68656c6c6f".to_string()));
+}

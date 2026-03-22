@@ -1577,6 +1577,47 @@ impl Interpreter {
                 });
                 Ok(Value::List(sorted))
             }
+            "sort_by" => {
+                let func = &args[0];
+                let mut sorted = items.to_vec();
+                let mut err: Option<SignalOrError> = None;
+                let func_clone = func.clone();
+                sorted.sort_by(|a, b| {
+                    if err.is_some() {
+                        return std::cmp::Ordering::Equal;
+                    }
+                    match self.call_value(&func_clone, &[a.clone(), b.clone()], span) {
+                        Ok(Value::Int(n)) => {
+                            if n < 0 {
+                                std::cmp::Ordering::Less
+                            } else if n > 0 {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Equal
+                            }
+                        }
+                        Ok(_) => {
+                            err = Some(
+                                IonError::type_err(
+                                    ion_str!("sort_by comparator must return an int").to_string(),
+                                    span.line,
+                                    span.col,
+                                )
+                                .into(),
+                            );
+                            std::cmp::Ordering::Equal
+                        }
+                        Err(e) => {
+                            err = Some(e);
+                            std::cmp::Ordering::Equal
+                        }
+                    }
+                });
+                if let Some(e) = err {
+                    return Err(e);
+                }
+                Ok(Value::List(sorted))
+            }
             "flatten" => {
                 let mut result = Vec::new();
                 for item in items {
@@ -3098,6 +3139,35 @@ pub fn register_builtins(env: &mut Env) {
                 .as_float()
                 .ok_or(ion_str!("sqrt requires a number"))?;
             Ok(Value::Float(n.sqrt()))
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("clamp").to_string(),
+        Value::BuiltinFn(ion_str!("clamp").to_string(), |args| {
+            if args.len() != 3 {
+                return Err(ion_str!("clamp requires 3 arguments: value, min, max"));
+            }
+            match (&args[0], &args[1], &args[2]) {
+                (Value::Int(v), Value::Int(lo), Value::Int(hi)) => {
+                    Ok(Value::Int(*v.max(lo).min(hi)))
+                }
+                (Value::Float(v), Value::Float(lo), Value::Float(hi)) => {
+                    Ok(Value::Float(v.max(*lo).min(*hi)))
+                }
+                _ => {
+                    let v = args[0]
+                        .as_float()
+                        .ok_or(ion_str!("clamp requires numeric arguments"))?;
+                    let lo = args[1]
+                        .as_float()
+                        .ok_or(ion_str!("clamp requires numeric arguments"))?;
+                    let hi = args[2]
+                        .as_float()
+                        .ok_or(ion_str!("clamp requires numeric arguments"))?;
+                    Ok(Value::Float(v.max(lo).min(hi)))
+                }
+            }
         }),
         false,
     );

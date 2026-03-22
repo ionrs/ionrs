@@ -646,7 +646,7 @@ impl Compiler {
                     return Err(IonError::runtime(
                         "named arguments not supported in VM".to_string(),
                         line,
-                        0,
+                        col,
                     ));
                 }
                 // Sub-expressions are not in tail position (already cleared above)
@@ -1004,7 +1004,7 @@ impl Compiler {
                 return Err(IonError::runtime(
                     "concurrency not supported in bytecode VM".to_string(),
                     line,
-                    0,
+                    col,
                 ));
             }
             #[cfg(not(feature = "concurrency"))]
@@ -1015,7 +1015,7 @@ impl Compiler {
                 return Err(IonError::runtime(
                     "concurrency not available".to_string(),
                     line,
-                    0,
+                    col,
                 ));
             }
 
@@ -1024,7 +1024,7 @@ impl Compiler {
                 return Err(IonError::runtime(
                     "try/catch not supported in bytecode VM".to_string(),
                     line,
-                    0,
+                    col,
                 ));
             }
         }
