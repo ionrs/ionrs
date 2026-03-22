@@ -1516,6 +1516,34 @@ impl Vm {
                 return Ok(Value::List(result));
             }
 
+            // Dict closure methods
+            (Value::Dict(map), "map") => {
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("map requires a function argument", line, col)
+                })?;
+                let mut result = indexmap::IndexMap::new();
+                for (k, v) in map {
+                    let mapped =
+                        self.invoke_value(func, &[Value::Str(k.clone()), v.clone()], line, col)?;
+                    result.insert(k.clone(), mapped);
+                }
+                return Ok(Value::Dict(result));
+            }
+            (Value::Dict(map), "filter") => {
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("filter requires a function argument", line, col)
+                })?;
+                let mut result = indexmap::IndexMap::new();
+                for (k, v) in map {
+                    let keep =
+                        self.invoke_value(func, &[Value::Str(k.clone()), v.clone()], line, col)?;
+                    if keep.is_truthy() {
+                        result.insert(k.clone(), v.clone());
+                    }
+                }
+                return Ok(Value::Dict(result));
+            }
+
             // Option closure methods
             (Value::Option(opt), "map") => {
                 let func = args.first().ok_or_else(|| {

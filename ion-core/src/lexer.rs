@@ -87,6 +87,51 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Parse `\u{XXXX}` Unicode escape (the `u` has already been consumed).
+    fn parse_unicode_escape(&mut self, s: &mut String) -> Result<(), IonError> {
+        if self.pos >= self.source.len() || self.peek() != b'{' {
+            return Err(IonError::lex(
+                ion_str!("expected '{' after \\u"),
+                self.line,
+                self.col,
+            ));
+        }
+        self.advance(); // consume '{'
+        let mut hex = String::new();
+        while self.pos < self.source.len() && self.peek() != b'}' {
+            hex.push(self.advance() as char);
+            if hex.len() > 6 {
+                return Err(IonError::lex(
+                    ion_str!("unicode escape too long (max 6 hex digits)"),
+                    self.line,
+                    self.col,
+                ));
+            }
+        }
+        if self.pos >= self.source.len() {
+            return Err(IonError::lex(
+                ion_str!("unterminated unicode escape"),
+                self.line,
+                self.col,
+            ));
+        }
+        self.advance(); // consume '}'
+        if hex.is_empty() {
+            return Err(IonError::lex(
+                ion_str!("empty unicode escape"),
+                self.line,
+                self.col,
+            ));
+        }
+        let code_point = u32::from_str_radix(&hex, 16)
+            .map_err(|_| IonError::lex(ion_str!("invalid unicode escape"), self.line, self.col))?;
+        let ch = char::from_u32(code_point).ok_or_else(|| {
+            IonError::lex(ion_str!("invalid unicode code point"), self.line, self.col)
+        })?;
+        s.push(ch);
+        Ok(())
+    }
+
     fn skip_whitespace_and_comments(&mut self) {
         loop {
             while self.pos < self.source.len() && self.peek().is_ascii_whitespace() {
@@ -432,6 +477,10 @@ impl<'a> Lexer<'a> {
                         self.advance();
                         s.push('}');
                     }
+                    b'u' => {
+                        self.advance(); // consume 'u'
+                        self.parse_unicode_escape(&mut s)?;
+                    }
                     _ => {
                         return Err(IonError::lex(
                             ion_str!("invalid escape sequence"),
@@ -529,6 +578,10 @@ impl<'a> Lexer<'a> {
                     b'}' => {
                         self.advance();
                         s.push('}');
+                    }
+                    b'u' => {
+                        self.advance(); // consume 'u'
+                        self.parse_unicode_escape(&mut s)?;
                     }
                     _ => {
                         return Err(IonError::lex(

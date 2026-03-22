@@ -1431,7 +1431,31 @@ impl Interpreter {
             Value::Tuple(items) => self.tuple_method(items, method, args, span),
             Value::Str(s) => self.string_method(s, method, args, span),
             Value::Bytes(b) => self.bytes_method(b, method, args, span),
-            Value::Dict(map) => self.dict_method(map, method, args, span),
+            Value::Dict(map) => match method {
+                "map" => {
+                    let func = &args[0];
+                    let mut result = indexmap::IndexMap::new();
+                    for (k, v) in map {
+                        let mapped =
+                            self.call_value(func, &[Value::Str(k.clone()), v.clone()], span)?;
+                        result.insert(k.clone(), mapped);
+                    }
+                    Ok(Value::Dict(result))
+                }
+                "filter" => {
+                    let func = &args[0];
+                    let mut result = indexmap::IndexMap::new();
+                    for (k, v) in map {
+                        let keep =
+                            self.call_value(func, &[Value::Str(k.clone()), v.clone()], span)?;
+                        if keep.is_truthy() {
+                            result.insert(k.clone(), v.clone());
+                        }
+                    }
+                    Ok(Value::Dict(result))
+                }
+                _ => self.dict_method(map, method, args, span),
+            },
             Value::Option(opt) => self.option_method(opt.clone(), method, args, span),
             Value::Result(res) => self.result_method(res.clone(), method, args, span),
             #[cfg(feature = "concurrency")]

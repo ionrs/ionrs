@@ -269,6 +269,7 @@ impl PartialEq for Value {
             (Value::Bytes(a), Value::Bytes(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
+            (Value::Dict(a), Value::Dict(b)) => a == b,
             (Value::Option(a), Value::Option(b)) => a == b,
             (Value::Result(Ok(a)), Value::Result(Ok(b))) => a == b,
             (Value::Result(Err(a)), Value::Result(Err(b))) => a == b,

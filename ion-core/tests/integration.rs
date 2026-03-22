@@ -3173,3 +3173,45 @@ fn test_clamp() {
     assert_eq!(eval("clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
     assert_eq!(eval("clamp(0.5, 0.0, 1.0)"), Value::Float(0.5));
 }
+
+#[test]
+fn test_unicode_escape() {
+    assert_eq!(eval(r#""\u{48}\u{49}""#), Value::Str("HI".to_string()));
+    assert_eq!(eval(r#""\u{1F600}""#), Value::Str("\u{1F600}".to_string()));
+    assert_eq!(eval(r#""\u{E9}""#), Value::Str("é".to_string()));
+    // In f-strings
+    assert_eq!(
+        eval(r#"f"hello \u{1F600}""#),
+        Value::Str("hello \u{1F600}".to_string())
+    );
+}
+
+#[test]
+fn test_unicode_escape_triple_quoted() {
+    assert_eq!(
+        eval(r#""""\u{2764}""""#),
+        Value::Str("\u{2764}".to_string())
+    );
+}
+
+#[test]
+fn test_dict_map() {
+    assert_eq!(
+        eval(r#"#{a: 1, b: 2}.map(|k, v| v * 10)"#),
+        Value::Dict(indexmap::indexmap! {
+            "a".to_string() => Value::Int(10),
+            "b".to_string() => Value::Int(20),
+        })
+    );
+}
+
+#[test]
+fn test_dict_filter() {
+    assert_eq!(
+        eval(r#"#{a: 1, b: 2, c: 3}.filter(|k, v| v > 1)"#),
+        Value::Dict(indexmap::indexmap! {
+            "b".to_string() => Value::Int(2),
+            "c".to_string() => Value::Int(3),
+        })
+    );
+}

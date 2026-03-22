@@ -852,3 +852,20 @@ fn cross_bytes_basic() {
     assert_both_eq(r#"b"hello"[-1]"#, Value::Int(111));
     assert_both_eq(r#"b"hello".to_hex()"#, Value::Str("68656c6c6f".to_string()));
 }
+
+#[test]
+fn cross_dict_map() {
+    // Just check both engines agree (dict equality via assert_both)
+    assert_both(r#"#{a: 1, b: 2}.map(|k, v| v * 10)"#);
+}
+
+#[test]
+fn cross_dict_filter() {
+    assert_both(r#"#{a: 1, b: 2, c: 3}.filter(|k, v| v > 1)"#);
+}
+
+#[test]
+fn cross_unicode_escape() {
+    assert_both_eq(r#""\u{48}\u{49}""#, Value::Str("HI".to_string()));
+    assert_both_eq(r#""\u{E9}""#, Value::Str("é".to_string()));
+}

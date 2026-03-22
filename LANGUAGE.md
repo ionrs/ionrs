@@ -417,7 +417,8 @@ See [Dict Methods](#dict-methods) for the full API.
 
 ```
 "hello world"
-"line one\nline two"    // escape sequences: \n, \t, \\, \"
+"line one\nline two"    // escape sequences: \n, \t, \r, \\, \"
+"\u{1F600}"             // Unicode escape: 😀
 ```
 
 ### Triple-quoted strings
@@ -686,6 +687,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.insert(key, val)` | Dict | New dict with entry added |
 | `.remove(key)` | Dict | New dict with entry removed |
 | `.merge(other)` | Dict | New dict merging two dicts |
+| `.map(fn)` | Dict | Apply fn(key, value) to each entry, keep keys |
+| `.filter(fn)` | Dict | Keep entries where fn(key, value) is truthy |
 
 ### Option Methods
 
