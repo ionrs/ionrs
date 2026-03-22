@@ -1754,11 +1754,11 @@ impl Interpreter {
                         ).into())
                     }
                     Err(SignalOrError::Error(e)) => {
-                        // Propagate ? errors as Results
+                        // Convert ? propagation into values at function boundary
                         if e.kind == ErrorKind::PropagatedErr {
-                            Err(e.into())
+                            Ok(Value::Result(Err(Box::new(Value::Str(e.message.clone())))))
                         } else if e.kind == ErrorKind::PropagatedNone {
-                            Err(e.into())
+                            Ok(Value::Option(None))
                         } else {
                             Err(e.into())
                         }
@@ -1844,6 +1844,12 @@ impl Interpreter {
                 match result {
                     Ok(v) => Ok(v),
                     Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
+                    Err(SignalOrError::Error(e)) if e.kind == ErrorKind::PropagatedErr => {
+                        Ok(Value::Result(Err(Box::new(Value::Str(e.message.clone())))))
+                    }
+                    Err(SignalOrError::Error(e)) if e.kind == ErrorKind::PropagatedNone => {
+                        Ok(Value::Option(None))
+                    }
                     Err(e) => Err(e),
                 }
             }

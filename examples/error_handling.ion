@@ -71,3 +71,40 @@ println(f"10/0 is_err: {safe_divide(10, 0).is_err()}");
 let tagged = safe_divide(10, 0)
     .map_err(|e| f"math error: {e}");
 println(f"Tagged error: {tagged}");
+
+// ---- The ? operator ----
+// ? unwraps Ok/Some, propagates Err/None to the caller
+
+fn parse_and_double(s) {
+    let n = s.to_int()?;
+    Ok(n * 2)
+}
+
+let r1 = parse_and_double("5");
+let r2 = parse_and_double("abc");
+println(f"\nparse_and_double('5') = {r1}");    // Ok(10)
+println(f"parse_and_double('abc') = {r2}");    // Err(...)
+
+// Chained ? across function boundaries
+fn compute(input) {
+    let point = parse_point(input)?;
+    let (x, y) = point;
+    Ok(x + y)
+}
+
+let c1 = compute("3,4");
+let c2 = compute("bad,5");
+let c3 = compute("1,2,3");
+println(f"compute('3,4') = {c1}");      // Ok(7)
+println(f"compute('bad,5') = {c2}");    // Err(bad x: ...)
+println(f"compute('1,2,3') = {c3}");    // Err(expected 'x,y' format)
+
+// ? with Option
+fn first_even(items) {
+    let first = items.first()?;
+    if first % 2 == 0 { Some(first) } else { None }
+}
+
+println(f"\nfirst_even([4,5,6]) = {first_even([4, 5, 6])}");  // Some(4)
+println(f"first_even([3,5,7]) = {first_even([3, 5, 7])}");    // None
+println(f"first_even([]) = {first_even([])}");                  // None

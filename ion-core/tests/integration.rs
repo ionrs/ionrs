@@ -470,12 +470,12 @@ fn test_question_mark_ok() {
 
 #[test]
 fn test_question_mark_err_propagation() {
-    // ? on Err should propagate
+    // ? on Err inside a function returns Result(Err) at function boundary
     let result = Engine::new().eval(r#"
         fn inner() { let x = Err("fail"); x? }
         inner()
-    "#);
-    assert!(result.is_err());
+    "#).unwrap();
+    assert_eq!(result, Value::Result(Err(Box::new(Value::Str("fail".to_string())))));
 }
 
 #[test]
@@ -485,8 +485,9 @@ fn test_question_mark_some() {
 
 #[test]
 fn test_question_mark_none_propagation() {
-    let result = Engine::new().eval("fn f() { let x = None; x? } f()");
-    assert!(result.is_err());
+    // ? on None inside a function returns Option(None) at function boundary
+    let result = Engine::new().eval("fn f() { let x = None; x? } f()").unwrap();
+    assert_eq!(result, Value::Option(None));
 }
 
 #[test]
@@ -997,6 +998,7 @@ fn test_error_propagation_chain() {
 
 #[test]
 fn test_error_propagation_failure() {
+    // ? propagation across nested function boundaries returns Result(Err) value
     let result = Engine::new().eval(r#"
         fn parse(input) {
             if input == "bad" {
@@ -1010,8 +1012,43 @@ fn test_error_propagation_failure() {
             Ok(val * 2)
         }
         process("bad")
-    "#);
-    assert!(result.is_err(), "expected error propagation");
+    "#).unwrap();
+    assert_eq!(result, Value::Result(Err(Box::new(Value::Str("parse error".to_string())))));
+}
+
+#[test]
+fn test_question_mark_success_path() {
+    // ? on Ok/Some inside a function unwraps and continues
+    assert_eq!(eval(r#"
+        fn process(input) {
+            let val = Ok(input)?;
+            val * 2
+        }
+        process(21)
+    "#), Value::Int(42));
+}
+
+#[test]
+fn test_question_mark_option_propagation_across_fns() {
+    // ? on None propagates across function boundary as Option(None)
+    let result = Engine::new().eval(r#"
+        fn get_first(items) {
+            let v = items.first()?;
+            Some(v * 10)
+        }
+        get_first([])
+    "#).unwrap();
+    assert_eq!(result, Value::Option(None));
+
+    // ? on Some succeeds
+    let result2 = Engine::new().eval(r#"
+        fn get_first(items) {
+            let v = items.first()?;
+            Some(v * 10)
+        }
+        get_first([5, 6, 7])
+    "#).unwrap();
+    assert_eq!(result2, Value::Option(Some(Box::new(Value::Int(50)))));
 }
 
 #[test]

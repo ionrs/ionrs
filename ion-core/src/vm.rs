@@ -1780,6 +1780,12 @@ impl Vm {
 
                         match result {
                             Ok(val) => self.stack.push(val),
+                            Err(e) if e.kind == crate::error::ErrorKind::PropagatedErr => {
+                                self.stack.push(Value::Result(Err(Box::new(Value::Str(e.message.clone())))));
+                            }
+                            Err(e) if e.kind == crate::error::ErrorKind::PropagatedNone => {
+                                self.stack.push(Value::Option(None));
+                            }
                             Err(e) => return Err(e),
                         }
                     } else {
@@ -1793,6 +1799,12 @@ impl Vm {
                         self.env.pop_scope();
                         match result {
                             Ok(val) => self.stack.push(val),
+                            Err(e) if e.kind == crate::error::ErrorKind::PropagatedErr => {
+                                self.stack.push(Value::Result(Err(Box::new(Value::Str(e.message.clone())))));
+                            }
+                            Err(e) if e.kind == crate::error::ErrorKind::PropagatedNone => {
+                                self.stack.push(Value::Option(None));
+                            }
                             Err(e) => return Err(e),
                         }
                     }
