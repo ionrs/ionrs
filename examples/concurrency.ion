@@ -1,0 +1,111 @@
+// Concurrency example (requires `concurrency` cargo feature)
+// Run with: cargo run -p ion-cli --features ion-core/concurrency -- examples/concurrency.ion
+
+// ---- Spawn and await ----
+// async {} creates a structured concurrency scope.
+// All spawned tasks must complete before the block returns.
+
+let result = async {
+    let t1 = spawn 10 * 2;
+    let t2 = spawn 20 * 3;
+    let t3 = spawn 30 * 4;
+    t1.await + t2.await + t3.await
+};
+println(f"Parallel sum: {result}");  // 20 + 60 + 120 = 200
+
+// ---- Spawning functions ----
+
+fn compute(n) {
+    let mut sum = 0;
+    for i in 0..n {
+        sum += i;
+    }
+    sum
+}
+
+let answer = async {
+    let a = spawn compute(100);
+    let b = spawn compute(200);
+    (a.await, b.await)
+};
+println(f"Computed: {answer}");  // (4950, 19900)
+
+// ---- Task status ----
+
+let status = async {
+    let t = spawn 42;
+    let val = t.await;
+    let finished = t.is_finished();
+    #{value: val, finished: finished}
+};
+println(f"Task status: {status}");
+
+// ---- Channels: producer/consumer ----
+
+let total = async {
+    let (tx, rx) = channel(10);
+
+    // Producer task: sends values then closes
+    let _producer = spawn {
+        tx.send(10);
+        tx.send(20);
+        tx.send(30);
+        tx.send(40);
+        tx.send(50);
+        tx.close();
+    };
+
+    // Consumer: read until channel is closed
+    let mut sum = 0;
+    let mut val = rx.recv();
+    while val != None {
+        let n = match val {
+            Some(x) => x,
+            _ => 0,
+        };
+        sum = sum + n;
+        val = rx.recv();
+    }
+    sum
+};
+println(f"Channel sum: {total}");  // 10+20+30+40+50 = 150
+
+// ---- Multiple producers ----
+
+let collected = async {
+    let (tx, rx) = channel(20);
+
+    let p1 = spawn {
+        tx.send("hello from task 1");
+        tx.send("goodbye from task 1");
+    };
+
+    let p2 = spawn {
+        tx.send("hello from task 2");
+        tx.send("goodbye from task 2");
+    };
+
+    // Wait for producers to finish, then close and collect
+    p1.await;
+    p2.await;
+    tx.close();
+
+    let mut count = 0;
+    let mut msg = rx.recv();
+    while msg != None {
+        count = count + 1;
+        msg = rx.recv();
+    }
+    count
+};
+println(f"Messages received: {collected}");  // 4
+
+// ---- Task cancellation ----
+
+let cancel_result = async {
+    let t = spawn 42;
+    let _val = t.await;
+    t.cancel();
+    t.is_cancelled()
+};
+println(f"Task cancelled: {cancel_result}");
