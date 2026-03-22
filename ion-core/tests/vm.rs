@@ -2,7 +2,7 @@
 #![cfg(feature = "vm")]
 
 use ion_core::engine::Engine;
-use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef};
+use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef};
 use ion_core::value::Value;
 
 fn vm_eval(src: &str) -> Value {
@@ -179,29 +179,42 @@ fn test_vm_block() {
 
 #[test]
 fn test_vm_while() {
-    assert_eq!(vm_eval("let mut x = 0; while x < 5 { x += 1; } x"), Value::Int(5));
+    assert_eq!(
+        vm_eval("let mut x = 0; while x < 5 { x += 1; } x"),
+        Value::Int(5)
+    );
 }
 
 #[test]
 fn test_vm_for() {
-    assert_eq!(vm_eval("let mut sum = 0; for x in [1, 2, 3] { sum += x; } sum"), Value::Int(6));
+    assert_eq!(
+        vm_eval("let mut sum = 0; for x in [1, 2, 3] { sum += x; } sum"),
+        Value::Int(6)
+    );
 }
 
 #[test]
 fn test_vm_continue_in_for() {
-    assert_eq!(vm_eval("
+    assert_eq!(
+        vm_eval(
+            "
         let mut sum = 0;
         for x in [1, 2, 3, 4, 5] {
             if x == 3 { continue; }
             sum += x;
         }
         sum
-    "), Value::Int(12));
+    "
+        ),
+        Value::Int(12)
+    );
 }
 
 #[test]
 fn test_vm_continue_in_while() {
-    assert_eq!(vm_eval("
+    assert_eq!(
+        vm_eval(
+            "
         let mut sum = 0;
         let mut i = 0;
         while i < 5 {
@@ -210,24 +223,34 @@ fn test_vm_continue_in_while() {
             sum += i;
         }
         sum
-    "), Value::Int(12));
+    "
+        ),
+        Value::Int(12)
+    );
 }
 
 #[test]
 fn test_vm_break_in_for() {
-    assert_eq!(vm_eval("
+    assert_eq!(
+        vm_eval(
+            "
         let mut sum = 0;
         for x in [1, 2, 3, 4, 5] {
             if x == 4 { break; }
             sum += x;
         }
         sum
-    "), Value::Int(6));
+    "
+        ),
+        Value::Int(6)
+    );
 }
 
 #[test]
 fn test_vm_nested_continue() {
-    assert_eq!(vm_eval("
+    assert_eq!(
+        vm_eval(
+            "
         let mut sum = 0;
         for x in [1, 2, 3] {
             for y in [10, 20, 30] {
@@ -237,7 +260,10 @@ fn test_vm_nested_continue() {
             sum += x;
         }
         sum
-    "), Value::Int(126));
+    "
+        ),
+        Value::Int(126)
+    );
 }
 
 // ============================================================
@@ -251,12 +277,17 @@ fn test_vm_fn_decl_and_call() {
 
 #[test]
 fn test_vm_recursive_fn() {
-    assert_eq!(vm_eval("
+    assert_eq!(
+        vm_eval(
+            "
         fn fib(n) {
             if n <= 1 { n } else { fib(n - 1) + fib(n - 2) }
         }
         fib(10)
-    "), Value::Int(55));
+    "
+        ),
+        Value::Int(55)
+    );
 }
 
 #[test]
@@ -271,12 +302,18 @@ fn test_vm_builtin_fn() {
 
 #[test]
 fn test_vm_list() {
-    assert_eq!(vm_eval("[1, 2, 3]"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        vm_eval("[1, 2, 3]"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
 fn test_vm_tuple() {
-    assert_eq!(vm_eval("(1, 2)"), Value::Tuple(vec![Value::Int(1), Value::Int(2)]));
+    assert_eq!(
+        vm_eval("(1, 2)"),
+        Value::Tuple(vec![Value::Int(1), Value::Int(2)])
+    );
 }
 
 #[test]
@@ -300,12 +337,18 @@ fn test_vm_negative_index() {
 
 #[test]
 fn test_vm_string_concat() {
-    assert_eq!(vm_eval("\"hello\" + \" \" + \"world\""), Value::Str("hello world".to_string()));
+    assert_eq!(
+        vm_eval("\"hello\" + \" \" + \"world\""),
+        Value::Str("hello world".to_string())
+    );
 }
 
 #[test]
 fn test_vm_fstring() {
-    assert_eq!(vm_eval("let name = \"world\"; f\"hello {name}\""), Value::Str("hello world".to_string()));
+    assert_eq!(
+        vm_eval("let name = \"world\"; f\"hello {name}\""),
+        Value::Str("hello world".to_string())
+    );
 }
 
 // ============================================================
@@ -321,7 +364,10 @@ fn test_vm_list_methods() {
 
 #[test]
 fn test_vm_string_methods() {
-    assert_eq!(vm_eval("\"hello\".to_upper()"), Value::Str("HELLO".to_string()));
+    assert_eq!(
+        vm_eval("\"hello\".to_upper()"),
+        Value::Str("HELLO".to_string())
+    );
     assert_eq!(vm_eval("\"  hi  \".trim()"), Value::Str("hi".to_string()));
     assert_eq!(vm_eval("\"hello\".len()"), Value::Int(5));
 }
@@ -329,7 +375,10 @@ fn test_vm_string_methods() {
 #[test]
 fn test_vm_dict_methods() {
     assert_eq!(vm_eval("#{\"a\": 1, \"b\": 2}.len()"), Value::Int(2));
-    assert_eq!(vm_eval("#{\"a\": 1}.contains_key(\"a\")"), Value::Bool(true));
+    assert_eq!(
+        vm_eval("#{\"a\": 1}.contains_key(\"a\")"),
+        Value::Bool(true)
+    );
 }
 
 // ============================================================
@@ -338,7 +387,10 @@ fn test_vm_dict_methods() {
 
 #[test]
 fn test_vm_some() {
-    assert_eq!(vm_eval("Some(42)"), Value::Option(Some(Box::new(Value::Int(42)))));
+    assert_eq!(
+        vm_eval("Some(42)"),
+        Value::Option(Some(Box::new(Value::Int(42))))
+    );
 }
 
 #[test]
@@ -356,10 +408,15 @@ fn test_vm_ok_err() {
 
 #[test]
 fn test_vm_try_operator() {
-    assert_eq!(vm_eval("
+    assert_eq!(
+        vm_eval(
+            "
         fn get_val() { Some(42)? }
         get_val()
-    "), Value::Int(42));
+    "
+        ),
+        Value::Int(42)
+    );
 }
 
 // ============================================================
@@ -368,12 +425,18 @@ fn test_vm_try_operator() {
 
 #[test]
 fn test_vm_range() {
-    assert_eq!(vm_eval("let mut sum = 0; for x in 1..4 { sum += x; } sum"), Value::Int(6));
+    assert_eq!(
+        vm_eval("let mut sum = 0; for x in 1..4 { sum += x; } sum"),
+        Value::Int(6)
+    );
 }
 
 #[test]
 fn test_vm_range_inclusive() {
-    assert_eq!(vm_eval("let mut sum = 0; for x in 1..=3 { sum += x; } sum"), Value::Int(6));
+    assert_eq!(
+        vm_eval("let mut sum = 0; for x in 1..=3 { sum += x; } sum"),
+        Value::Int(6)
+    );
 }
 
 // ============================================================
@@ -413,49 +476,88 @@ fn test_vm_tuple_destructure() {
 
 #[test]
 fn test_vm_match_int() {
-    assert_eq!(vm_eval("match 1 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"), Value::Str("one".to_string()));
-    assert_eq!(vm_eval("match 2 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"), Value::Str("two".to_string()));
-    assert_eq!(vm_eval("match 99 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"), Value::Str("other".to_string()));
+    assert_eq!(
+        vm_eval("match 1 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"),
+        Value::Str("one".to_string())
+    );
+    assert_eq!(
+        vm_eval("match 2 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"),
+        Value::Str("two".to_string())
+    );
+    assert_eq!(
+        vm_eval("match 99 { 1 => \"one\", 2 => \"two\", _ => \"other\" }"),
+        Value::Str("other".to_string())
+    );
 }
 
 #[test]
 fn test_vm_match_bool() {
-    assert_eq!(vm_eval("match true { true => 1, false => 0 }"), Value::Int(1));
-    assert_eq!(vm_eval("match false { true => 1, false => 0 }"), Value::Int(0));
+    assert_eq!(
+        vm_eval("match true { true => 1, false => 0 }"),
+        Value::Int(1)
+    );
+    assert_eq!(
+        vm_eval("match false { true => 1, false => 0 }"),
+        Value::Int(0)
+    );
 }
 
 #[test]
 fn test_vm_match_string() {
-    assert_eq!(vm_eval("match \"hi\" { \"hi\" => 1, \"bye\" => 2, _ => 0 }"), Value::Int(1));
+    assert_eq!(
+        vm_eval("match \"hi\" { \"hi\" => 1, \"bye\" => 2, _ => 0 }"),
+        Value::Int(1)
+    );
 }
 
 #[test]
 fn test_vm_match_binding() {
     assert_eq!(vm_eval("match 42 { x => x + 1 }"), Value::Int(43));
-    assert_eq!(vm_eval("match 10 { 1 => \"one\", x => x * 2 }"), Value::Int(20));
+    assert_eq!(
+        vm_eval("match 10 { 1 => \"one\", x => x * 2 }"),
+        Value::Int(20)
+    );
 }
 
 #[test]
 fn test_vm_match_option() {
-    assert_eq!(vm_eval("match Some(5) { Some(x) => x, None => 0 }"), Value::Int(5));
-    assert_eq!(vm_eval("match None { Some(x) => x, None => 0 }"), Value::Int(0));
+    assert_eq!(
+        vm_eval("match Some(5) { Some(x) => x, None => 0 }"),
+        Value::Int(5)
+    );
+    assert_eq!(
+        vm_eval("match None { Some(x) => x, None => 0 }"),
+        Value::Int(0)
+    );
 }
 
 #[test]
 fn test_vm_match_result() {
-    assert_eq!(vm_eval("match Ok(10) { Ok(x) => x, Err(e) => 0 }"), Value::Int(10));
-    assert_eq!(vm_eval("match Err(\"fail\") { Ok(x) => 0, Err(e) => e }"), Value::Str("fail".to_string()));
+    assert_eq!(
+        vm_eval("match Ok(10) { Ok(x) => x, Err(e) => 0 }"),
+        Value::Int(10)
+    );
+    assert_eq!(
+        vm_eval("match Err(\"fail\") { Ok(x) => 0, Err(e) => e }"),
+        Value::Str("fail".to_string())
+    );
 }
 
 #[test]
 fn test_vm_match_tuple() {
     assert_eq!(vm_eval("match (1, 2) { (a, b) => a + b }"), Value::Int(3));
-    assert_eq!(vm_eval("match (1, 2) { (1, x) => x, _ => 0 }"), Value::Int(2));
+    assert_eq!(
+        vm_eval("match (1, 2) { (1, x) => x, _ => 0 }"),
+        Value::Int(2)
+    );
 }
 
 #[test]
 fn test_vm_match_wildcard() {
-    assert_eq!(vm_eval("match 42 { _ => \"any\" }"), Value::Str("any".to_string()));
+    assert_eq!(
+        vm_eval("match 42 { _ => \"any\" }"),
+        Value::Str("any".to_string())
+    );
 }
 
 // ============================================================
@@ -474,17 +576,26 @@ fn test_vm_lambda_multi_param() {
 
 #[test]
 fn test_vm_lambda_closure_capture() {
-    assert_eq!(vm_eval("let n = 10; let f = |x| x + n; f(5)"), Value::Int(15));
+    assert_eq!(
+        vm_eval("let n = 10; let f = |x| x + n; f(5)"),
+        Value::Int(15)
+    );
 }
 
 #[test]
 fn test_vm_lambda_in_list() {
-    assert_eq!(vm_eval("let ops = [|x| x + 1, |x| x * 2]; ops[1](5)"), Value::Int(10));
+    assert_eq!(
+        vm_eval("let ops = [|x| x + 1, |x| x * 2]; ops[1](5)"),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_vm_lambda_passed_to_fn() {
-    assert_eq!(vm_eval("fn apply(f, x) { f(x) } apply(|x| x * 3, 7)"), Value::Int(21));
+    assert_eq!(
+        vm_eval("fn apply(f, x) { f(x) } apply(|x| x * 3, 7)"),
+        Value::Int(21)
+    );
 }
 
 // ============================================================
@@ -493,26 +604,38 @@ fn test_vm_lambda_passed_to_fn() {
 
 #[test]
 fn test_vm_list_comp_basic() {
-    assert_eq!(vm_eval("[x * 2 for x in [1, 2, 3]]"),
-        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+    assert_eq!(
+        vm_eval("[x * 2 for x in [1, 2, 3]]"),
+        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)])
+    );
 }
 
 #[test]
 fn test_vm_list_comp_with_filter() {
-    assert_eq!(vm_eval("[x for x in [1, 2, 3, 4, 5] if x > 2]"),
-        Value::List(vec![Value::Int(3), Value::Int(4), Value::Int(5)]));
+    assert_eq!(
+        vm_eval("[x for x in [1, 2, 3, 4, 5] if x > 2]"),
+        Value::List(vec![Value::Int(3), Value::Int(4), Value::Int(5)])
+    );
 }
 
 #[test]
 fn test_vm_list_comp_transform_and_filter() {
-    assert_eq!(vm_eval("[x * x for x in [1, 2, 3, 4] if x % 2 == 0]"),
-        Value::List(vec![Value::Int(4), Value::Int(16)]));
+    assert_eq!(
+        vm_eval("[x * x for x in [1, 2, 3, 4] if x % 2 == 0]"),
+        Value::List(vec![Value::Int(4), Value::Int(16)])
+    );
 }
 
 #[test]
 fn test_vm_list_comp_string() {
-    assert_eq!(vm_eval("[c for c in \"abc\"]"),
-        Value::List(vec![Value::Str("a".to_string()), Value::Str("b".to_string()), Value::Str("c".to_string())]));
+    assert_eq!(
+        vm_eval("[c for c in \"abc\"]"),
+        Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("b".to_string()),
+            Value::Str("c".to_string())
+        ])
+    );
 }
 
 #[test]
@@ -533,14 +656,26 @@ fn test_vm_dict_comp() {
 
 #[test]
 fn test_vm_if_let_some() {
-    assert_eq!(vm_eval("if let Some(x) = Some(42) { x } else { 0 }"), Value::Int(42));
-    assert_eq!(vm_eval("if let Some(x) = None { x } else { 0 }"), Value::Int(0));
+    assert_eq!(
+        vm_eval("if let Some(x) = Some(42) { x } else { 0 }"),
+        Value::Int(42)
+    );
+    assert_eq!(
+        vm_eval("if let Some(x) = None { x } else { 0 }"),
+        Value::Int(0)
+    );
 }
 
 #[test]
 fn test_vm_if_let_ok() {
-    assert_eq!(vm_eval("if let Ok(x) = Ok(10) { x + 1 } else { 0 }"), Value::Int(11));
-    assert_eq!(vm_eval("if let Ok(x) = Err(\"bad\") { x } else { -1 }"), Value::Int(-1));
+    assert_eq!(
+        vm_eval("if let Ok(x) = Ok(10) { x + 1 } else { 0 }"),
+        Value::Int(11)
+    );
+    assert_eq!(
+        vm_eval("if let Ok(x) = Err(\"bad\") { x } else { -1 }"),
+        Value::Int(-1)
+    );
 }
 
 #[test]
@@ -551,7 +686,9 @@ fn test_vm_if_let_no_else() {
 
 #[test]
 fn test_vm_while_let() {
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         let mut items = [Some(1), Some(2), Some(3), None];
         let mut sum = 0;
         let mut i = 0;
@@ -560,7 +697,10 @@ fn test_vm_while_let() {
             i += 1;
         }
         sum
-    "#), Value::Int(6));
+    "#
+        ),
+        Value::Int(6)
+    );
 }
 
 // ============================================================
@@ -569,14 +709,18 @@ fn test_vm_while_let() {
 
 #[test]
 fn test_vm_list_index_assign() {
-    assert_eq!(vm_eval("let mut a = [1, 2, 3]; a[0] = 10; a"),
-        Value::List(vec![Value::Int(10), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        vm_eval("let mut a = [1, 2, 3]; a[0] = 10; a"),
+        Value::List(vec![Value::Int(10), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
 fn test_vm_list_index_compound_assign() {
-    assert_eq!(vm_eval("let mut a = [1, 2, 3]; a[1] += 10; a"),
-        Value::List(vec![Value::Int(1), Value::Int(12), Value::Int(3)]));
+    assert_eq!(
+        vm_eval("let mut a = [1, 2, 3]; a[1] += 10; a"),
+        Value::List(vec![Value::Int(1), Value::Int(12), Value::Int(3)])
+    );
 }
 
 #[test]
@@ -603,25 +747,41 @@ fn test_vm_dict_field_compound_assign() {
 
 #[test]
 fn test_vm_list_map() {
-    assert_eq!(vm_eval("[1, 2, 3].map(|x| x * 2)"),
-        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+    assert_eq!(
+        vm_eval("[1, 2, 3].map(|x| x * 2)"),
+        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)])
+    );
 }
 
 #[test]
 fn test_vm_list_filter() {
-    assert_eq!(vm_eval("[1, 2, 3, 4, 5].filter(|x| x > 2)"),
-        Value::List(vec![Value::Int(3), Value::Int(4), Value::Int(5)]));
+    assert_eq!(
+        vm_eval("[1, 2, 3, 4, 5].filter(|x| x > 2)"),
+        Value::List(vec![Value::Int(3), Value::Int(4), Value::Int(5)])
+    );
 }
 
 #[test]
 fn test_vm_list_fold() {
-    assert_eq!(vm_eval("[1, 2, 3, 4].fold(0, |acc, x| acc + x)"), Value::Int(10));
+    assert_eq!(
+        vm_eval("[1, 2, 3, 4].fold(0, |acc, x| acc + x)"),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_vm_list_flat_map() {
-    assert_eq!(vm_eval("[1, 2, 3].flat_map(|x| [x, x * 10])"),
-        Value::List(vec![Value::Int(1), Value::Int(10), Value::Int(2), Value::Int(20), Value::Int(3), Value::Int(30)]));
+    assert_eq!(
+        vm_eval("[1, 2, 3].flat_map(|x| [x, x * 10])"),
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(10),
+            Value::Int(2),
+            Value::Int(20),
+            Value::Int(3),
+            Value::Int(30)
+        ])
+    );
 }
 
 #[test]
@@ -634,28 +794,39 @@ fn test_vm_list_any_all() {
 
 #[test]
 fn test_vm_option_map() {
-    assert_eq!(vm_eval("Some(5).map(|x| x * 2)"),
-        Value::Option(Some(Box::new(Value::Int(10)))));
+    assert_eq!(
+        vm_eval("Some(5).map(|x| x * 2)"),
+        Value::Option(Some(Box::new(Value::Int(10))))
+    );
     assert_eq!(vm_eval("None.map(|x| x * 2)"), Value::Option(None));
 }
 
 #[test]
 fn test_vm_option_and_then() {
-    assert_eq!(vm_eval("Some(5).and_then(|x| Some(x + 1))"),
-        Value::Option(Some(Box::new(Value::Int(6)))));
-    assert_eq!(vm_eval("None.and_then(|x| Some(x + 1))"), Value::Option(None));
+    assert_eq!(
+        vm_eval("Some(5).and_then(|x| Some(x + 1))"),
+        Value::Option(Some(Box::new(Value::Int(6))))
+    );
+    assert_eq!(
+        vm_eval("None.and_then(|x| Some(x + 1))"),
+        Value::Option(None)
+    );
 }
 
 #[test]
 fn test_vm_result_map() {
-    assert_eq!(vm_eval("Ok(10).map(|x| x + 1)"),
-        Value::Result(Ok(Box::new(Value::Int(11)))));
+    assert_eq!(
+        vm_eval("Ok(10).map(|x| x + 1)"),
+        Value::Result(Ok(Box::new(Value::Int(11))))
+    );
 }
 
 #[test]
 fn test_vm_result_map_err() {
-    assert_eq!(vm_eval("Err(\"bad\").map_err(|e| f\"error: {e}\")"),
-        Value::Result(Err(Box::new(Value::Str("error: bad".to_string())))));
+    assert_eq!(
+        vm_eval("Err(\"bad\").map_err(|e| f\"error: {e}\")"),
+        Value::Result(Err(Box::new(Value::Str("error: bad".to_string()))))
+    );
 }
 
 // ============================================================
@@ -664,31 +835,46 @@ fn test_vm_result_map_err() {
 
 #[test]
 fn test_vm_match_list() {
-    assert_eq!(vm_eval("match [1, 2, 3] { [a, b, c] => a + b + c, _ => 0 }"), Value::Int(6));
+    assert_eq!(
+        vm_eval("match [1, 2, 3] { [a, b, c] => a + b + c, _ => 0 }"),
+        Value::Int(6)
+    );
 }
 
 #[test]
 fn test_vm_match_list_rest() {
-    assert_eq!(vm_eval("match [1, 2, 3, 4] { [first, ...rest] => first, _ => 0 }"), Value::Int(1));
+    assert_eq!(
+        vm_eval("match [1, 2, 3, 4] { [first, ...rest] => first, _ => 0 }"),
+        Value::Int(1)
+    );
 }
 
 #[test]
 fn test_vm_match_list_rest_binding() {
-    assert_eq!(vm_eval("match [1, 2, 3, 4] { [h, ...t] => t }"),
-        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)]));
+    assert_eq!(
+        vm_eval("match [1, 2, 3, 4] { [h, ...t] => t }"),
+        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)])
+    );
 }
 
 #[test]
 fn test_vm_match_list_empty() {
-    assert_eq!(vm_eval("match [] { [] => \"empty\", _ => \"nonempty\" }"),
-        Value::Str("empty".to_string()));
-    assert_eq!(vm_eval("match [1] { [] => \"empty\", _ => \"nonempty\" }"),
-        Value::Str("nonempty".to_string()));
+    assert_eq!(
+        vm_eval("match [] { [] => \"empty\", _ => \"nonempty\" }"),
+        Value::Str("empty".to_string())
+    );
+    assert_eq!(
+        vm_eval("match [1] { [] => \"empty\", _ => \"nonempty\" }"),
+        Value::Str("nonempty".to_string())
+    );
 }
 
 #[test]
 fn test_vm_match_list_length_mismatch() {
-    assert_eq!(vm_eval("match [1, 2] { [a, b, c] => 0, [a, b] => a + b, _ => -1 }"), Value::Int(3));
+    assert_eq!(
+        vm_eval("match [1, 2] { [a, b, c] => 0, [a, b] => a + b, _ => -1 }"),
+        Value::Int(3)
+    );
 }
 
 #[test]
@@ -698,14 +884,18 @@ fn test_vm_let_list_destructure() {
 
 #[test]
 fn test_vm_let_list_rest() {
-    assert_eq!(vm_eval("let [h, ...t] = [1, 2, 3, 4]; t"),
-        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)]));
+    assert_eq!(
+        vm_eval("let [h, ...t] = [1, 2, 3, 4]; t"),
+        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)])
+    );
 }
 
 #[test]
 fn test_vm_for_list_destructure() {
-    assert_eq!(vm_eval("let mut sum = 0; for [a, b] in [[1, 2], [3, 4]] { sum += a + b; } sum"),
-        Value::Int(10));
+    assert_eq!(
+        vm_eval("let mut sum = 0; for [a, b] in [[1, 2], [3, 4]] { sum += a + b; } sum"),
+        Value::Int(10)
+    );
 }
 
 // ============================================================
@@ -715,7 +905,9 @@ fn test_vm_for_list_destructure() {
 #[test]
 fn test_vm_many_variable_accesses() {
     // Exercises the interned symbol lookup path heavily
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         let mut x = 0;
         let mut y = 0;
         let mut z = 0;
@@ -725,12 +917,17 @@ fn test_vm_many_variable_accesses() {
             z += 3;
         }
         x + y + z
-    "#), Value::Int(600));
+    "#
+        ),
+        Value::Int(600)
+    );
 }
 
 #[test]
 fn test_vm_nested_scopes_many_vars() {
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         let a = 1;
         let b = 2;
         let result = {
@@ -739,7 +936,10 @@ fn test_vm_nested_scopes_many_vars() {
             a + b + c
         };
         result + a
-    "#), Value::Int(16));
+    "#
+        ),
+        Value::Int(16)
+    );
 }
 
 // ============================================================
@@ -761,18 +961,31 @@ fn test_vm_bitwise() {
 
 #[test]
 fn test_vm_list_first_last() {
-    assert_eq!(vm_eval("[1, 2, 3].first()"), Value::Option(Some(Box::new(Value::Int(1)))));
-    assert_eq!(vm_eval("[1, 2, 3].last()"), Value::Option(Some(Box::new(Value::Int(3)))));
+    assert_eq!(
+        vm_eval("[1, 2, 3].first()"),
+        Value::Option(Some(Box::new(Value::Int(1))))
+    );
+    assert_eq!(
+        vm_eval("[1, 2, 3].last()"),
+        Value::Option(Some(Box::new(Value::Int(3))))
+    );
     assert_eq!(vm_eval("[].first()"), Value::Option(None));
     assert_eq!(vm_eval("[].last()"), Value::Option(None));
 }
 
 #[test]
 fn test_vm_list_sort() {
-    assert_eq!(vm_eval("[3, 1, 2].sort()"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        vm_eval("[3, 1, 2].sort()"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
     assert_eq!(
         vm_eval(r#"["banana", "apple", "cherry"].sort()"#),
-        Value::List(vec![Value::Str("apple".into()), Value::Str("banana".into()), Value::Str("cherry".into())])
+        Value::List(vec![
+            Value::Str("apple".into()),
+            Value::Str("banana".into()),
+            Value::Str("cherry".into())
+        ])
     );
 }
 
@@ -780,7 +993,13 @@ fn test_vm_list_sort() {
 fn test_vm_list_flatten() {
     assert_eq!(
         vm_eval("[[1, 2], [3, 4], [5]].flatten()"),
-        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4), Value::Int(5)])
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(4),
+            Value::Int(5)
+        ])
     );
     assert_eq!(
         vm_eval("[[1], 2, [3]].flatten()"),
@@ -805,7 +1024,10 @@ fn test_vm_dict_entries() {
     let result = vm_eval(r#"let d = #{"a": 1}; d.entries()"#);
     assert_eq!(
         result,
-        Value::List(vec![Value::Tuple(vec![Value::Str("a".into()), Value::Int(1)])])
+        Value::List(vec![Value::Tuple(vec![
+            Value::Str("a".into()),
+            Value::Int(1)
+        ])])
     );
 }
 
@@ -851,21 +1073,31 @@ fn test_vm_dict_merge() {
 #[test]
 fn test_vm_fn_cache_recursive() {
     // fibonacci exercises the cache: same function compiled once, called many times
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         fn fib(n) { if n <= 1 { n } else { fib(n - 1) + fib(n - 2) } }
         fib(15)
-    "#), Value::Int(610));
+    "#
+        ),
+        Value::Int(610)
+    );
 }
 
 #[test]
 fn test_vm_fn_cache_repeated_calls() {
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         fn double(x) { x * 2 }
         let a = double(1);
         let b = double(2);
         let c = double(3);
         a + b + c
-    "#), Value::Int(12));
+    "#
+        ),
+        Value::Int(12)
+    );
 }
 
 // ============================================================
@@ -888,7 +1120,11 @@ fn test_vm_error_field_access_col() {
     let mut engine = Engine::new();
     let err: IonError = engine.vm_eval("let x = 42; x.foo").unwrap_err();
     assert_eq!(err.line, 1);
-    assert!(err.col > 0, "expected non-zero column for field error, got {}", err.col);
+    assert!(
+        err.col > 0,
+        "expected non-zero column for field error, got {}",
+        err.col
+    );
 }
 
 // ============================================================
@@ -899,24 +1135,34 @@ fn test_vm_error_field_access_col() {
 #[cfg(feature = "optimize")]
 fn test_vm_tail_call_deep_recursion() {
     // This would stack overflow without TCO — 10,000 recursive calls
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         fn countdown(n) {
             if n <= 0 { 0 } else { countdown(n - 1) }
         }
         countdown(10000)
-    "#), Value::Int(0));
+    "#
+        ),
+        Value::Int(0)
+    );
 }
 
 #[test]
 #[cfg(feature = "optimize")]
 fn test_vm_tail_call_accumulator() {
     // Tail-recursive sum with accumulator
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         fn sum_acc(n, acc) {
             if n <= 0 { acc } else { sum_acc(n - 1, acc + n) }
         }
         sum_acc(10000, 0)
-    "#), Value::Int(50005000));
+    "#
+        ),
+        Value::Int(50005000)
+    );
 }
 
 // ============================================================
@@ -925,10 +1171,12 @@ fn test_vm_tail_call_accumulator() {
 
 #[test]
 fn test_vm_dict_spread_basic() {
-    let val = vm_eval(r#"
+    let val = vm_eval(
+        r#"
         let base = #{ "a": 1, "b": 2 };
         #{ ...base, "c": 3 }
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 3);
         assert_eq!(map["a"], Value::Int(1));
@@ -941,10 +1189,12 @@ fn test_vm_dict_spread_basic() {
 
 #[test]
 fn test_vm_dict_spread_override() {
-    let val = vm_eval(r#"
+    let val = vm_eval(
+        r#"
         let base = #{ "a": 1, "b": 2 };
         #{ ...base, "b": 99 }
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map["a"], Value::Int(1));
         assert_eq!(map["b"], Value::Int(99));
@@ -955,11 +1205,13 @@ fn test_vm_dict_spread_override() {
 
 #[test]
 fn test_vm_dict_spread_multiple() {
-    let val = vm_eval(r#"
+    let val = vm_eval(
+        r#"
         let a = #{ "x": 1 };
         let b = #{ "y": 2 };
         #{ ...a, ...b, "z": 3 }
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 3);
         assert_eq!(map["x"], Value::Int(1));
@@ -998,7 +1250,10 @@ fn test_vm_const_fold_float() {
 
 #[test]
 fn test_vm_const_fold_string_concat() {
-    assert_eq!(vm_eval(r#""hello" + " world""#), Value::Str("hello world".into()));
+    assert_eq!(
+        vm_eval(r#""hello" + " world""#),
+        Value::Str("hello world".into())
+    );
 }
 
 #[test]
@@ -1042,8 +1297,14 @@ fn vm_engine_with_types() -> Engine {
     engine.register_enum(HostEnumDef {
         name: "Color".into(),
         variants: vec![
-            HostVariantDef { name: "Red".into(), arity: 0 },
-            HostVariantDef { name: "Custom".into(), arity: 3 },
+            HostVariantDef {
+                name: "Red".into(),
+                arity: 0,
+            },
+            HostVariantDef {
+                name: "Custom".into(),
+                arity: 3,
+            },
         ],
     });
     engine
@@ -1052,7 +1313,9 @@ fn vm_engine_with_types() -> Engine {
 #[test]
 fn test_vm_host_struct_construct() {
     let mut engine = vm_engine_with_types();
-    let val = engine.vm_eval(r#"Config { host: "localhost", port: 8080, debug: true }"#).unwrap();
+    let val = engine
+        .vm_eval(r#"Config { host: "localhost", port: 8080, debug: true }"#)
+        .unwrap();
     if let Value::HostStruct { type_name, fields } = &val {
         assert_eq!(type_name, "Config");
         assert_eq!(fields["host"], Value::Str("localhost".into()));
@@ -1066,21 +1329,29 @@ fn test_vm_host_struct_construct() {
 #[test]
 fn test_vm_host_struct_field_access() {
     let mut engine = vm_engine_with_types();
-    let val = engine.vm_eval(r#"
+    let val = engine
+        .vm_eval(
+            r#"
         let c = Config { host: "localhost", port: 8080, debug: false };
         c.port
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Int(8080));
 }
 
 #[test]
 fn test_vm_host_struct_spread() {
     let mut engine = vm_engine_with_types();
-    let val = engine.vm_eval(r#"
+    let val = engine
+        .vm_eval(
+            r#"
         let base = Config { host: "localhost", port: 8080, debug: false };
         let updated = Config { ...base, debug: true };
         updated.debug
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Bool(true));
 }
 
@@ -1088,7 +1359,12 @@ fn test_vm_host_struct_spread() {
 fn test_vm_host_enum_variant() {
     let mut engine = vm_engine_with_types();
     let val = engine.vm_eval("Color::Red").unwrap();
-    if let Value::HostEnum { enum_name, variant, data } = &val {
+    if let Value::HostEnum {
+        enum_name,
+        variant,
+        data,
+    } = &val
+    {
         assert_eq!(enum_name, "Color");
         assert_eq!(variant, "Red");
         assert!(data.is_empty());
@@ -1100,19 +1376,26 @@ fn test_vm_host_enum_variant() {
 #[test]
 fn test_vm_dead_code_after_return() {
     // Code after return should be eliminated — function should still work
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         fn foo() {
             return 42;
             let x = 100;
             x + 1
         }
         foo()
-    "#), Value::Int(42));
+    "#
+        ),
+        Value::Int(42)
+    );
 }
 
 #[test]
 fn test_vm_dead_code_after_break() {
-    assert_eq!(vm_eval(r#"
+    assert_eq!(
+        vm_eval(
+            r#"
         let mut sum = 0;
         for i in [1, 2, 3, 4, 5] {
             if i > 3 {
@@ -1122,14 +1405,22 @@ fn test_vm_dead_code_after_break() {
             sum = sum + i;
         }
         sum
-    "#), Value::Int(6));
+    "#
+        ),
+        Value::Int(6)
+    );
 }
 
 #[test]
 fn test_vm_host_enum_variant_with_data() {
     let mut engine = vm_engine_with_types();
     let val = engine.vm_eval("Color::Custom(255, 128, 0)").unwrap();
-    if let Value::HostEnum { enum_name, variant, data } = &val {
+    if let Value::HostEnum {
+        enum_name,
+        variant,
+        data,
+    } = &val
+    {
         assert_eq!(enum_name, "Color");
         assert_eq!(variant, "Custom");
         assert_eq!(data, &vec![Value::Int(255), Value::Int(128), Value::Int(0)]);
@@ -1159,12 +1450,24 @@ fn test_vm_peephole_double_neg() {
 fn test_vm_peephole_if_else_correctness() {
     assert_eq!(vm_eval("if true { 1 } else { 2 }"), Value::Int(1));
     assert_eq!(vm_eval("if false { 1 } else { 2 }"), Value::Int(2));
-    assert_eq!(vm_eval("let x = if true { 10 } else { 20 }; x"), Value::Int(10));
+    assert_eq!(
+        vm_eval("let x = if true { 10 } else { 20 }; x"),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_vm_peephole_match_correctness() {
-    assert_eq!(vm_eval("match Some(5) { Some(v) => v * 2, None => 0 }"), Value::Int(10));
-    assert_eq!(vm_eval("match None { Some(v) => v, None => 99 }"), Value::Int(99));
-    assert_eq!(vm_eval("match Ok(7) { Ok(v) => v, Err(e) => 0 }"), Value::Int(7));
+    assert_eq!(
+        vm_eval("match Some(5) { Some(v) => v * 2, None => 0 }"),
+        Value::Int(10)
+    );
+    assert_eq!(
+        vm_eval("match None { Some(v) => v, None => 99 }"),
+        Value::Int(99)
+    );
+    assert_eq!(
+        vm_eval("match Ok(7) { Ok(v) => v, Err(e) => 0 }"),
+        Value::Int(7)
+    );
 }

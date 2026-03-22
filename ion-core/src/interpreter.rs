@@ -21,11 +21,15 @@ enum SignalOrError {
 }
 
 impl From<IonError> for SignalOrError {
-    fn from(e: IonError) -> Self { SignalOrError::Error(e) }
+    fn from(e: IonError) -> Self {
+        SignalOrError::Error(e)
+    }
 }
 
 impl From<Signal> for SignalOrError {
-    fn from(s: Signal) -> Self { SignalOrError::Signal(s) }
+    fn from(s: Signal) -> Self {
+        SignalOrError::Signal(s)
+    }
 }
 
 #[derive(Clone)]
@@ -52,6 +56,12 @@ pub struct Interpreter {
     nursery: Option<crate::async_rt::Nursery>,
     #[cfg(feature = "concurrency")]
     cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Interpreter {
@@ -81,12 +91,16 @@ impl Interpreter {
             }
             Err(SignalOrError::Error(e)) => Err(e),
             Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
-            Err(SignalOrError::Signal(Signal::Break(_))) => {
-                Err(IonError::runtime(ion_str!("break outside of loop").to_string(), 0, 0))
-            }
-            Err(SignalOrError::Signal(Signal::Continue)) => {
-                Err(IonError::runtime(ion_str!("continue outside of loop").to_string(), 0, 0))
-            }
+            Err(SignalOrError::Signal(Signal::Break(_))) => Err(IonError::runtime(
+                ion_str!("break outside of loop").to_string(),
+                0,
+                0,
+            )),
+            Err(SignalOrError::Signal(Signal::Continue)) => Err(IonError::runtime(
+                ion_str!("continue outside of loop").to_string(),
+                0,
+                0,
+            )),
         }
     }
 
@@ -165,7 +179,11 @@ impl Interpreter {
 
     fn eval_stmt(&mut self, stmt: &Stmt) -> SignalResult {
         match &stmt.kind {
-            StmtKind::Let { mutable, pattern, value } => {
+            StmtKind::Let {
+                mutable,
+                pattern,
+                value,
+            } => {
                 let val = self.eval_expr(value)?;
                 self.bind_pattern(pattern, &val, *mutable, stmt.span)?;
                 Ok(Value::Unit)
@@ -185,7 +203,11 @@ impl Interpreter {
                 self.eval_expr(expr)?;
                 Ok(Value::Unit)
             }
-            StmtKind::For { pattern, iter, body } => {
+            StmtKind::For {
+                pattern,
+                iter,
+                body,
+            } => {
                 let iter_val = self.eval_expr(iter)?;
                 let items = self.value_to_iter(&iter_val, iter.span)?;
                 for item in items {
@@ -218,13 +240,17 @@ impl Interpreter {
                     #[cfg(feature = "concurrency")]
                     self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     let c = self.eval_expr(cond)?;
-                    if !c.is_truthy() { break; }
+                    if !c.is_truthy() {
+                        break;
+                    }
                     iters += 1;
                     if iters > self.limits.max_loop_iters {
                         return Err(IonError::runtime(
                             ion_str!("maximum loop iterations exceeded").to_string(),
-                            stmt.span.line, stmt.span.col,
-                        ).into());
+                            stmt.span.line,
+                            stmt.span.col,
+                        )
+                        .into());
                     }
                     self.env.push_scope();
                     match self.eval_stmts(body) {
@@ -246,19 +272,27 @@ impl Interpreter {
                 }
                 Ok(Value::Unit)
             }
-            StmtKind::WhileLet { pattern, expr, body } => {
+            StmtKind::WhileLet {
+                pattern,
+                expr,
+                body,
+            } => {
                 let mut iters = 0usize;
                 loop {
                     #[cfg(feature = "concurrency")]
                     self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     let val = self.eval_expr(expr)?;
-                    if !self.pattern_matches(pattern, &val) { break; }
+                    if !self.pattern_matches(pattern, &val) {
+                        break;
+                    }
                     iters += 1;
                     if iters > self.limits.max_loop_iters {
                         return Err(IonError::runtime(
                             ion_str!("maximum loop iterations exceeded").to_string(),
-                            stmt.span.line, stmt.span.col,
-                        ).into());
+                            stmt.span.line,
+                            stmt.span.col,
+                        )
+                        .into());
                     }
                     self.env.push_scope();
                     self.bind_pattern(pattern, &val, false, expr.span)?;
@@ -288,8 +322,10 @@ impl Interpreter {
                     if iters > self.limits.max_loop_iters {
                         return Err(IonError::runtime(
                             ion_str!("maximum loop iterations exceeded").to_string(),
-                            stmt.span.line, stmt.span.col,
-                        ).into());
+                            stmt.span.line,
+                            stmt.span.col,
+                        )
+                        .into());
                     }
                     self.env.push_scope();
                     match self.eval_stmts(body) {
@@ -318,9 +354,7 @@ impl Interpreter {
                 };
                 Err(Signal::Break(v).into())
             }
-            StmtKind::Continue => {
-                Err(Signal::Continue.into())
-            }
+            StmtKind::Continue => Err(Signal::Continue.into()),
             StmtKind::Return { value } => {
                 let v = match value {
                     Some(expr) => self.eval_expr(expr)?,
@@ -335,33 +369,47 @@ impl Interpreter {
                         let final_val = match op {
                             AssignOp::Eq => rhs,
                             _ => {
-                                let lhs = self.env.get(name).ok_or_else(|| {
-                                    IonError::name(
-                                        format!("{}{}", ion_str!("undefined variable: "), name),
-                                        stmt.span.line, stmt.span.col,
-                                    )
-                                })?.clone();
+                                let lhs = self
+                                    .env
+                                    .get(name)
+                                    .ok_or_else(|| {
+                                        IonError::name(
+                                            format!("{}{}", ion_str!("undefined variable: "), name),
+                                            stmt.span.line,
+                                            stmt.span.col,
+                                        )
+                                    })?
+                                    .clone();
                                 self.apply_compound_op(*op, &lhs, &rhs, stmt.span)?
                             }
                         };
-                        self.env.set(name, final_val).map_err(|msg| {
-                            IonError::runtime(msg, stmt.span.line, stmt.span.col)
-                        })?;
+                        self.env
+                            .set(name, final_val)
+                            .map_err(|msg| IonError::runtime(msg, stmt.span.line, stmt.span.col))?;
                     }
                     AssignTarget::Index(obj_expr, index_expr) => {
                         let var_name = match &obj_expr.kind {
                             ExprKind::Ident(name) => name.clone(),
-                            _ => return Err(IonError::runtime(
-                                "index assignment only supported on variables".to_string(),
-                                stmt.span.line, stmt.span.col,
-                            ).into()),
+                            _ => {
+                                return Err(IonError::runtime(
+                                    "index assignment only supported on variables".to_string(),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                )
+                                .into())
+                            }
                         };
-                        let mut container = self.env.get(&var_name).ok_or_else(|| {
-                            IonError::name(
-                                format!("{}{}", ion_str!("undefined variable: "), var_name),
-                                stmt.span.line, stmt.span.col,
-                            )
-                        })?.clone();
+                        let mut container = self
+                            .env
+                            .get(&var_name)
+                            .ok_or_else(|| {
+                                IonError::name(
+                                    format!("{}{}", ion_str!("undefined variable: "), var_name),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                )
+                            })?
+                            .clone();
                         let index = self.eval_expr(index_expr)?;
                         let final_val = match op {
                             AssignOp::Eq => rhs,
@@ -380,37 +428,53 @@ impl Interpreter {
                                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                                 if idx >= items.len() {
                                     return Err(IonError::runtime(
-                                        format!("index {} out of range", i), stmt.span.line, stmt.span.col,
-                                    ).into());
+                                        format!("index {} out of range", i),
+                                        stmt.span.line,
+                                        stmt.span.col,
+                                    )
+                                    .into());
                                 }
                                 items[idx] = final_val;
                             }
                             (Value::Dict(map), Value::Str(key)) => {
                                 map.insert(key.clone(), final_val);
                             }
-                            _ => return Err(IonError::type_err(
-                                format!("cannot set index on {}", container.type_name()),
-                                stmt.span.line, stmt.span.col,
-                            ).into()),
+                            _ => {
+                                return Err(IonError::type_err(
+                                    format!("cannot set index on {}", container.type_name()),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                )
+                                .into())
+                            }
                         }
-                        self.env.set(&var_name, container).map_err(|msg| {
-                            IonError::runtime(msg, stmt.span.line, stmt.span.col)
-                        })?;
+                        self.env
+                            .set(&var_name, container)
+                            .map_err(|msg| IonError::runtime(msg, stmt.span.line, stmt.span.col))?;
                     }
                     AssignTarget::Field(obj_expr, field) => {
                         let var_name = match &obj_expr.kind {
                             ExprKind::Ident(name) => name.clone(),
-                            _ => return Err(IonError::runtime(
-                                "field assignment only supported on variables".to_string(),
-                                stmt.span.line, stmt.span.col,
-                            ).into()),
+                            _ => {
+                                return Err(IonError::runtime(
+                                    "field assignment only supported on variables".to_string(),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                )
+                                .into())
+                            }
                         };
-                        let mut container = self.env.get(&var_name).ok_or_else(|| {
-                            IonError::name(
-                                format!("{}{}", ion_str!("undefined variable: "), var_name),
-                                stmt.span.line, stmt.span.col,
-                            )
-                        })?.clone();
+                        let mut container = self
+                            .env
+                            .get(&var_name)
+                            .ok_or_else(|| {
+                                IonError::name(
+                                    format!("{}{}", ion_str!("undefined variable: "), var_name),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                )
+                            })?
+                            .clone();
                         let final_val = match op {
                             AssignOp::Eq => rhs,
                             _ => {
@@ -428,18 +492,24 @@ impl Interpreter {
                                 } else {
                                     return Err(IonError::runtime(
                                         format!("field '{}' not found", field),
-                                        stmt.span.line, stmt.span.col,
-                                    ).into());
+                                        stmt.span.line,
+                                        stmt.span.col,
+                                    )
+                                    .into());
                                 }
                             }
-                            _ => return Err(IonError::type_err(
-                                format!("cannot set field on {}", container.type_name()),
-                                stmt.span.line, stmt.span.col,
-                            ).into()),
+                            _ => {
+                                return Err(IonError::type_err(
+                                    format!("cannot set field on {}", container.type_name()),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                )
+                                .into())
+                            }
                         }
-                        self.env.set(&var_name, container).map_err(|msg| {
-                            IonError::runtime(msg, stmt.span.line, stmt.span.col)
-                        })?;
+                        self.env
+                            .set(&var_name, container)
+                            .map_err(|msg| IonError::runtime(msg, stmt.span.line, stmt.span.col))?;
                     }
                 }
                 Ok(Value::Unit)
@@ -472,14 +542,14 @@ impl Interpreter {
                 Ok(Value::Str(result))
             }
 
-            ExprKind::Ident(name) => {
-                self.env.get(name).cloned().ok_or_else(|| {
-                    IonError::name(
-                        format!("{}{}", ion_str!("undefined variable: "), name),
-                        span.line, span.col,
-                    ).into()
-                })
-            }
+            ExprKind::Ident(name) => self.env.get(name).cloned().ok_or_else(|| {
+                IonError::name(
+                    format!("{}{}", ion_str!("undefined variable: "), name),
+                    span.line,
+                    span.col,
+                )
+                .into()
+            }),
 
             ExprKind::SomeExpr(e) => {
                 let val = self.eval_expr(e)?;
@@ -509,10 +579,14 @@ impl Interpreter {
                             let key = self.eval_expr(k)?;
                             let key_str = match key {
                                 Value::Str(s) => s,
-                                _ => return Err(IonError::type_err(
-                                    ion_str!("dict keys must be strings").to_string(),
-                                    span.line, span.col,
-                                ).into()),
+                                _ => {
+                                    return Err(IonError::type_err(
+                                        ion_str!("dict keys must be strings").to_string(),
+                                        span.line,
+                                        span.col,
+                                    )
+                                    .into())
+                                }
                             };
                             let val = self.eval_expr(v)?;
                             map.insert(key_str, val);
@@ -525,10 +599,14 @@ impl Interpreter {
                                         map.insert(k, v);
                                     }
                                 }
-                                _ => return Err(IonError::type_err(
-                                    ion_str!("spread requires a dict").to_string(),
-                                    span.line, span.col,
-                                ).into()),
+                                _ => {
+                                    return Err(IonError::type_err(
+                                        ion_str!("spread requires a dict").to_string(),
+                                        span.line,
+                                        span.col,
+                                    )
+                                    .into())
+                                }
                             }
                         }
                     }
@@ -543,7 +621,12 @@ impl Interpreter {
                 Ok(Value::Tuple(vals))
             }
 
-            ExprKind::ListComp { expr, pattern, iter, cond } => {
+            ExprKind::ListComp {
+                expr,
+                pattern,
+                iter,
+                cond,
+            } => {
                 let iter_val = self.eval_expr(iter)?;
                 let items = self.value_to_iter(&iter_val, span)?;
                 let mut result = Vec::new();
@@ -563,7 +646,13 @@ impl Interpreter {
                 }
                 Ok(Value::List(result))
             }
-            ExprKind::DictComp { key, value, pattern, iter, cond } => {
+            ExprKind::DictComp {
+                key,
+                value,
+                pattern,
+                iter,
+                cond,
+            } => {
                 let iter_val = self.eval_expr(iter)?;
                 let items = self.value_to_iter(&iter_val, span)?;
                 let mut map = IndexMap::new();
@@ -580,10 +669,14 @@ impl Interpreter {
                         let k = self.eval_expr(key)?;
                         let k_str = match k {
                             Value::Str(s) => s,
-                            _ => return Err(IonError::type_err(
-                                ion_str!("dict comp keys must be strings").to_string(),
-                                span.line, span.col,
-                            ).into()),
+                            _ => {
+                                return Err(IonError::type_err(
+                                    ion_str!("dict comp keys must be strings").to_string(),
+                                    span.line,
+                                    span.col,
+                                )
+                                .into())
+                            }
                         };
                         let v = self.eval_expr(value)?;
                         map.insert(k_str, v);
@@ -597,13 +690,17 @@ impl Interpreter {
                 // Short-circuit for && and ||
                 if matches!(op, BinOp::And) {
                     let l = self.eval_expr(left)?;
-                    if !l.is_truthy() { return Ok(Value::Bool(false)); }
+                    if !l.is_truthy() {
+                        return Ok(Value::Bool(false));
+                    }
                     let r = self.eval_expr(right)?;
                     return Ok(Value::Bool(r.is_truthy()));
                 }
                 if matches!(op, BinOp::Or) {
                     let l = self.eval_expr(left)?;
-                    if l.is_truthy() { return Ok(Value::Bool(true)); }
+                    if l.is_truthy() {
+                        return Ok(Value::Bool(true));
+                    }
                     let r = self.eval_expr(right)?;
                     return Ok(Value::Bool(r.is_truthy()));
                 }
@@ -620,8 +717,10 @@ impl Interpreter {
                         Value::Float(n) => Ok(Value::Float(-n)),
                         _ => Err(IonError::type_err(
                             format!("{}{}", ion_str!("cannot negate "), val.type_name()),
-                            span.line, span.col,
-                        ).into()),
+                            span.line,
+                            span.col,
+                        )
+                        .into()),
                     },
                     UnaryOp::Not => Ok(Value::Bool(!val.is_truthy())),
                 }
@@ -639,9 +738,15 @@ impl Interpreter {
                         Err(IonError::propagated_none(span.line, span.col).into())
                     }
                     _ => Err(IonError::type_err(
-                        format!("{}{}", ion_str!("? applied to non-Result/Option: "), val.type_name()),
-                        span.line, span.col,
-                    ).into()),
+                        format!(
+                            "{}{}",
+                            ion_str!("? applied to non-Result/Option: "),
+                            val.type_name()
+                        ),
+                        span.line,
+                        span.col,
+                    )
+                    .into()),
                 }
             }
 
@@ -650,9 +755,13 @@ impl Interpreter {
                 // right should be a Call — insert lval as first argument
                 match &right.kind {
                     ExprKind::Call { func, args } => {
-                        let mut new_args = vec![CallArg { name: None, value: Expr {
-                            kind: ExprKind::Int(0), span, // placeholder
-                        }}];
+                        let mut new_args = vec![CallArg {
+                            name: None,
+                            value: Expr {
+                                kind: ExprKind::Int(0),
+                                span, // placeholder
+                            },
+                        }];
                         new_args.extend(args.iter().cloned());
                         let func_val = self.eval_expr(func)?;
                         let mut arg_vals = vec![lval];
@@ -668,8 +777,10 @@ impl Interpreter {
                     }
                     _ => Err(IonError::runtime(
                         ion_str!("right side of |> must be a function call").to_string(),
-                        span.line, span.col,
-                    ).into()),
+                        span.line,
+                        span.col,
+                    )
+                    .into()),
                 }
             }
 
@@ -684,7 +795,12 @@ impl Interpreter {
                 self.index_access(&val, &idx, span)
             }
 
-            ExprKind::Slice { expr, start, end, inclusive } => {
+            ExprKind::Slice {
+                expr,
+                start,
+                end,
+                inclusive,
+            } => {
                 let val = self.eval_expr(expr)?;
                 let s = match start {
                     Some(e) => Some(self.eval_expr(e)?),
@@ -726,13 +842,19 @@ impl Interpreter {
 
             ExprKind::Lambda { params, body } => {
                 let captures = self.env.capture();
-                let fn_params: Vec<Param> = params.iter().map(|p| Param {
-                    name: p.clone(),
-                    default: None,
-                }).collect();
+                let fn_params: Vec<Param> = params
+                    .iter()
+                    .map(|p| Param {
+                        name: p.clone(),
+                        default: None,
+                    })
+                    .collect();
                 // Wrap body expr into a block with one ExprStmt
                 let body_stmts = vec![Stmt {
-                    kind: StmtKind::ExprStmt { expr: (**body).clone(), has_semi: false },
+                    kind: StmtKind::ExprStmt {
+                        expr: (**body).clone(),
+                        has_semi: false,
+                    },
                     span,
                 }];
                 Ok(Value::Fn(IonFn::new(
@@ -743,7 +865,11 @@ impl Interpreter {
                 )))
             }
 
-            ExprKind::If { cond, then_body, else_body } => {
+            ExprKind::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 let c = self.eval_expr(cond)?;
                 self.env.push_scope();
                 let result = if c.is_truthy() {
@@ -757,7 +883,12 @@ impl Interpreter {
                 result
             }
 
-            ExprKind::IfLet { pattern, expr, then_body, else_body } => {
+            ExprKind::IfLet {
+                pattern,
+                expr,
+                then_body,
+                else_body,
+            } => {
                 let val = self.eval_expr(expr)?;
                 if self.pattern_matches(pattern, &val) {
                     self.env.push_scope();
@@ -795,8 +926,10 @@ impl Interpreter {
                 }
                 Err(IonError::runtime(
                     ion_str!("non-exhaustive match").to_string(),
-                    span.line, span.col,
-                ).into())
+                    span.line,
+                    span.col,
+                )
+                .into())
             }
 
             ExprKind::Block(stmts) => {
@@ -829,7 +962,33 @@ impl Interpreter {
                 Ok(result)
             }
 
-            ExprKind::Range { start, end, inclusive } => {
+            ExprKind::TryCatch { body, var, handler } => {
+                self.env.push_scope();
+                let result = self.eval_stmts(body);
+                self.env.pop_scope();
+                match result {
+                    Ok(v) => Ok(v),
+                    Err(SignalOrError::Signal(s)) => {
+                        // Signals (return/break/continue) pass through — not errors
+                        Err(SignalOrError::Signal(s))
+                    }
+                    Err(SignalOrError::Error(e)) => {
+                        // Catch the error: bind error message to `var`, run handler
+                        self.env.push_scope();
+                        self.env
+                            .define(var.clone(), Value::Str(e.message.clone()), false);
+                        let handler_result = self.eval_stmts(handler);
+                        self.env.pop_scope();
+                        handler_result
+                    }
+                }
+            }
+
+            ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
                 let s = self.eval_expr(start)?;
                 let e = self.eval_expr(end)?;
                 match (&s, &e) {
@@ -843,12 +1002,18 @@ impl Interpreter {
                     }
                     _ => Err(IonError::type_err(
                         ion_str!("range requires integer bounds").to_string(),
-                        span.line, span.col,
-                    ).into()),
+                        span.line,
+                        span.col,
+                    )
+                    .into()),
                 }
             }
 
-            ExprKind::StructConstruct { name, fields, spread } => {
+            ExprKind::StructConstruct {
+                name,
+                fields,
+                spread,
+            } => {
                 let mut field_map = IndexMap::new();
                 if let Some(spread_expr) = spread {
                     let spread_val = self.eval_expr(spread_expr)?;
@@ -858,29 +1023,40 @@ impl Interpreter {
                                 field_map.insert(k, v);
                             }
                         }
-                        _ => return Err(IonError::type_err(
-                            ion_str!("spread in struct constructor requires a struct").to_string(),
-                            span.line, span.col,
-                        ).into()),
+                        _ => {
+                            return Err(IonError::type_err(
+                                ion_str!("spread in struct constructor requires a struct")
+                                    .to_string(),
+                                span.line,
+                                span.col,
+                            )
+                            .into())
+                        }
                     }
                 }
                 for (fname, fexpr) in fields {
                     let val = self.eval_expr(fexpr)?;
                     field_map.insert(fname.clone(), val);
                 }
-                self.types.construct_struct(name, field_map)
+                self.types
+                    .construct_struct(name, field_map)
                     .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
-            ExprKind::EnumVariant { enum_name, variant } => {
-                self.types.construct_enum(enum_name, variant, vec![])
-                    .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
-            }
-            ExprKind::EnumVariantCall { enum_name, variant, args } => {
+            ExprKind::EnumVariant { enum_name, variant } => self
+                .types
+                .construct_enum(enum_name, variant, vec![])
+                .map_err(|msg| IonError::runtime(msg, span.line, span.col).into()),
+            ExprKind::EnumVariantCall {
+                enum_name,
+                variant,
+                args,
+            } => {
                 let mut vals = Vec::new();
                 for arg in args {
                     vals.push(self.eval_expr(arg)?);
                 }
-                self.types.construct_enum(enum_name, variant, vals)
+                self.types
+                    .construct_enum(enum_name, variant, vals)
                     .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
 
@@ -895,13 +1071,16 @@ impl Interpreter {
             ExprKind::SelectExpr(branches) => self.eval_select(branches, span),
 
             #[cfg(not(feature = "concurrency"))]
-            ExprKind::AsyncBlock(_) | ExprKind::SpawnExpr(_) |
-            ExprKind::AwaitExpr(_) | ExprKind::SelectExpr(_) => {
-                Err(IonError::runtime(
-                    ion_str!("concurrency features require the 'concurrency' cargo feature").to_string(),
-                    span.line, span.col,
-                ).into())
-            }
+            ExprKind::AsyncBlock(_)
+            | ExprKind::SpawnExpr(_)
+            | ExprKind::AwaitExpr(_)
+            | ExprKind::SelectExpr(_) => Err(IonError::runtime(
+                ion_str!("concurrency features require the 'concurrency' cargo feature")
+                    .to_string(),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
@@ -944,8 +1123,10 @@ impl Interpreter {
                     if *b == 0 {
                         Err(IonError::runtime(
                             ion_str!("division by zero").to_string(),
-                            span.line, span.col,
-                        ).into())
+                            span.line,
+                            span.col,
+                        )
+                        .into())
                     } else {
                         Ok(Value::Int(a / b))
                     }
@@ -960,8 +1141,10 @@ impl Interpreter {
                     if *b == 0 {
                         Err(IonError::runtime(
                             ion_str!("modulo by zero").to_string(),
-                            span.line, span.col,
-                        ).into())
+                            span.line,
+                            span.col,
+                        )
+                        .into())
                     } else {
                         Ok(Value::Int(a % b))
                     }
@@ -998,19 +1181,37 @@ impl Interpreter {
         }
     }
 
-    fn compare_values(&self, l: &Value, r: &Value, span: Span, f: impl Fn(std::cmp::Ordering) -> bool) -> SignalResult {
+    fn compare_values(
+        &self,
+        l: &Value,
+        r: &Value,
+        span: Span,
+        f: impl Fn(std::cmp::Ordering) -> bool,
+    ) -> SignalResult {
         let ord = match (l, r) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Float(a), Value::Float(b)) => {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            (Value::Int(a), Value::Float(b)) => (*a as f64)
+                .partial_cmp(b)
+                .unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Float(a), Value::Int(b)) => a
+                .partial_cmp(&(*b as f64))
+                .unwrap_or(std::cmp::Ordering::Equal),
             (Value::Str(a), Value::Str(b)) => a.cmp(b),
             _ => return Err(self.type_mismatch_err(ion_str!("compare"), l, r, span)),
         };
         Ok(Value::Bool(f(ord)))
     }
 
-    fn type_mismatch_err(&self, op: impl std::fmt::Display, l: &Value, r: &Value, span: Span) -> SignalOrError {
+    fn type_mismatch_err(
+        &self,
+        op: impl std::fmt::Display,
+        l: &Value,
+        r: &Value,
+        span: Span,
+    ) -> SignalOrError {
         IonError::type_err(
             format!(
                 "cannot apply '{}' to {} and {}",
@@ -1018,11 +1219,19 @@ impl Interpreter {
                 l.type_name(),
                 r.type_name(),
             ),
-            span.line, span.col,
-        ).into()
+            span.line,
+            span.col,
+        )
+        .into()
     }
 
-    fn apply_compound_op(&self, op: AssignOp, lhs: &Value, rhs: &Value, span: Span) -> SignalResult {
+    fn apply_compound_op(
+        &self,
+        op: AssignOp,
+        lhs: &Value,
+        rhs: &Value,
+        span: Span,
+    ) -> SignalResult {
         match op {
             AssignOp::PlusEq => self.eval_binop(BinOp::Add, lhs, rhs, span),
             AssignOp::MinusEq => self.eval_binop(BinOp::Sub, lhs, rhs, span),
@@ -1034,25 +1243,32 @@ impl Interpreter {
 
     fn field_access(&self, val: &Value, field: &str, span: Span) -> SignalResult {
         match val {
-            Value::Dict(map) => {
-                Ok(match map.get(field) {
-                    Some(v) => v.clone(),
-                    None => Value::Option(None),
-                })
-            }
-            Value::HostStruct { fields, .. } => {
-                Ok(match fields.get(field) {
-                    Some(v) => v.clone(),
-                    None => return Err(IonError::type_err(
-                        format!("{}{}", ion_str!("no field '"), format!("{}'{}", field, ion_str!(" on struct"))),
-                        span.line, span.col,
-                    ).into()),
-                })
-            }
+            Value::Dict(map) => Ok(match map.get(field) {
+                Some(v) => v.clone(),
+                None => Value::Option(None),
+            }),
+            Value::HostStruct { fields, .. } => Ok(match fields.get(field) {
+                Some(v) => v.clone(),
+                None => {
+                    return Err(IonError::type_err(
+                        format!(
+                            "{}{}{}",
+                            ion_str!("no field '"),
+                            field,
+                            ion_str!("' on struct")
+                        ),
+                        span.line,
+                        span.col,
+                    )
+                    .into())
+                }
+            }),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot access field on "), val.type_name()),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
@@ -1060,45 +1276,61 @@ impl Interpreter {
         match (val, idx) {
             (Value::List(items), Value::Int(i)) => {
                 let index = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
-                items.get(index)
-                    .cloned()
-                    .ok_or_else(|| IonError::runtime(
+                items.get(index).cloned().ok_or_else(|| {
+                    IonError::runtime(
                         ion_str!("list index out of bounds").to_string(),
-                        span.line, span.col,
-                    ).into())
-            }
-            (Value::Dict(map), Value::Str(key)) => {
-                Ok(match map.get(key.as_str()) {
-                    Some(v) => v.clone(),
-                    None => Value::Option(None),
+                        span.line,
+                        span.col,
+                    )
+                    .into()
                 })
             }
+            (Value::Dict(map), Value::Str(key)) => Ok(match map.get(key.as_str()) {
+                Some(v) => v.clone(),
+                None => Value::Option(None),
+            }),
             (Value::Bytes(bytes), Value::Int(i)) => {
                 let index = if *i < 0 { bytes.len() as i64 + i } else { *i } as usize;
-                bytes.get(index)
+                bytes
+                    .get(index)
                     .map(|&b| Value::Int(b as i64))
-                    .ok_or_else(|| IonError::runtime(
-                        ion_str!("bytes index out of bounds").to_string(),
-                        span.line, span.col,
-                    ).into())
+                    .ok_or_else(|| {
+                        IonError::runtime(
+                            ion_str!("bytes index out of bounds").to_string(),
+                            span.line,
+                            span.col,
+                        )
+                        .into()
+                    })
             }
             (Value::Str(s), Value::Int(i)) => {
-                let index = if *i < 0 { s.chars().count() as i64 + i } else { *i } as usize;
-                s.chars().nth(index)
+                let index = if *i < 0 {
+                    s.chars().count() as i64 + i
+                } else {
+                    *i
+                } as usize;
+                s.chars()
+                    .nth(index)
                     .map(|c| Value::Str(c.to_string()))
-                    .ok_or_else(|| IonError::runtime(
-                        ion_str!("string index out of bounds").to_string(),
-                        span.line, span.col,
-                    ).into())
+                    .ok_or_else(|| {
+                        IonError::runtime(
+                            ion_str!("string index out of bounds").to_string(),
+                            span.line,
+                            span.col,
+                        )
+                        .into()
+                    })
             }
             (Value::Tuple(items), Value::Int(i)) => {
                 let index = *i as usize;
-                items.get(index)
-                    .cloned()
-                    .ok_or_else(|| IonError::runtime(
+                items.get(index).cloned().ok_or_else(|| {
+                    IonError::runtime(
                         ion_str!("tuple index out of bounds").to_string(),
-                        span.line, span.col,
-                    ).into())
+                        span.line,
+                        span.col,
+                    )
+                    .into()
+                })
             }
             _ => Err(IonError::type_err(
                 format!(
@@ -1108,20 +1340,35 @@ impl Interpreter {
                     ion_str!(" with "),
                     idx.type_name(),
                 ),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn slice_access(&self, val: &Value, start: Option<&Value>, end: Option<&Value>, inclusive: bool, span: Span) -> SignalResult {
+    fn slice_access(
+        &self,
+        val: &Value,
+        start: Option<&Value>,
+        end: Option<&Value>,
+        inclusive: bool,
+        span: Span,
+    ) -> SignalResult {
         let get_idx = |v: Option<&Value>, default: i64| -> Result<i64, SignalOrError> {
             match v {
                 Some(Value::Int(n)) => Ok(*n),
                 None => Ok(default),
                 Some(other) => Err(IonError::type_err(
-                    format!("{}{}", ion_str!("slice index must be int, got "), other.type_name()),
-                    span.line, span.col,
-                ).into()),
+                    format!(
+                        "{}{}",
+                        ion_str!("slice index must be int, got "),
+                        other.type_name()
+                    ),
+                    span.line,
+                    span.col,
+                )
+                .into()),
             }
         };
 
@@ -1131,7 +1378,11 @@ impl Interpreter {
                 let s = get_idx(start, 0)?;
                 let e = get_idx(end, len)?;
                 let s = s.max(0).min(len) as usize;
-                let e = if inclusive { (e + 1).max(0).min(len) as usize } else { e.max(0).min(len) as usize };
+                let e = if inclusive {
+                    (e + 1).max(0).min(len) as usize
+                } else {
+                    e.max(0).min(len) as usize
+                };
                 Ok(Value::List(items[s..e].to_vec()))
             }
             Value::Str(string) => {
@@ -1140,7 +1391,11 @@ impl Interpreter {
                 let s = get_idx(start, 0)?;
                 let e = get_idx(end, len)?;
                 let s = s.max(0).min(len) as usize;
-                let e = if inclusive { (e + 1).max(0).min(len) as usize } else { e.max(0).min(len) as usize };
+                let e = if inclusive {
+                    (e + 1).max(0).min(len) as usize
+                } else {
+                    e.max(0).min(len) as usize
+                };
                 Ok(Value::Str(chars[s..e].iter().collect()))
             }
             Value::Bytes(bytes) => {
@@ -1148,17 +1403,29 @@ impl Interpreter {
                 let s = get_idx(start, 0)?;
                 let e = get_idx(end, len)?;
                 let s = s.max(0).min(len) as usize;
-                let e = if inclusive { (e + 1).max(0).min(len) as usize } else { e.max(0).min(len) as usize };
+                let e = if inclusive {
+                    (e + 1).max(0).min(len) as usize
+                } else {
+                    e.max(0).min(len) as usize
+                };
                 Ok(Value::Bytes(bytes[s..e].to_vec()))
             }
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot slice "), val.type_name()),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn method_call(&mut self, receiver: &Value, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn method_call(
+        &mut self,
+        receiver: &Value,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         match receiver {
             Value::List(items) => self.list_method(items, method, args, span),
             Value::Tuple(items) => self.tuple_method(items, method, args, span),
@@ -1179,12 +1446,20 @@ impl Interpreter {
                     ion_str!("' on "),
                     receiver.type_name(),
                 ),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn list_method(&mut self, items: &[Value], method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn list_method(
+        &mut self,
+        items: &[Value],
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         match method {
             "len" => Ok(Value::Int(items.len() as i64)),
             "push" => {
@@ -1198,14 +1473,17 @@ impl Interpreter {
                 } else {
                     let mut new_list = items.to_vec();
                     let popped = new_list.pop().unwrap();
-                    Ok(Value::Tuple(vec![Value::List(new_list), Value::Option(Some(Box::new(popped)))]))
+                    Ok(Value::Tuple(vec![
+                        Value::List(new_list),
+                        Value::Option(Some(Box::new(popped))),
+                    ]))
                 }
             }
             "map" => {
                 let func = &args[0];
                 let mut result = Vec::new();
                 for item in items {
-                    result.push(self.call_value(func, &[item.clone()], span)?);
+                    result.push(self.call_value(func, std::slice::from_ref(item), span)?);
                 }
                 Ok(Value::List(result))
             }
@@ -1213,7 +1491,7 @@ impl Interpreter {
                 let func = &args[0];
                 let mut result = Vec::new();
                 for item in items {
-                    let keep = self.call_value(func, &[item.clone()], span)?;
+                    let keep = self.call_value(func, std::slice::from_ref(item), span)?;
                     if keep.is_truthy() {
                         result.push(item.clone());
                     }
@@ -1232,7 +1510,7 @@ impl Interpreter {
                 let func = &args[0];
                 let mut result = Vec::new();
                 for item in items {
-                    let mapped = self.call_value(func, &[item.clone()], span)?;
+                    let mapped = self.call_value(func, std::slice::from_ref(item), span)?;
                     match mapped {
                         Value::List(sub) => result.extend(sub),
                         other => result.push(other),
@@ -1243,31 +1521,31 @@ impl Interpreter {
             "any" => {
                 let func = &args[0];
                 for item in items {
-                    let v = self.call_value(func, &[item.clone()], span)?;
-                    if v.is_truthy() { return Ok(Value::Bool(true)); }
+                    let v = self.call_value(func, std::slice::from_ref(item), span)?;
+                    if v.is_truthy() {
+                        return Ok(Value::Bool(true));
+                    }
                 }
                 Ok(Value::Bool(false))
             }
             "all" => {
                 let func = &args[0];
                 for item in items {
-                    let v = self.call_value(func, &[item.clone()], span)?;
-                    if !v.is_truthy() { return Ok(Value::Bool(false)); }
+                    let v = self.call_value(func, std::slice::from_ref(item), span)?;
+                    if !v.is_truthy() {
+                        return Ok(Value::Bool(false));
+                    }
                 }
                 Ok(Value::Bool(true))
             }
-            "first" => {
-                Ok(match items.first() {
-                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
-                    None => Value::Option(None),
-                })
-            }
-            "last" => {
-                Ok(match items.last() {
-                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
-                    None => Value::Option(None),
-                })
-            }
+            "first" => Ok(match items.first() {
+                Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                None => Value::Option(None),
+            }),
+            "last" => Ok(match items.last() {
+                Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                None => Value::Option(None),
+            }),
             "reverse" => {
                 let mut rev = items.to_vec();
                 rev.reverse();
@@ -1275,13 +1553,13 @@ impl Interpreter {
             }
             "sort" => {
                 let mut sorted = items.to_vec();
-                sorted.sort_by(|a, b| {
-                    match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
-                        _ => std::cmp::Ordering::Equal,
+                sorted.sort_by(|a, b| match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                    (Value::Float(x), Value::Float(y)) => {
+                        x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
                     }
+                    (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                    _ => std::cmp::Ordering::Equal,
                 });
                 Ok(Value::List(sorted))
             }
@@ -1298,15 +1576,19 @@ impl Interpreter {
             }
             "zip" => {
                 if let Value::List(other) = &args[0] {
-                    let result: Vec<Value> = items.iter().zip(other.iter())
+                    let result: Vec<Value> = items
+                        .iter()
+                        .zip(other.iter())
                         .map(|(a, b)| Value::Tuple(vec![a.clone(), b.clone()]))
                         .collect();
                     Ok(Value::List(result))
                 } else {
                     Err(IonError::type_err(
                         ion_str!("zip requires a list argument").to_string(),
-                        span.line, span.col,
-                    ).into())
+                        span.line,
+                        span.col,
+                    )
+                    .into())
                 }
             }
             "contains" => {
@@ -1317,30 +1599,49 @@ impl Interpreter {
                 let sep = if args.is_empty() {
                     String::new()
                 } else {
-                    args[0].as_str().ok_or_else(|| IonError::type_err(
-                        ion_str!("join separator must be a string").to_string(),
-                        span.line, span.col,
-                    ))?.to_string()
+                    args[0]
+                        .as_str()
+                        .ok_or_else(|| {
+                            IonError::type_err(
+                                ion_str!("join separator must be a string").to_string(),
+                                span.line,
+                                span.col,
+                            )
+                        })?
+                        .to_string()
                 };
                 let parts: Vec<String> = items.iter().map(|v| v.to_string()).collect();
                 Ok(Value::Str(parts.join(&sep)))
             }
-            "enumerate" => {
-                Ok(Value::List(
-                    items.iter().enumerate()
-                        .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
-                        .collect()
-                ))
-            }
+            "enumerate" => Ok(Value::List(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
+                    .collect(),
+            )),
             "is_empty" => Ok(Value::Bool(items.is_empty())),
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on list")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on list")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn tuple_method(&self, items: &[Value], method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn tuple_method(
+        &self,
+        items: &[Value],
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         match method {
             "len" => Ok(Value::Int(items.len() as i64)),
             "contains" => {
@@ -1349,9 +1650,16 @@ impl Interpreter {
             }
             "to_list" => Ok(Value::List(items.to_vec())),
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on tuple")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on tuple")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
@@ -1359,40 +1667,64 @@ impl Interpreter {
         match method {
             "len" => Ok(Value::Int(s.len() as i64)),
             "contains" => {
-                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("contains requires string argument").to_string(), span.line, span.col,
-                ))?;
+                let sub = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("contains requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(Value::Bool(s.contains(sub)))
             }
             "starts_with" => {
-                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("starts_with requires string argument").to_string(), span.line, span.col,
-                ))?;
+                let sub = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("starts_with requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(Value::Bool(s.starts_with(sub)))
             }
             "ends_with" => {
-                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("ends_with requires string argument").to_string(), span.line, span.col,
-                ))?;
+                let sub = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("ends_with requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(Value::Bool(s.ends_with(sub)))
             }
             "trim" => Ok(Value::Str(s.trim().to_string())),
             "to_upper" => Ok(Value::Str(s.to_uppercase())),
             "to_lower" => Ok(Value::Str(s.to_lowercase())),
             "split" => {
-                let delim = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("split requires string argument").to_string(), span.line, span.col,
-                ))?;
+                let delim = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("split requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 let parts: Vec<Value> = s.split(delim).map(|p| Value::Str(p.to_string())).collect();
                 Ok(Value::List(parts))
             }
             "replace" => {
-                let from = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("replace requires string arguments").to_string(), span.line, span.col,
-                ))?;
-                let to = args[1].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("replace requires string arguments").to_string(), span.line, span.col,
-                ))?;
+                let from = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("replace requires string arguments").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
+                let to = args[1].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("replace requires string arguments").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(Value::Str(s.replace(from, to)))
             }
             "chars" => {
@@ -1403,36 +1735,46 @@ impl Interpreter {
             "trim_start" => Ok(Value::Str(s.trim_start().to_string())),
             "trim_end" => Ok(Value::Str(s.trim_end().to_string())),
             "repeat" => {
-                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| IonError::type_err(
-                    ion_str!("repeat requires int argument").to_string(), span.line, span.col,
-                ))?;
+                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("repeat requires int argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(Value::Str(s.repeat(n as usize)))
             }
             "find" => {
-                let sub = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("find requires string argument").to_string(), span.line, span.col,
-                ))?;
+                let sub = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("find requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(match s.find(sub) {
                     Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
                     None => Value::Option(None),
                 })
             }
-            "to_int" => {
-                Ok(match s.trim().parse::<i64>() {
-                    std::result::Result::Ok(n) => Value::Result(Ok(Box::new(Value::Int(n)))),
-                    std::result::Result::Err(e) => Value::Result(Err(Box::new(Value::Str(e.to_string())))),
-                })
-            }
-            "to_float" => {
-                Ok(match s.trim().parse::<f64>() {
-                    std::result::Result::Ok(f) => Value::Result(Ok(Box::new(Value::Float(f)))),
-                    std::result::Result::Err(e) => Value::Result(Err(Box::new(Value::Str(e.to_string())))),
-                })
-            }
+            "to_int" => Ok(match s.trim().parse::<i64>() {
+                std::result::Result::Ok(n) => Value::Result(Ok(Box::new(Value::Int(n)))),
+                std::result::Result::Err(e) => {
+                    Value::Result(Err(Box::new(Value::Str(e.to_string()))))
+                }
+            }),
+            "to_float" => Ok(match s.trim().parse::<f64>() {
+                std::result::Result::Ok(f) => Value::Result(Ok(Box::new(Value::Float(f)))),
+                std::result::Result::Err(e) => {
+                    Value::Result(Err(Box::new(Value::Str(e.to_string()))))
+                }
+            }),
             "reverse" => Ok(Value::Str(s.chars().rev().collect())),
             "slice" => {
                 let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args.get(1).and_then(|a| a.as_int())
+                let end = args
+                    .get(1)
+                    .and_then(|a| a.as_int())
                     .map(|n| n as usize)
                     .unwrap_or(s.len());
                 let start = start.min(s.len());
@@ -1440,9 +1782,16 @@ impl Interpreter {
                 Ok(Value::Str(s[start..end].to_string()))
             }
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on string")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on string")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
@@ -1451,43 +1800,49 @@ impl Interpreter {
             "len" => Ok(Value::Int(bytes.len() as i64)),
             "is_empty" => Ok(Value::Bool(bytes.is_empty())),
             "contains" => {
-                let byte = args.first()
-                    .and_then(|a| a.as_int())
-                    .ok_or_else(|| IonError::type_err(
+                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err(
                         ion_str!("bytes.contains() requires an int argument").to_string(),
-                        span.line, span.col,
-                    ))?;
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(Value::Bool(bytes.contains(&(byte as u8))))
             }
             "slice" => {
                 let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args.get(1).and_then(|a| a.as_int())
+                let end = args
+                    .get(1)
+                    .and_then(|a| a.as_int())
                     .map(|n| n as usize)
                     .unwrap_or(bytes.len());
                 let start = start.min(bytes.len());
                 let end = end.min(bytes.len());
                 Ok(Value::Bytes(bytes[start..end].to_vec()))
             }
-            "to_list" => {
-                Ok(Value::List(bytes.iter().map(|&b| Value::Int(b as i64)).collect()))
-            }
-            "to_str" => {
-                match std::str::from_utf8(bytes) {
-                    std::result::Result::Ok(s) => Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string()))))),
-                    std::result::Result::Err(e) => Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e)))))),
+            "to_list" => Ok(Value::List(
+                bytes.iter().map(|&b| Value::Int(b as i64)).collect(),
+            )),
+            "to_str" => match std::str::from_utf8(bytes) {
+                std::result::Result::Ok(s) => {
+                    Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string())))))
                 }
-            }
+                std::result::Result::Err(e) => {
+                    Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e))))))
+                }
+            },
             "to_hex" => {
                 let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
                 Ok(Value::Str(hex))
             }
             "find" => {
-                let needle = args.first()
-                    .and_then(|a| a.as_int())
-                    .ok_or_else(|| IonError::type_err(
+                let needle = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err(
                         ion_str!("bytes.find() requires an int argument").to_string(),
-                        span.line, span.col,
-                    ))?;
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 let pos = bytes.iter().position(|&b| b == needle as u8);
                 Ok(match pos {
                     Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
@@ -1500,12 +1855,13 @@ impl Interpreter {
                 Ok(Value::Bytes(rev))
             }
             "push" => {
-                let byte = args.first()
-                    .and_then(|a| a.as_int())
-                    .ok_or_else(|| IonError::type_err(
+                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err(
                         ion_str!("bytes.push() requires an int argument").to_string(),
-                        span.line, span.col,
-                    ))?;
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 let mut new = bytes.to_vec();
                 new.push(byte as u8);
                 Ok(Value::Bytes(new))
@@ -1518,46 +1874,74 @@ impl Interpreter {
                     ion_str!("' on "),
                     ion_str!("bytes"),
                 ),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn dict_method(&self, map: &IndexMap<String, Value>, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn dict_method(
+        &self,
+        map: &IndexMap<String, Value>,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         match method {
             "len" => Ok(Value::Int(map.len() as i64)),
-            "keys" => Ok(Value::List(map.keys().map(|k| Value::Str(k.clone())).collect())),
+            "keys" => Ok(Value::List(
+                map.keys().map(|k| Value::Str(k.clone())).collect(),
+            )),
             "values" => Ok(Value::List(map.values().cloned().collect())),
             "entries" => Ok(Value::List(
-                map.iter().map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()])).collect()
+                map.iter()
+                    .map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()]))
+                    .collect(),
             )),
             "contains_key" => {
-                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("contains_key requires string argument").to_string(), span.line, span.col,
-                ))?;
+                let key = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("contains_key requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(Value::Bool(map.contains_key(key)))
             }
             "get" => {
-                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("get requires string argument").to_string(), span.line, span.col,
-                ))?;
+                let key = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("get requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 Ok(match map.get(key) {
                     Some(v) => Value::Option(Some(Box::new(v.clone()))),
                     None => Value::Option(None),
                 })
             }
             "insert" => {
-                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("insert requires string key").to_string(), span.line, span.col,
-                ))?;
+                let key = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("insert requires string key").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 let mut new_map = map.clone();
                 new_map.insert(key.to_string(), args[1].clone());
                 Ok(Value::Dict(new_map))
             }
             "remove" => {
-                let key = args[0].as_str().ok_or_else(|| IonError::type_err(
-                    ion_str!("remove requires string key").to_string(), span.line, span.col,
-                ))?;
+                let key = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("remove requires string key").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 let mut new_map = map.clone();
                 new_map.shift_remove(key);
                 Ok(Value::Dict(new_map))
@@ -1572,19 +1956,34 @@ impl Interpreter {
                 } else {
                     Err(IonError::type_err(
                         ion_str!("merge requires a dict argument").to_string(),
-                        span.line, span.col,
-                    ).into())
+                        span.line,
+                        span.col,
+                    )
+                    .into())
                 }
             }
             "is_empty" => Ok(Value::Bool(map.is_empty())),
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on dict")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on dict")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn option_method(&mut self, opt: Option<Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn option_method(
+        &mut self,
+        opt: Option<Box<Value>>,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         match method {
             "is_some" => Ok(Value::Bool(opt.is_some())),
             "is_none" => Ok(Value::Bool(opt.is_none())),
@@ -1632,13 +2031,26 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Option")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on Option")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn result_method(&mut self, res: Result<Box<Value>, Box<Value>>, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn result_method(
+        &mut self,
+        res: Result<Box<Value>, Box<Value>>,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         match method {
             "is_ok" => Ok(Value::Bool(res.is_ok())),
             "is_err" => Ok(Value::Bool(res.is_err())),
@@ -1651,9 +2063,7 @@ impl Interpreter {
                 Err(e) => {
                     let default_msg = ion_str!("expect failed");
                     let msg = args[0].as_str().unwrap_or(&default_msg);
-                    Err(IonError::runtime(
-                        format!("{}: {}", msg, e), span.line, span.col,
-                    ).into())
+                    Err(IonError::runtime(format!("{}: {}", msg, e), span.line, span.col).into())
                 }
             },
             "map" => {
@@ -1698,9 +2108,16 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Result")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on Result")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
@@ -1710,8 +2127,10 @@ impl Interpreter {
                 if self.call_depth >= self.limits.max_call_depth {
                     return Err(IonError::runtime(
                         ion_str!("maximum call depth exceeded").to_string(),
-                        span.line, span.col,
-                    ).into());
+                        span.line,
+                        span.col,
+                    )
+                    .into());
                 }
                 self.call_depth += 1;
                 self.env.push_scope();
@@ -1736,8 +2155,10 @@ impl Interpreter {
                                 ion_str!(" arguments, got "),
                                 args.len(),
                             ),
-                            span.line, span.col,
-                        ).into());
+                            span.line,
+                            span.col,
+                        )
+                        .into());
                     };
                     self.env.define(param.name.clone(), val, false);
                 }
@@ -1747,18 +2168,18 @@ impl Interpreter {
                 match result {
                     Ok(v) => Ok(v),
                     Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
-                    Err(SignalOrError::Signal(Signal::Break(_))) => {
-                        Err(IonError::runtime(
-                            ion_str!("break outside of loop").to_string(),
-                            span.line, span.col,
-                        ).into())
-                    }
-                    Err(SignalOrError::Signal(Signal::Continue)) => {
-                        Err(IonError::runtime(
-                            ion_str!("continue outside of loop").to_string(),
-                            span.line, span.col,
-                        ).into())
-                    }
+                    Err(SignalOrError::Signal(Signal::Break(_))) => Err(IonError::runtime(
+                        ion_str!("break outside of loop").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into()),
+                    Err(SignalOrError::Signal(Signal::Continue)) => Err(IonError::runtime(
+                        ion_str!("continue outside of loop").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into()),
                     Err(SignalOrError::Error(e)) => {
                         // Convert ? propagation into values at function boundary
                         if e.kind == ErrorKind::PropagatedErr {
@@ -1776,12 +2197,19 @@ impl Interpreter {
             }
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("not callable: "), func.type_name()),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn call_with_named(&mut self, func: &Value, named_args: Vec<(Option<String>, Value)>, span: Span) -> SignalResult {
+    fn call_with_named(
+        &mut self,
+        func: &Value,
+        named_args: Vec<(Option<String>, Value)>,
+        span: Span,
+    ) -> SignalResult {
         match func {
             Value::Fn(ion_fn) => {
                 // Reorder named args to match parameter positions
@@ -1790,16 +2218,23 @@ impl Interpreter {
                 for (name, val) in named_args {
                     if let Some(name) = name {
                         // Find param by name
-                        let param_idx = ion_fn.params.iter().position(|p| p.name == name)
-                            .ok_or_else(|| IonError::runtime(
-                                format!("{}{}{}{}",
-                                    ion_str!("unknown parameter '"),
-                                    name,
-                                    ion_str!("' for function '"),
-                                    ion_fn.name,
-                                ),
-                                span.line, span.col,
-                            ))?;
+                        let param_idx = ion_fn
+                            .params
+                            .iter()
+                            .position(|p| p.name == name)
+                            .ok_or_else(|| {
+                                IonError::runtime(
+                                    format!(
+                                        "{}{}{}{}",
+                                        ion_str!("unknown parameter '"),
+                                        name,
+                                        ion_str!("' for function '"),
+                                        ion_fn.name,
+                                    ),
+                                    span.line,
+                                    span.col,
+                                )
+                            })?;
                         ordered[param_idx] = Some(val);
                     } else {
                         // Positional arg — fill next empty slot
@@ -1813,13 +2248,18 @@ impl Interpreter {
                     }
                 }
                 // Convert to flat args, using None for unfilled slots (defaults will handle them)
-                let args: Vec<Value> = ordered.into_iter().map(|v| v.unwrap_or(Value::Unit)).collect();
+                let args: Vec<Value> = ordered
+                    .into_iter()
+                    .map(|v| v.unwrap_or(Value::Unit))
+                    .collect();
                 // Use call_value with the reordered args, but handle defaults specially
                 if self.call_depth >= self.limits.max_call_depth {
                     return Err(IonError::runtime(
                         ion_str!("maximum call depth exceeded").to_string(),
-                        span.line, span.col,
-                    ).into());
+                        span.line,
+                        span.col,
+                    )
+                    .into());
                 }
                 self.call_depth += 1;
                 self.env.push_scope();
@@ -1839,8 +2279,10 @@ impl Interpreter {
                                 param.name,
                                 ion_str!("'"),
                             ),
-                            span.line, span.col,
-                        ).into());
+                            span.line,
+                            span.col,
+                        )
+                        .into());
                     };
                     self.env.define(param.name.clone(), val, false);
                 }
@@ -1871,15 +2313,18 @@ impl Interpreter {
         match val {
             Value::List(items) => Ok(items.clone()),
             Value::Tuple(items) => Ok(items.clone()),
-            Value::Dict(map) => Ok(map.iter()
+            Value::Dict(map) => Ok(map
+                .iter()
                 .map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()]))
                 .collect()),
             Value::Str(s) => Ok(s.chars().map(|c| Value::Str(c.to_string())).collect()),
             Value::Bytes(bytes) => Ok(bytes.iter().map(|&b| Value::Int(b as i64)).collect()),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot iterate over "), val.type_name()),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
@@ -1899,29 +2344,64 @@ impl Interpreter {
             (Pattern::Ok(p), Value::Result(Ok(v))) => self.pattern_matches(p, v),
             (Pattern::Err(p), Value::Result(Err(v))) => self.pattern_matches(p, v),
             (Pattern::Tuple(pats), Value::Tuple(vals)) => {
-                pats.len() == vals.len() && pats.iter().zip(vals).all(|(p, v)| self.pattern_matches(p, v))
+                pats.len() == vals.len()
+                    && pats
+                        .iter()
+                        .zip(vals)
+                        .all(|(p, v)| self.pattern_matches(p, v))
             }
             (Pattern::List(pats, rest), Value::List(vals)) => {
                 if rest.is_some() {
-                    vals.len() >= pats.len() && pats.iter().zip(vals).all(|(p, v)| self.pattern_matches(p, v))
+                    vals.len() >= pats.len()
+                        && pats
+                            .iter()
+                            .zip(vals)
+                            .all(|(p, v)| self.pattern_matches(p, v))
                 } else {
-                    pats.len() == vals.len() && pats.iter().zip(vals).all(|(p, v)| self.pattern_matches(p, v))
+                    pats.len() == vals.len()
+                        && pats
+                            .iter()
+                            .zip(vals)
+                            .all(|(p, v)| self.pattern_matches(p, v))
                 }
             }
-            (Pattern::EnumVariant { enum_name, variant, fields },
-             Value::HostEnum { enum_name: en, variant: v, data }) => {
-                if enum_name != en || variant != v { return false; }
+            (
+                Pattern::EnumVariant {
+                    enum_name,
+                    variant,
+                    fields,
+                },
+                Value::HostEnum {
+                    enum_name: en,
+                    variant: v,
+                    data,
+                },
+            ) => {
+                if enum_name != en || variant != v {
+                    return false;
+                }
                 match fields {
                     EnumPatternFields::None => data.is_empty(),
                     EnumPatternFields::Positional(pats) => {
-                        pats.len() == data.len() && pats.iter().zip(data).all(|(p, v)| self.pattern_matches(p, v))
+                        pats.len() == data.len()
+                            && pats
+                                .iter()
+                                .zip(data)
+                                .all(|(p, v)| self.pattern_matches(p, v))
                     }
                     EnumPatternFields::Named(_) => false, // named fields not applicable to enum data
                 }
             }
-            (Pattern::Struct { name, fields },
-             Value::HostStruct { type_name, fields: val_fields }) => {
-                if name != type_name { return false; }
+            (
+                Pattern::Struct { name, fields },
+                Value::HostStruct {
+                    type_name,
+                    fields: val_fields,
+                },
+            ) => {
+                if name != type_name {
+                    return false;
+                }
                 fields.iter().all(|(fname, fpat)| {
                     match val_fields.get(fname) {
                         Some(v) => match fpat {
@@ -1936,14 +2416,28 @@ impl Interpreter {
         }
     }
 
-    fn bind_pattern(&mut self, pattern: &Pattern, val: &Value, mutable: bool, span: Span) -> Result<(), SignalOrError> {
+    fn bind_pattern(
+        &mut self,
+        pattern: &Pattern,
+        val: &Value,
+        mutable: bool,
+        span: Span,
+    ) -> Result<(), SignalOrError> {
         match (pattern, val) {
             (Pattern::Wildcard, _) => Ok(()),
             (Pattern::Ident(name), _) => {
                 self.env.define(name.clone(), val.clone(), mutable);
                 Ok(())
             }
-            (Pattern::Int(_) | Pattern::Float(_) | Pattern::Bool(_) | Pattern::Str(_) | Pattern::Bytes(_) | Pattern::None, _) => Ok(()),
+            (
+                Pattern::Int(_)
+                | Pattern::Float(_)
+                | Pattern::Bool(_)
+                | Pattern::Str(_)
+                | Pattern::Bytes(_)
+                | Pattern::None,
+                _,
+            ) => Ok(()),
             (Pattern::Some(p), Value::Option(Some(v))) => self.bind_pattern(p, v, mutable, span),
             (Pattern::Ok(p), Value::Result(Ok(v))) => self.bind_pattern(p, v, mutable, span),
             (Pattern::Err(p), Value::Result(Err(v))) => self.bind_pattern(p, v, mutable, span),
@@ -1963,21 +2457,22 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            (Pattern::EnumVariant { fields, .. },
-             Value::HostEnum { data, .. }) => {
-                match fields {
-                    EnumPatternFields::None => Ok(()),
-                    EnumPatternFields::Positional(pats) => {
-                        for (p, v) in pats.iter().zip(data) {
-                            self.bind_pattern(p, v, mutable, span)?;
-                        }
-                        Ok(())
+            (Pattern::EnumVariant { fields, .. }, Value::HostEnum { data, .. }) => match fields {
+                EnumPatternFields::None => Ok(()),
+                EnumPatternFields::Positional(pats) => {
+                    for (p, v) in pats.iter().zip(data) {
+                        self.bind_pattern(p, v, mutable, span)?;
                     }
-                    EnumPatternFields::Named(_) => Ok(()),
+                    Ok(())
                 }
-            }
-            (Pattern::Struct { fields, .. },
-             Value::HostStruct { fields: val_fields, .. }) => {
+                EnumPatternFields::Named(_) => Ok(()),
+            },
+            (
+                Pattern::Struct { fields, .. },
+                Value::HostStruct {
+                    fields: val_fields, ..
+                },
+            ) => {
                 for (fname, fpat) in fields {
                     if let Some(v) = val_fields.get(fname) {
                         match fpat {
@@ -1990,8 +2485,10 @@ impl Interpreter {
             }
             _ => Err(IonError::runtime(
                 ion_str!("pattern match failed in binding").to_string(),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 }
@@ -2022,15 +2519,17 @@ impl Interpreter {
 
     fn eval_spawn(&mut self, expr: &Expr, span: Span) -> SignalResult {
         use crate::async_rt::TaskHandle;
-        use std::sync::Arc;
         use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
 
         // Require being inside an async block
         if self.nursery.is_none() {
             return Err(IonError::runtime(
                 ion_str!("spawn is only allowed inside async {}").to_string(),
-                span.line, span.col,
-            ).into());
+                span.line,
+                span.col,
+            )
+            .into());
         }
 
         // Capture current environment for the spawned task
@@ -2053,7 +2552,10 @@ impl Interpreter {
             // Evaluate the expression
             let program = crate::ast::Program {
                 stmts: vec![crate::ast::Stmt {
-                    kind: crate::ast::StmtKind::ExprStmt { expr: expr_clone, has_semi: false },
+                    kind: crate::ast::StmtKind::ExprStmt {
+                        expr: expr_clone,
+                        has_semi: false,
+                    },
                     span: crate::ast::Span { line: 0, col: 0 },
                 }],
             };
@@ -2073,13 +2575,13 @@ impl Interpreter {
     fn eval_await(&mut self, expr: &Expr, span: Span) -> SignalResult {
         let val = self.eval_expr(expr)?;
         match val {
-            Value::Task(handle) => {
-                handle.join().map_err(SignalOrError::Error)
-            }
+            Value::Task(handle) => handle.join().map_err(SignalOrError::Error),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot await "), val.type_name()),
-                span.line, span.col,
-            ).into()),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
@@ -2104,7 +2606,10 @@ impl Interpreter {
                 }
                 let program = crate::ast::Program {
                     stmts: vec![crate::ast::Stmt {
-                        kind: crate::ast::StmtKind::ExprStmt { expr: expr_clone, has_semi: false },
+                        kind: crate::ast::StmtKind::ExprStmt {
+                            expr: expr_clone,
+                            has_semi: false,
+                        },
                         span: crate::ast::Span { line: 0, col: 0 },
                     }],
                 };
@@ -2132,7 +2637,13 @@ impl Interpreter {
         }
     }
 
-    fn task_method(&self, handle: &std::sync::Arc<crate::async_rt::TaskHandle>, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn task_method(
+        &self,
+        handle: &std::sync::Arc<crate::async_rt::TaskHandle>,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         match method {
             "is_finished" => Ok(Value::Bool(handle.is_finished())),
             "cancel" => {
@@ -2141,11 +2652,13 @@ impl Interpreter {
             }
             "is_cancelled" => Ok(Value::Bool(handle.is_cancelled())),
             "await_timeout" => {
-                let ms = args.first()
-                    .and_then(|v| v.as_int())
-                    .ok_or_else(|| IonError::runtime(
-                        ion_str!("await_timeout requires int (ms)").to_string(), span.line, span.col,
-                    ))?;
+                let ms = args.first().and_then(|v| v.as_int()).ok_or_else(|| {
+                    IonError::runtime(
+                        ion_str!("await_timeout requires int (ms)").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 match handle.join_timeout(std::time::Duration::from_millis(ms as u64)) {
                     Some(result) => {
                         let val = result.map_err(SignalOrError::Error)?;
@@ -2155,32 +2668,55 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Task")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on Task")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 
-    fn channel_method(&self, ch: &crate::async_rt::ChannelEnd, method: &str, args: &[Value], span: Span) -> SignalResult {
+    fn channel_method(
+        &self,
+        ch: &crate::async_rt::ChannelEnd,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
         use crate::async_rt::ChannelEnd;
         match (ch, method) {
             (ChannelEnd::Sender(tx), "send") => {
                 if args.is_empty() {
                     return Err(IonError::runtime(
-                        ion_str!("send requires a value").to_string(), span.line, span.col,
-                    ).into());
+                        ion_str!("send requires a value").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
                 }
                 let guard = tx.lock().unwrap();
                 match guard.as_ref() {
                     Some(sender) => {
                         sender.send(args[0].clone()).map_err(|e| {
-                            IonError::runtime(format!("{}{}", ion_str!("channel send failed: "), e), span.line, span.col)
+                            IonError::runtime(
+                                format!("{}{}", ion_str!("channel send failed: "), e),
+                                span.line,
+                                span.col,
+                            )
                         })?;
                         Ok(Value::Unit)
                     }
                     None => Err(IonError::runtime(
-                        ion_str!("channel is closed").to_string(), span.line, span.col,
-                    ).into()),
+                        ion_str!("channel is closed").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into()),
                 }
             }
             (ChannelEnd::Sender(tx), "close") => {
@@ -2205,12 +2741,19 @@ impl Interpreter {
             (ChannelEnd::Receiver(rx), "recv_timeout") => {
                 if args.is_empty() {
                     return Err(IonError::runtime(
-                        ion_str!("recv_timeout requires a timeout in ms").to_string(), span.line, span.col,
-                    ).into());
+                        ion_str!("recv_timeout requires a timeout in ms").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
                 }
-                let ms = args[0].as_int().ok_or_else(|| IonError::runtime(
-                    ion_str!("recv_timeout requires int (ms)").to_string(), span.line, span.col,
-                ))?;
+                let ms = args[0].as_int().ok_or_else(|| {
+                    IonError::runtime(
+                        ion_str!("recv_timeout requires int (ms)").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
                 let receiver = rx.lock().unwrap();
                 match receiver.recv_timeout(std::time::Duration::from_millis(ms as u64)) {
                     Ok(v) => Ok(Value::Option(Some(Box::new(v)))),
@@ -2218,9 +2761,16 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!("{}{}{}", ion_str!("no method '"), method, ion_str!("' on Channel")),
-                span.line, span.col,
-            ).into()),
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on Channel")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
         }
     }
 }
@@ -2246,32 +2796,32 @@ pub fn register_builtins(env: &mut Env) {
     );
     env.define(
         ion_str!("len").to_string(),
-        Value::BuiltinFn(ion_str!("len").to_string(), |args| {
-            match &args[0] {
-                Value::List(items) => Ok(Value::Int(items.len() as i64)),
-                Value::Str(s) => Ok(Value::Int(s.len() as i64)),
-                Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
-                Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
-                _ => Err(format!("{}{}", ion_str!("len() not supported for "), args[0].type_name())),
-            }
+        Value::BuiltinFn(ion_str!("len").to_string(), |args| match &args[0] {
+            Value::List(items) => Ok(Value::Int(items.len() as i64)),
+            Value::Str(s) => Ok(Value::Int(s.len() as i64)),
+            Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
+            Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("len() not supported for "),
+                args[0].type_name()
+            )),
         }),
         false,
     );
     env.define(
         ion_str!("range").to_string(),
-        Value::BuiltinFn(ion_str!("range").to_string(), |args| {
-            match args.len() {
-                1 => {
-                    let n = args[0].as_int().ok_or(ion_str!("range requires int"))?;
-                    Ok(Value::List((0..n).map(Value::Int).collect()))
-                }
-                2 => {
-                    let start = args[0].as_int().ok_or(ion_str!("range requires int"))?;
-                    let end = args[1].as_int().ok_or(ion_str!("range requires int"))?;
-                    Ok(Value::List((start..end).map(Value::Int).collect()))
-                }
-                _ => Err(ion_str!("range takes 1 or 2 arguments").to_string()),
+        Value::BuiltinFn(ion_str!("range").to_string(), |args| match args.len() {
+            1 => {
+                let n = args[0].as_int().ok_or(ion_str!("range requires int"))?;
+                Ok(Value::List((0..n).map(Value::Int).collect()))
             }
+            2 => {
+                let start = args[0].as_int().ok_or(ion_str!("range requires int"))?;
+                let end = args[1].as_int().ok_or(ion_str!("range requires int"))?;
+                Ok(Value::List((start..end).map(Value::Int).collect()))
+            }
+            _ => Err(ion_str!("range takes 1 or 2 arguments").to_string()),
         }),
         false,
     );
@@ -2299,7 +2849,9 @@ pub fn register_builtins(env: &mut Env) {
             if args.len() != 1 {
                 return Err(ion_str!("json_decode takes 1 argument"));
             }
-            let s = args[0].as_str().ok_or_else(|| ion_str!("json_decode requires a string"))?;
+            let s = args[0]
+                .as_str()
+                .ok_or_else(|| ion_str!("json_decode requires a string"))?;
             let json: serde_json::Value = serde_json::from_str(s)
                 .map_err(|e| format!("{}{}", ion_str!("json_decode error: "), e))?;
             Ok(Value::from_json(json))
@@ -2308,26 +2860,46 @@ pub fn register_builtins(env: &mut Env) {
     );
     env.define(
         ion_str!("abs").to_string(),
-        Value::BuiltinFn(ion_str!("abs").to_string(), |args| {
-            match &args[0] {
-                Value::Int(n) => Ok(Value::Int(n.abs())),
-                Value::Float(n) => Ok(Value::Float(n.abs())),
-                _ => Err(format!("{}{}", ion_str!("abs() not supported for "), args[0].type_name())),
-            }
+        Value::BuiltinFn(ion_str!("abs").to_string(), |args| match &args[0] {
+            Value::Int(n) => Ok(Value::Int(n.abs())),
+            Value::Float(n) => Ok(Value::Float(n.abs())),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("abs() not supported for "),
+                args[0].type_name()
+            )),
         }),
         false,
     );
     env.define(
         ion_str!("min").to_string(),
         Value::BuiltinFn(ion_str!("min").to_string(), |args| {
-            if args.len() < 2 { return Err(ion_str!("min requires at least 2 arguments")); }
+            if args.len() < 2 {
+                return Err(ion_str!("min requires at least 2 arguments"));
+            }
             let mut best = args[0].clone();
             for arg in &args[1..] {
                 match (&best, arg) {
-                    (Value::Int(a), Value::Int(b)) => { if b < a { best = arg.clone(); } }
-                    (Value::Float(a), Value::Float(b)) => { if b < a { best = arg.clone(); } }
-                    (Value::Int(a), Value::Float(b)) => { if *b < (*a as f64) { best = arg.clone(); } }
-                    (Value::Float(a), Value::Int(b)) => { if (*b as f64) < *a { best = arg.clone(); } }
+                    (Value::Int(a), Value::Int(b)) => {
+                        if b < a {
+                            best = arg.clone();
+                        }
+                    }
+                    (Value::Float(a), Value::Float(b)) => {
+                        if b < a {
+                            best = arg.clone();
+                        }
+                    }
+                    (Value::Int(a), Value::Float(b)) => {
+                        if *b < (*a as f64) {
+                            best = arg.clone();
+                        }
+                    }
+                    (Value::Float(a), Value::Int(b)) => {
+                        if (*b as f64) < *a {
+                            best = arg.clone();
+                        }
+                    }
                     _ => return Err(ion_str!("min requires numeric arguments")),
                 }
             }
@@ -2338,14 +2910,32 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("max").to_string(),
         Value::BuiltinFn(ion_str!("max").to_string(), |args| {
-            if args.len() < 2 { return Err(ion_str!("max requires at least 2 arguments")); }
+            if args.len() < 2 {
+                return Err(ion_str!("max requires at least 2 arguments"));
+            }
             let mut best = args[0].clone();
             for arg in &args[1..] {
                 match (&best, arg) {
-                    (Value::Int(a), Value::Int(b)) => { if b > a { best = arg.clone(); } }
-                    (Value::Float(a), Value::Float(b)) => { if b > a { best = arg.clone(); } }
-                    (Value::Int(a), Value::Float(b)) => { if *b > (*a as f64) { best = arg.clone(); } }
-                    (Value::Float(a), Value::Int(b)) => { if (*b as f64) > *a { best = arg.clone(); } }
+                    (Value::Int(a), Value::Int(b)) => {
+                        if b > a {
+                            best = arg.clone();
+                        }
+                    }
+                    (Value::Float(a), Value::Float(b)) => {
+                        if b > a {
+                            best = arg.clone();
+                        }
+                    }
+                    (Value::Int(a), Value::Float(b)) => {
+                        if *b > (*a as f64) {
+                            best = arg.clone();
+                        }
+                    }
+                    (Value::Float(a), Value::Int(b)) => {
+                        if (*b as f64) > *a {
+                            best = arg.clone();
+                        }
+                    }
                     _ => return Err(ion_str!("max requires numeric arguments")),
                 }
             }
@@ -2356,7 +2946,9 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("str").to_string(),
         Value::BuiltinFn(ion_str!("str").to_string(), |args| {
-            if args.len() != 1 { return Err(ion_str!("str takes 1 argument")); }
+            if args.len() != 1 {
+                return Err(ion_str!("str takes 1 argument"));
+            }
             Ok(Value::Str(args[0].to_string()))
         }),
         false,
@@ -2364,14 +2956,26 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("int").to_string(),
         Value::BuiltinFn(ion_str!("int").to_string(), |args| {
-            if args.len() != 1 { return Err(ion_str!("int takes 1 argument")); }
+            if args.len() != 1 {
+                return Err(ion_str!("int takes 1 argument"));
+            }
             match &args[0] {
                 Value::Int(n) => Ok(Value::Int(*n)),
                 Value::Float(n) => Ok(Value::Int(*n as i64)),
-                Value::Str(s) => s.parse::<i64>().map(Value::Int)
-                    .map_err(|_| format!("{}{}{}", ion_str!("cannot convert '"), s, ion_str!("' to int"))),
+                Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|_| {
+                    format!(
+                        "{}{}{}",
+                        ion_str!("cannot convert '"),
+                        s,
+                        ion_str!("' to int")
+                    )
+                }),
                 Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
-                _ => Err(format!("{}{}", ion_str!("cannot convert "), args[0].type_name())),
+                _ => Err(format!(
+                    "{}{}",
+                    ion_str!("cannot convert "),
+                    args[0].type_name()
+                )),
             }
         }),
         false,
@@ -2379,54 +2983,74 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("float").to_string(),
         Value::BuiltinFn(ion_str!("float").to_string(), |args| {
-            if args.len() != 1 { return Err(ion_str!("float takes 1 argument")); }
+            if args.len() != 1 {
+                return Err(ion_str!("float takes 1 argument"));
+            }
             match &args[0] {
                 Value::Float(n) => Ok(Value::Float(*n)),
                 Value::Int(n) => Ok(Value::Float(*n as f64)),
-                Value::Str(s) => s.parse::<f64>().map(Value::Float)
-                    .map_err(|_| format!("{}{}{}", ion_str!("cannot convert '"), s, ion_str!("' to float"))),
-                _ => Err(format!("{}{}", ion_str!("cannot convert "), args[0].type_name())),
+                Value::Str(s) => s.parse::<f64>().map(Value::Float).map_err(|_| {
+                    format!(
+                        "{}{}{}",
+                        ion_str!("cannot convert '"),
+                        s,
+                        ion_str!("' to float")
+                    )
+                }),
+                _ => Err(format!(
+                    "{}{}",
+                    ion_str!("cannot convert "),
+                    args[0].type_name()
+                )),
             }
         }),
         false,
     );
     env.define(
         ion_str!("floor").to_string(),
-        Value::BuiltinFn(ion_str!("floor").to_string(), |args| {
-            match &args[0] {
-                Value::Float(n) => Ok(Value::Float(n.floor())),
-                Value::Int(n) => Ok(Value::Int(*n)),
-                _ => Err(format!("{}{}", ion_str!("floor() not supported for "), args[0].type_name())),
-            }
+        Value::BuiltinFn(ion_str!("floor").to_string(), |args| match &args[0] {
+            Value::Float(n) => Ok(Value::Float(n.floor())),
+            Value::Int(n) => Ok(Value::Int(*n)),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("floor() not supported for "),
+                args[0].type_name()
+            )),
         }),
         false,
     );
     env.define(
         ion_str!("ceil").to_string(),
-        Value::BuiltinFn(ion_str!("ceil").to_string(), |args| {
-            match &args[0] {
-                Value::Float(n) => Ok(Value::Float(n.ceil())),
-                Value::Int(n) => Ok(Value::Int(*n)),
-                _ => Err(format!("{}{}", ion_str!("ceil() not supported for "), args[0].type_name())),
-            }
+        Value::BuiltinFn(ion_str!("ceil").to_string(), |args| match &args[0] {
+            Value::Float(n) => Ok(Value::Float(n.ceil())),
+            Value::Int(n) => Ok(Value::Int(*n)),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("ceil() not supported for "),
+                args[0].type_name()
+            )),
         }),
         false,
     );
     env.define(
         ion_str!("round").to_string(),
-        Value::BuiltinFn(ion_str!("round").to_string(), |args| {
-            match &args[0] {
-                Value::Float(n) => Ok(Value::Float(n.round())),
-                Value::Int(n) => Ok(Value::Int(*n)),
-                _ => Err(format!("{}{}", ion_str!("round() not supported for "), args[0].type_name())),
-            }
+        Value::BuiltinFn(ion_str!("round").to_string(), |args| match &args[0] {
+            Value::Float(n) => Ok(Value::Float(n.round())),
+            Value::Int(n) => Ok(Value::Int(*n)),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("round() not supported for "),
+                args[0].type_name()
+            )),
         }),
         false,
     );
     env.define(
         ion_str!("pow").to_string(),
         Value::BuiltinFn(ion_str!("pow").to_string(), |args| {
-            if args.len() != 2 { return Err(ion_str!("pow takes 2 arguments")); }
+            if args.len() != 2 {
+                return Err(ion_str!("pow takes 2 arguments"));
+            }
             match (&args[0], &args[1]) {
                 (Value::Int(base), Value::Int(exp)) => {
                     if *exp >= 0 {
@@ -2436,8 +3060,12 @@ pub fn register_builtins(env: &mut Env) {
                     }
                 }
                 _ => {
-                    let b = args[0].as_float().ok_or(ion_str!("pow requires numeric arguments"))?;
-                    let e = args[1].as_float().ok_or(ion_str!("pow requires numeric arguments"))?;
+                    let b = args[0]
+                        .as_float()
+                        .ok_or(ion_str!("pow requires numeric arguments"))?;
+                    let e = args[1]
+                        .as_float()
+                        .ok_or(ion_str!("pow requires numeric arguments"))?;
                     Ok(Value::Float(b.powf(e)))
                 }
             }
@@ -2447,7 +3075,9 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("sqrt").to_string(),
         Value::BuiltinFn(ion_str!("sqrt").to_string(), |args| {
-            let n = args[0].as_float().ok_or(ion_str!("sqrt requires a number"))?;
+            let n = args[0]
+                .as_float()
+                .ok_or(ion_str!("sqrt requires a number"))?;
             Ok(Value::Float(n.sqrt()))
         }),
         false,
@@ -2455,7 +3085,9 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("json_encode_pretty").to_string(),
         Value::BuiltinFn(ion_str!("json_encode_pretty").to_string(), |args| {
-            if args.len() != 1 { return Err(ion_str!("json_encode_pretty takes 1 argument")); }
+            if args.len() != 1 {
+                return Err(ion_str!("json_encode_pretty takes 1 argument"));
+            }
             let json = args[0].to_json();
             serde_json::to_string_pretty(&json)
                 .map(Value::Str)
@@ -2466,14 +3098,22 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("enumerate").to_string(),
         Value::BuiltinFn(ion_str!("enumerate").to_string(), |args| {
-            if args.len() != 1 { return Err(ion_str!("enumerate takes 1 argument")); }
+            if args.len() != 1 {
+                return Err(ion_str!("enumerate takes 1 argument"));
+            }
             match &args[0] {
                 Value::List(items) => Ok(Value::List(
-                    items.iter().enumerate()
+                    items
+                        .iter()
+                        .enumerate()
                         .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
-                        .collect()
+                        .collect(),
                 )),
-                _ => Err(format!("{}{}", ion_str!("enumerate() not supported for "), args[0].type_name())),
+                _ => Err(format!(
+                    "{}{}",
+                    ion_str!("enumerate() not supported for "),
+                    args[0].type_name()
+                )),
             }
         }),
         false,
@@ -2481,39 +3121,47 @@ pub fn register_builtins(env: &mut Env) {
 
     env.define(
         ion_str!("bytes").to_string(),
-        Value::BuiltinFn(ion_str!("bytes").to_string(), |args| {
-            match args.first() {
-                Some(Value::List(items)) => {
-                    let mut bytes = Vec::with_capacity(items.len());
-                    for item in items {
-                        let n = item.as_int().ok_or_else(|| ion_str!("bytes() list items must be ints"))?;
-                        if n < 0 || n > 255 {
-                            return Err(format!("{}{}", ion_str!("byte value out of range: "), n));
-                        }
-                        bytes.push(n as u8);
+        Value::BuiltinFn(ion_str!("bytes").to_string(), |args| match args.first() {
+            Some(Value::List(items)) => {
+                let mut bytes = Vec::with_capacity(items.len());
+                for item in items {
+                    let n = item
+                        .as_int()
+                        .ok_or_else(|| ion_str!("bytes() list items must be ints"))?;
+                    if !(0..=255).contains(&n) {
+                        return Err(format!("{}{}", ion_str!("byte value out of range: "), n));
                     }
-                    Ok(Value::Bytes(bytes))
+                    bytes.push(n as u8);
                 }
-                Some(Value::Str(s)) => Ok(Value::Bytes(s.as_bytes().to_vec())),
-                Some(Value::Int(n)) => Ok(Value::Bytes(vec![0u8; *n as usize])),
-                None => Ok(Value::Bytes(Vec::new())),
-                _ => Err(format!("{}{}", ion_str!("bytes() not supported for "), args[0].type_name())),
+                Ok(Value::Bytes(bytes))
             }
+            Some(Value::Str(s)) => Ok(Value::Bytes(s.as_bytes().to_vec())),
+            Some(Value::Int(n)) => Ok(Value::Bytes(vec![0u8; *n as usize])),
+            None => Ok(Value::Bytes(Vec::new())),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("bytes() not supported for "),
+                args[0].type_name()
+            )),
         }),
         false,
     );
     env.define(
         ion_str!("bytes_from_hex").to_string(),
         Value::BuiltinFn(ion_str!("bytes_from_hex").to_string(), |args| {
-            if args.len() != 1 { return Err(ion_str!("bytes_from_hex takes 1 argument")); }
-            let s = args[0].as_str().ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
+            if args.len() != 1 {
+                return Err(ion_str!("bytes_from_hex takes 1 argument"));
+            }
+            let s = args[0]
+                .as_str()
+                .ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
             if s.len() % 2 != 0 {
                 return Err(ion_str!("hex string must have even length").to_string());
             }
             let mut bytes = Vec::with_capacity(s.len() / 2);
             for i in (0..s.len()).step_by(2) {
-                let byte = u8::from_str_radix(&s[i..i+2], 16)
-                    .map_err(|_| format!("{}{}", ion_str!("invalid hex: "), &s[i..i+2]))?;
+                let byte = u8::from_str_radix(&s[i..i + 2], 16)
+                    .map_err(|_| format!("{}{}", ion_str!("invalid hex: "), &s[i..i + 2]))?;
                 bytes.push(byte);
             }
             Ok(Value::Bytes(bytes))
@@ -2529,13 +3177,38 @@ pub fn register_builtins(env: &mut Env) {
             }
             let condition = match &args[0] {
                 Value::Bool(b) => *b,
-                _ => return Err(format!("{}{}", ion_str!("assert condition must be bool, got "), args[0].type_name())),
+                _ => {
+                    return Err(format!(
+                        "{}{}",
+                        ion_str!("assert condition must be bool, got "),
+                        args[0].type_name()
+                    ))
+                }
             };
             if !condition {
                 let msg = if args.len() > 1 {
                     args[1].to_string()
                 } else {
                     ion_str!("assertion failed").to_string()
+                };
+                return Err(msg);
+            }
+            Ok(Value::Unit)
+        }),
+        false,
+    );
+
+    env.define(
+        ion_str!("assert_eq").to_string(),
+        Value::BuiltinFn(ion_str!("assert_eq").to_string(), |args| {
+            if args.len() < 2 {
+                return Err(ion_str!("assert_eq requires at least 2 arguments").to_string());
+            }
+            if args[0] != args[1] {
+                let msg = if args.len() > 2 {
+                    format!("{}: expected {}, got {}", args[2], args[0], args[1])
+                } else {
+                    format!("assertion failed: expected {}, got {}", args[0], args[1])
                 };
                 return Err(msg);
             }
@@ -2552,7 +3225,10 @@ pub fn register_builtins(env: &mut Env) {
                 let buffer = if args.is_empty() {
                     16
                 } else {
-                    args[0].as_int().ok_or(ion_str!("channel buffer size must be int"))? as usize
+                    args[0]
+                        .as_int()
+                        .ok_or(ion_str!("channel buffer size must be int"))?
+                        as usize
                 };
                 let (tx, rx) = crate::async_rt::create_channel(buffer);
                 Ok(Value::Tuple(vec![tx, rx]))

@@ -4,7 +4,7 @@ pub enum Token {
     Int(i64),
     Float(f64),
     Str(String),
-    FStr(String), // f"..." interpolated string (raw template)
+    FStr(String),   // f"..." interpolated string (raw template)
     Bytes(Vec<u8>), // b"..." byte literal
     True,
     False,
@@ -35,14 +35,16 @@ pub enum Token {
     Spawn,
     Await,
     Select,
+    Try,
+    Catch,
 
     // Delimiters
-    LParen,   // (
-    RParen,   // )
-    LBrace,   // {
-    RBrace,   // }
-    LBracket, // [
-    RBracket, // ]
+    LParen,    // (
+    RParen,    // )
+    LBrace,    // {
+    RBrace,    // }
+    LBracket,  // [
+    RBracket,  // ]
     HashBrace, // #{
 
     // Operators
@@ -51,37 +53,37 @@ pub enum Token {
     Star,
     Slash,
     Percent,
-    Eq,       // =
-    EqEq,     // ==
-    BangEq,   // !=
-    Lt,       // <
-    Gt,       // >
-    LtEq,     // <=
-    GtEq,     // >=
-    And,      // &&
-    Or,       // ||
-    Bang,     // !
-    PlusEq,   // +=
-    MinusEq,  // -=
-    StarEq,   // *=
-    SlashEq,  // /=
-    Pipe,     // |>
-    Question, // ?
+    Eq,        // =
+    EqEq,      // ==
+    BangEq,    // !=
+    Lt,        // <
+    Gt,        // >
+    LtEq,      // <=
+    GtEq,      // >=
+    And,       // &&
+    Or,        // ||
+    Bang,      // !
+    PlusEq,    // +=
+    MinusEq,   // -=
+    StarEq,    // *=
+    SlashEq,   // /=
+    Pipe,      // |>
+    Question,  // ?
     Ampersand, // &
     Caret,     // ^
     Shl,       // <<
     Shr,       // >>
-    DotDot,   // ..
-    DotDotEq, // ..=
-    Dot,      // .
+    DotDot,    // ..
+    DotDotEq,  // ..=
+    Dot,       // .
     DotDotDot, // ...
 
     // Punctuation
     Comma,
     Colon,
     Semicolon,
-    Arrow, // =>
-    PipeSym, // | (for closures)
+    Arrow,      // =>
+    PipeSym,    // | (for closures)
     ColonColon, // ::
 
     // Special

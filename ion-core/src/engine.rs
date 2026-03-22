@@ -14,7 +14,9 @@ pub struct Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        Self { interpreter: Interpreter::new() }
+        Self {
+            interpreter: Interpreter::new(),
+        }
     }
 
     /// Evaluate a script, returning the last expression's value.
@@ -80,12 +82,17 @@ impl Engine {
 
     /// Inject a typed Rust value into the script scope.
     pub fn set_typed<T: IonType>(&mut self, name: &str, value: &T) {
-        self.interpreter.env.define(name.to_string(), value.to_ion(), false);
+        self.interpreter
+            .env
+            .define(name.to_string(), value.to_ion(), false);
     }
 
     /// Extract a typed Rust value from the script scope.
     pub fn get_typed<T: IonType>(&self, name: &str) -> Result<T, String> {
-        let val = self.interpreter.env.get(name)
+        let val = self
+            .interpreter
+            .env
+            .get(name)
             .ok_or_else(|| format!("variable '{}' not found", name))?;
         T::from_ion(val)
     }
@@ -103,9 +110,7 @@ impl Engine {
         let compiler = crate::compiler::Compiler::new();
         match compiler.compile_program(&program) {
             Ok((chunk, fn_chunks)) => {
-                let mut vm = crate::vm::Vm::with_env(
-                    std::mem::replace(&mut self.interpreter.env, crate::env::Env::new())
-                );
+                let mut vm = crate::vm::Vm::with_env(std::mem::take(&mut self.interpreter.env));
                 // Pre-populate the VM's function cache with compiled chunks
                 vm.preload_fn_chunks(fn_chunks);
                 // Pass host type registry to VM
@@ -114,7 +119,7 @@ impl Engine {
                 crate::interpreter::register_builtins(vm.env_mut());
                 let result = vm.execute(&chunk);
                 // Restore env back to interpreter
-                self.interpreter.env = std::mem::replace(vm.env_mut(), crate::env::Env::new());
+                self.interpreter.env = std::mem::take(vm.env_mut());
                 result
             }
             Err(_) => {

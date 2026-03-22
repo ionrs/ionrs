@@ -15,6 +15,12 @@ pub struct StringPool {
     strings: Vec<String>,
 }
 
+impl Default for StringPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StringPool {
     pub fn new() -> Self {
         Self {

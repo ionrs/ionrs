@@ -441,6 +441,7 @@ Triple-quoted f-strings: `f"""value: {x}"""`
 let name = "ion";
 f"hello {name}"                   // "hello ion"
 f"2 + 2 = {2 + 2}"               // "2 + 2 = 4"
+f"result: {foo("bar")}"          // nested quotes in interpolation
 ```
 
 ### Indexing
@@ -505,6 +506,35 @@ fn first_item(items) {
 
 At the top level (outside a function), `?` on `Err`/`None` returns the error/none as a value rather than crashing.
 
+### Try / Catch
+
+Catch runtime errors with `try`/`catch` blocks:
+
+```
+let result = try {
+    let x = 10 / 0;
+    x
+} catch e {
+    f"caught: {e}"
+};
+// result is the error message string
+```
+
+`try`/`catch` is an expression — the last value of whichever branch executes is returned. Control flow signals (`return`, `break`, `continue`) pass through and are not caught.
+
+```
+// Nested try/catch
+try {
+    try {
+        error_fn()
+    } catch inner {
+        f"inner: {inner}"
+    }
+} catch outer {
+    f"outer: {outer}"
+}
+```
+
 ### Method chains
 
 Both `Option` and `Result` support functional chaining:
@@ -561,6 +591,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 |----------|-------------|
 | `assert(cond)` | Error if `cond` is false |
 | `assert(cond, msg)` | Error with custom message if `cond` is false |
+| `assert_eq(a, b)` | Error if `a != b` |
+| `assert_eq(a, b, msg)` | Error with custom message if `a != b` |
 
 ### JSON
 | Function | Description |

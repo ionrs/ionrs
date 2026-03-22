@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::intern::{Symbol, StringPool};
+use crate::intern::{StringPool, Symbol};
 use crate::value::Value;
+use std::collections::HashMap;
 
 /// Variable binding with mutability tracking.
 #[derive(Debug, Clone)]
@@ -21,9 +21,18 @@ pub struct Env {
     pool: StringPool,
 }
 
+impl Default for Env {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Env {
     pub fn new() -> Self {
-        Self { frames: vec![Vec::new()], pool: StringPool::new() }
+        Self {
+            frames: vec![Vec::new()],
+            pool: StringPool::new(),
+        }
     }
 
     /// Get a reference to the string pool.
@@ -73,7 +82,11 @@ impl Env {
                 return;
             }
         }
-        frame.push(Binding { sym, value, mutable });
+        frame.push(Binding {
+            sym,
+            value,
+            mutable,
+        });
     }
 
     /// Get a variable's value by name, searching from innermost scope outward.
@@ -117,14 +130,23 @@ impl Env {
                 }
             }
         }
-        Err(format!("{}{}", ion_str!("undefined variable: "), self.pool.resolve(sym)))
+        Err(format!(
+            "{}{}",
+            ion_str!("undefined variable: "),
+            self.pool.resolve(sym)
+        ))
     }
 
     /// Get all top-level bindings (for engine.get_all()).
     pub fn top_level(&self) -> HashMap<String, Value> {
-        self.frames.first().map(|f| {
-            f.iter().map(|b| (self.pool.resolve(b.sym).to_string(), b.value.clone())).collect()
-        }).unwrap_or_default()
+        self.frames
+            .first()
+            .map(|f| {
+                f.iter()
+                    .map(|b| (self.pool.resolve(b.sym).to_string(), b.value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Snapshot current environment for closure capture.

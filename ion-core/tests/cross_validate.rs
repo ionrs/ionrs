@@ -20,10 +20,16 @@ fn assert_both(src: &str) {
             let _ = (tw_err, vm_err);
         }
         (Ok(tw_val), Err(vm_err)) => {
-            panic!("tree-walk OK ({:?}) but VM errored: {} | src: {}", tw_val, vm_err.message, src);
+            panic!(
+                "tree-walk OK ({:?}) but VM errored: {} | src: {}",
+                tw_val, vm_err.message, src
+            );
         }
         (Err(tw_err), Ok(vm_val)) => {
-            panic!("tree-walk errored ({}) but VM OK: {:?} | src: {}", tw_err.message, vm_val, src);
+            panic!(
+                "tree-walk errored ({}) but VM OK: {:?} | src: {}",
+                tw_err.message, vm_val, src
+            );
         }
     }
 }
@@ -139,7 +145,10 @@ fn cross_if_else() {
 
 #[test]
 fn cross_if_chain() {
-    assert_both_eq("let x = 5; if x < 0 { -1 } else if x == 0 { 0 } else { 1 }", Value::Int(1));
+    assert_both_eq(
+        "let x = 5; if x < 0 { -1 } else if x == 0 { 0 } else { 1 }",
+        Value::Int(1),
+    );
 }
 
 // ============================================================
@@ -153,7 +162,10 @@ fn cross_while_loop() {
 
 #[test]
 fn cross_for_loop() {
-    assert_both_eq("let mut sum = 0; for x in [1, 2, 3] { sum += x; } sum", Value::Int(6));
+    assert_both_eq(
+        "let mut sum = 0; for x in [1, 2, 3] { sum += x; } sum",
+        Value::Int(6),
+    );
 }
 
 #[test]
@@ -191,7 +203,10 @@ fn cross_fn_recursive() {
 
 #[test]
 fn cross_fn_default_params() {
-    assert_both_eq(r#"fn greet(name = "world") { name } greet()"#, Value::Str("world".to_string()));
+    assert_both_eq(
+        r#"fn greet(name = "world") { name } greet()"#,
+        Value::Str("world".to_string()),
+    );
 }
 
 #[test]
@@ -210,13 +225,19 @@ fn cross_lambda() {
 
 #[test]
 fn cross_list() {
-    assert_both_eq("[1, 2, 3]", Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_both_eq(
+        "[1, 2, 3]",
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
     assert_both_eq("[1, 2, 3].len()", Value::Int(3));
 }
 
 #[test]
 fn cross_tuple() {
-    assert_both_eq("(1, 2, 3)", Value::Tuple(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_both_eq(
+        "(1, 2, 3)",
+        Value::Tuple(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
 }
 
 #[test]
@@ -285,14 +306,20 @@ fn cross_match_literal() {
 
 #[test]
 fn cross_match_option() {
-    assert_both_eq("match Some(5) { Some(v) => v * 2, None => 0 }", Value::Int(10));
+    assert_both_eq(
+        "match Some(5) { Some(v) => v * 2, None => 0 }",
+        Value::Int(10),
+    );
     assert_both_eq("match None { Some(v) => v, None => 99 }", Value::Int(99));
 }
 
 #[test]
 fn cross_match_result() {
     assert_both_eq("match Ok(7) { Ok(v) => v, Err(e) => 0 }", Value::Int(7));
-    assert_both_eq(r#"match Err("fail") { Ok(v) => 0, Err(e) => e }"#, Value::Str("fail".to_string()));
+    assert_both_eq(
+        r#"match Err("fail") { Ok(v) => 0, Err(e) => e }"#,
+        Value::Str("fail".to_string()),
+    );
 }
 
 #[test]
@@ -302,7 +329,10 @@ fn cross_match_tuple() {
 
 #[test]
 fn cross_match_list() {
-    assert_both_eq("match [1, 2, 3] { [a, b, c] => a + b + c, _ => 0 }", Value::Int(6));
+    assert_both_eq(
+        "match [1, 2, 3] { [a, b, c] => a + b + c, _ => 0 }",
+        Value::Int(6),
+    );
     assert_both_eq("match [] { [] => 1, _ => 0 }", Value::Int(1));
 }
 
@@ -312,7 +342,10 @@ fn cross_match_list() {
 
 #[test]
 fn cross_fstring() {
-    assert_both_eq(r#"let x = 42; f"val={x}""#, Value::Str("val=42".to_string()));
+    assert_both_eq(
+        r#"let x = 42; f"val={x}""#,
+        Value::Str("val=42".to_string()),
+    );
 }
 
 #[test]
@@ -334,23 +367,38 @@ fn cross_string_methods() {
 
 #[test]
 fn cross_string_find() {
-    assert_both_eq(r#""hello".find("ell")"#, Value::Option(Some(Box::new(Value::Int(1)))));
+    assert_both_eq(
+        r#""hello".find("ell")"#,
+        Value::Option(Some(Box::new(Value::Int(1)))),
+    );
     assert_both_eq(r#""hello".find("xyz")"#, Value::Option(None));
 }
 
 #[test]
 fn cross_string_split_replace() {
-    assert_both_eq(r#""a,b,c".split(",")"#, Value::List(vec![
-        Value::Str("a".to_string()), Value::Str("b".to_string()), Value::Str("c".to_string()),
-    ]));
-    assert_both_eq(r#""hello".replace("l", "r")"#, Value::Str("herro".to_string()));
+    assert_both_eq(
+        r#""a,b,c".split(",")"#,
+        Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("b".to_string()),
+            Value::Str("c".to_string()),
+        ]),
+    );
+    assert_both_eq(
+        r#""hello".replace("l", "r")"#,
+        Value::Str("herro".to_string()),
+    );
 }
 
 #[test]
 fn cross_string_chars() {
-    assert_both_eq(r#""hi".chars()"#, Value::List(vec![
-        Value::Str("h".to_string()), Value::Str("i".to_string()),
-    ]));
+    assert_both_eq(
+        r#""hi".chars()"#,
+        Value::List(vec![
+            Value::Str("h".to_string()),
+            Value::Str("i".to_string()),
+        ]),
+    );
 }
 
 #[test]
@@ -439,7 +487,10 @@ fn cross_dict_assign() {
 
 #[test]
 fn cross_block_scope() {
-    assert_both_eq("let x = 1; let y = { let x = 2; x + 10 }; x + y", Value::Int(13));
+    assert_both_eq(
+        "let x = 1; let y = { let x = 2; x + 10 }; x + y",
+        Value::Int(13),
+    );
 }
 
 // ============================================================
@@ -472,7 +523,8 @@ fn cross_map_filter() {
 
 #[test]
 fn cross_complex_match() {
-    assert_both_eq(r#"
+    assert_both_eq(
+        r#"
         fn classify(n) {
             match n % 3 {
                 0 => "fizz",
@@ -481,12 +533,15 @@ fn cross_complex_match() {
             }
         }
         classify(9)
-    "#, Value::Str("fizz".to_string()));
+    "#,
+        Value::Str("fizz".to_string()),
+    );
 }
 
 #[test]
 fn cross_nested_loops() {
-    assert_both_eq(r#"
+    assert_both_eq(
+        r#"
         let mut sum = 0;
         for i in [1, 2, 3] {
             for j in [10, 20] {
@@ -494,7 +549,9 @@ fn cross_nested_loops() {
             }
         }
         sum
-    "#, Value::Int(180));
+    "#,
+        Value::Int(180),
+    );
 }
 
 // ============================================================
@@ -522,8 +579,14 @@ fn cross_dict_shorthand_keys() {
 
 #[test]
 fn cross_list_methods() {
-    assert_both_eq("[3, 1, 2].sort()", Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
-    assert_both_eq("[1, 2, 3].reverse()", Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)]));
+    assert_both_eq(
+        "[3, 1, 2].sort()",
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+    assert_both_eq(
+        "[1, 2, 3].reverse()",
+        Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)]),
+    );
     assert_both_eq("[1, 2, 3].contains(2)", Value::Bool(true));
     assert_both_eq("[1, 2, 3].contains(5)", Value::Bool(false));
     assert_both_eq("[1, 2, 3].is_empty()", Value::Bool(false));
@@ -533,15 +596,27 @@ fn cross_list_methods() {
 
 #[test]
 fn cross_list_first_last() {
-    assert_both_eq("[1, 2, 3].first()", Value::Option(Some(Box::new(Value::Int(1)))));
-    assert_both_eq("[1, 2, 3].last()", Value::Option(Some(Box::new(Value::Int(3)))));
+    assert_both_eq(
+        "[1, 2, 3].first()",
+        Value::Option(Some(Box::new(Value::Int(1)))),
+    );
+    assert_both_eq(
+        "[1, 2, 3].last()",
+        Value::Option(Some(Box::new(Value::Int(3)))),
+    );
     assert_both_eq("[].first()", Value::Option(None));
 }
 
 #[test]
 fn cross_list_closure_methods() {
-    assert_both_eq("[1, 2, 3].map(|x| x * 2)", Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
-    assert_both_eq("[1, 2, 3, 4].filter(|x| x > 2)", Value::List(vec![Value::Int(3), Value::Int(4)]));
+    assert_both_eq(
+        "[1, 2, 3].map(|x| x * 2)",
+        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]),
+    );
+    assert_both_eq(
+        "[1, 2, 3, 4].filter(|x| x > 2)",
+        Value::List(vec![Value::Int(3), Value::Int(4)]),
+    );
     assert_both_eq("[1, 2, 3].fold(0, |acc, x| acc + x)", Value::Int(6));
     assert_both_eq("[1, 2, 3].any(|x| x > 2)", Value::Bool(true));
     assert_both_eq("[1, 2, 3].any(|x| x > 5)", Value::Bool(false));
@@ -551,21 +626,33 @@ fn cross_list_closure_methods() {
 
 #[test]
 fn cross_list_flatten_zip() {
-    assert_both_eq("[[1, 2], [3, 4]].flatten()", Value::List(vec![
-        Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4),
-    ]));
-    assert_both_eq("[1, 2].zip([3, 4])", Value::List(vec![
-        Value::Tuple(vec![Value::Int(1), Value::Int(3)]),
-        Value::Tuple(vec![Value::Int(2), Value::Int(4)]),
-    ]));
+    assert_both_eq(
+        "[[1, 2], [3, 4]].flatten()",
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(4),
+        ]),
+    );
+    assert_both_eq(
+        "[1, 2].zip([3, 4])",
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(1), Value::Int(3)]),
+            Value::Tuple(vec![Value::Int(2), Value::Int(4)]),
+        ]),
+    );
 }
 
 #[test]
 fn cross_list_enumerate() {
-    assert_both_eq("[10, 20].enumerate()", Value::List(vec![
-        Value::Tuple(vec![Value::Int(0), Value::Int(10)]),
-        Value::Tuple(vec![Value::Int(1), Value::Int(20)]),
-    ]));
+    assert_both_eq(
+        "[10, 20].enumerate()",
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(0), Value::Int(10)]),
+            Value::Tuple(vec![Value::Int(1), Value::Int(20)]),
+        ]),
+    );
 }
 
 #[test]
@@ -579,17 +666,28 @@ fn cross_dict_get() {
 
 #[test]
 fn cross_dict_keys_values() {
-    assert_both_eq(r#"#{"a": 1, "b": 2}.keys()"#, Value::List(vec![
-        Value::Str("a".to_string()), Value::Str("b".to_string()),
-    ]));
-    assert_both_eq(r#"#{"a": 1, "b": 2}.values()"#, Value::List(vec![Value::Int(1), Value::Int(2)]));
+    assert_both_eq(
+        r#"#{"a": 1, "b": 2}.keys()"#,
+        Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("b".to_string()),
+        ]),
+    );
+    assert_both_eq(
+        r#"#{"a": 1, "b": 2}.values()"#,
+        Value::List(vec![Value::Int(1), Value::Int(2)]),
+    );
 }
 
 #[test]
 fn cross_dict_entries() {
-    assert_both_eq(r#"#{"a": 1}.entries()"#, Value::List(vec![
-        Value::Tuple(vec![Value::Str("a".to_string()), Value::Int(1)]),
-    ]));
+    assert_both_eq(
+        r#"#{"a": 1}.entries()"#,
+        Value::List(vec![Value::Tuple(vec![
+            Value::Str("a".to_string()),
+            Value::Int(1),
+        ])]),
+    );
 }
 
 // ============================================================
@@ -627,9 +725,12 @@ fn cross_flat_map() {
     assert_both_eq(
         "[1, 2, 3].flat_map(|x| [x, x * 10])",
         Value::List(vec![
-            Value::Int(1), Value::Int(10),
-            Value::Int(2), Value::Int(20),
-            Value::Int(3), Value::Int(30),
+            Value::Int(1),
+            Value::Int(10),
+            Value::Int(2),
+            Value::Int(20),
+            Value::Int(3),
+            Value::Int(30),
         ]),
     );
 }
@@ -646,15 +747,15 @@ fn cross_tuple_methods() {
     assert_both_eq("(1, 2, 3).len()", Value::Int(3));
     assert_both_eq("(1, 2, 3).contains(2)", Value::Bool(true));
     assert_both_eq("(1, 2, 3).contains(9)", Value::Bool(false));
-    assert_both_eq("(10, 20).to_list()", Value::List(vec![Value::Int(10), Value::Int(20)]));
+    assert_both_eq(
+        "(10, 20).to_list()",
+        Value::List(vec![Value::Int(10), Value::Int(20)]),
+    );
 }
 
 #[test]
 fn cross_triple_string() {
-    assert_both_eq(
-        "\"\"\"hello\"\"\"",
-        Value::Str("hello".to_string()),
-    );
+    assert_both_eq("\"\"\"hello\"\"\"", Value::Str("hello".to_string()));
 }
 
 #[test]

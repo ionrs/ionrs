@@ -26,7 +26,10 @@ enum TaskState {
 }
 
 impl TaskHandle {
-    pub fn new(handle: thread::JoinHandle<Result<Value, IonError>>, cancel_flag: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        handle: thread::JoinHandle<Result<Value, IonError>>,
+        cancel_flag: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             inner: Mutex::new(TaskState::Running(Some(handle))),
             cancel_flag,
@@ -39,9 +42,9 @@ impl TaskHandle {
         match &mut *state {
             TaskState::Running(handle) => {
                 let h = handle.take().unwrap();
-                let result = h.join().unwrap_or_else(|_| {
-                    Err(IonError::runtime("task panicked".to_string(), 0, 0))
-                });
+                let result = h
+                    .join()
+                    .unwrap_or_else(|_| Err(IonError::runtime("task panicked".to_string(), 0, 0)));
                 let ret = result.clone();
                 *state = TaskState::Finished(result);
                 ret
@@ -123,6 +126,12 @@ pub fn create_channel(buffer: usize) -> (Value, Value) {
 #[derive(Debug)]
 pub struct Nursery {
     tasks: Vec<Arc<TaskHandle>>,
+}
+
+impl Default for Nursery {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Nursery {

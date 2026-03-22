@@ -50,13 +50,21 @@ fn edge_empty_string() {
 #[test]
 fn edge_div_by_zero_int() {
     let msg = eval_err("1 / 0");
-    assert!(msg.contains("division by zero") || msg.contains("divide"), "got: {}", msg);
+    assert!(
+        msg.contains("division by zero") || msg.contains("divide"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
 fn edge_mod_by_zero() {
     let msg = eval_err("1 % 0");
-    assert!(msg.contains("modulo by zero") || msg.contains("zero"), "got: {}", msg);
+    assert!(
+        msg.contains("modulo by zero") || msg.contains("zero"),
+        "got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -104,7 +112,10 @@ fn edge_scope_isolation() {
 
 #[test]
 fn edge_many_scopes() {
-    assert_eq!(eval("let mut x = 0; { x += 1; { x += 1; { x += 1; } } } x"), Value::Int(3));
+    assert_eq!(
+        eval("let mut x = 0; { x += 1; { x += 1; { x += 1; } } } x"),
+        Value::Int(3)
+    );
 }
 
 // ============================================================
@@ -118,7 +129,10 @@ fn edge_fn_no_args() {
 
 #[test]
 fn edge_fn_many_args() {
-    assert_eq!(eval("fn f(a, b, c, d, e) { a + b + c + d + e } f(1, 2, 3, 4, 5)"), Value::Int(15));
+    assert_eq!(
+        eval("fn f(a, b, c, d, e) { a + b + c + d + e } f(1, 2, 3, 4, 5)"),
+        Value::Int(15)
+    );
 }
 
 #[test]
@@ -142,12 +156,18 @@ fn edge_match_wildcard_only() {
 
 #[test]
 fn edge_match_many_arms() {
-    assert_eq!(eval("match 5 { 1 => 10, 2 => 20, 3 => 30, 4 => 40, 5 => 50, _ => 0 }"), Value::Int(50));
+    assert_eq!(
+        eval("match 5 { 1 => 10, 2 => 20, 3 => 30, 4 => 40, 5 => 50, _ => 0 }"),
+        Value::Int(50)
+    );
 }
 
 #[test]
 fn edge_match_string() {
-    assert_eq!(eval(r#"match "hello" { "hello" => 1, _ => 0 }"#), Value::Int(1));
+    assert_eq!(
+        eval(r#"match "hello" { "hello" => 1, _ => 0 }"#),
+        Value::Int(1)
+    );
 }
 
 // ============================================================
@@ -157,28 +177,43 @@ fn edge_match_string() {
 #[test]
 fn edge_while_false() {
     // Loop body never executes
-    assert_eq!(eval("let mut x = 0; while false { x = 99; } x"), Value::Int(0));
+    assert_eq!(
+        eval("let mut x = 0; while false { x = 99; } x"),
+        Value::Int(0)
+    );
 }
 
 #[test]
 fn edge_for_empty_list() {
     // Loop body never executes
-    assert_eq!(eval("let mut x = 0; for i in [] { x = 99; } x"), Value::Int(0));
+    assert_eq!(
+        eval("let mut x = 0; for i in [] { x = 99; } x"),
+        Value::Int(0)
+    );
 }
 
 #[test]
 fn edge_for_single_element() {
-    assert_eq!(eval("let mut x = 0; for i in [42] { x = i; } x"), Value::Int(42));
+    assert_eq!(
+        eval("let mut x = 0; for i in [42] { x = i; } x"),
+        Value::Int(42)
+    );
 }
 
 #[test]
 fn edge_break_immediately() {
-    assert_eq!(eval("let mut x = 0; for i in [1, 2, 3] { break; x = 99; } x"), Value::Int(0));
+    assert_eq!(
+        eval("let mut x = 0; for i in [1, 2, 3] { break; x = 99; } x"),
+        Value::Int(0)
+    );
 }
 
 #[test]
 fn edge_continue_every_iteration() {
-    assert_eq!(eval("let mut x = 0; for i in [1, 2, 3] { continue; x += i; } x"), Value::Int(0));
+    assert_eq!(
+        eval("let mut x = 0; for i in [1, 2, 3] { continue; x += i; } x"),
+        Value::Int(0)
+    );
 }
 
 // ============================================================
@@ -194,7 +229,10 @@ fn edge_string_escape() {
 
 #[test]
 fn edge_fstring_empty_expr() {
-    assert_eq!(eval(r#"let x = ""; f"({x})""#), Value::Str("()".to_string()));
+    assert_eq!(
+        eval(r#"let x = ""; f"({x})""#),
+        Value::Str("()".to_string())
+    );
 }
 
 // ============================================================
@@ -203,7 +241,10 @@ fn edge_fstring_empty_expr() {
 
 #[test]
 fn edge_nested_option() {
-    assert_eq!(eval("Some(Some(1))"), Value::Option(Some(Box::new(Value::Option(Some(Box::new(Value::Int(1))))))));
+    assert_eq!(
+        eval("Some(Some(1))"),
+        Value::Option(Some(Box::new(Value::Option(Some(Box::new(Value::Int(1)))))))
+    );
 }
 
 #[test]
@@ -221,7 +262,11 @@ fn edge_option_comparison() {
 #[test]
 fn edge_undefined_variable() {
     let msg = eval_err("x");
-    assert!(msg.contains("undefined") || msg.contains("not found"), "got: {}", msg);
+    assert!(
+        msg.contains("undefined") || msg.contains("not found"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -233,7 +278,11 @@ fn edge_type_mismatch_add() {
 #[test]
 fn edge_immutable_reassign() {
     let msg = eval_err("let x = 1; x = 2;");
-    assert!(msg.contains("immutable") || msg.contains("cannot") || msg.contains("mutable"), "got: {}", msg);
+    assert!(
+        msg.contains("immutable") || msg.contains("cannot") || msg.contains("mutable"),
+        "got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -276,14 +325,19 @@ fn edge_chained_list_methods() {
 
 #[test]
 fn edge_multiline_program() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         let a = 1;
         let b = 2;
         let c = a + b;
         let d = c * 2;
         let e = d - 1;
         e
-    "#), Value::Int(5));
+    "#
+        ),
+        Value::Int(5)
+    );
 }
 
 // ============================================================

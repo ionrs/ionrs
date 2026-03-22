@@ -39,6 +39,12 @@ pub struct Vm {
     types: TypeRegistry,
 }
 
+impl Default for Vm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Vm {
     pub fn new() -> Self {
         Self {
@@ -100,9 +106,7 @@ impl Vm {
             Err(e) if e.kind == crate::error::ErrorKind::PropagatedErr => {
                 Ok(Value::Result(Err(Box::new(Value::Str(e.message.clone())))))
             }
-            Err(e) if e.kind == crate::error::ErrorKind::PropagatedNone => {
-                Ok(Value::Option(None))
-            }
+            Err(e) if e.kind == crate::error::ErrorKind::PropagatedNone => Ok(Value::Option(None)),
             Err(e) => Err(e),
         }
     }
@@ -167,10 +171,17 @@ impl Vm {
                     let a = self.pop(line, col)?;
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x & y)),
-                        (a, b) => return Err(IonError::type_err(
-                            format!("'&' expects int, got {} and {}", a.type_name(), b.type_name()),
-                            line, col,
-                        )),
+                        (a, b) => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "'&' expects int, got {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ),
+                                line,
+                                col,
+                            ))
+                        }
                     }
                 }
                 Op::BitOr => {
@@ -178,10 +189,17 @@ impl Vm {
                     let a = self.pop(line, col)?;
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x | y)),
-                        (a, b) => return Err(IonError::type_err(
-                            format!("'|' expects int, got {} and {}", a.type_name(), b.type_name()),
-                            line, col,
-                        )),
+                        (a, b) => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "'|' expects int, got {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ),
+                                line,
+                                col,
+                            ))
+                        }
                     }
                 }
                 Op::BitXor => {
@@ -189,10 +207,17 @@ impl Vm {
                     let a = self.pop(line, col)?;
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x ^ y)),
-                        (a, b) => return Err(IonError::type_err(
-                            format!("'^' expects int, got {} and {}", a.type_name(), b.type_name()),
-                            line, col,
-                        )),
+                        (a, b) => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "'^' expects int, got {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ),
+                                line,
+                                col,
+                            ))
+                        }
                     }
                 }
                 Op::Shl => {
@@ -200,10 +225,17 @@ impl Vm {
                     let a = self.pop(line, col)?;
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x << y)),
-                        (a, b) => return Err(IonError::type_err(
-                            format!("'<<' expects int, got {} and {}", a.type_name(), b.type_name()),
-                            line, col,
-                        )),
+                        (a, b) => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "'<<' expects int, got {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ),
+                                line,
+                                col,
+                            ))
+                        }
                     }
                 }
                 Op::Shr => {
@@ -211,10 +243,17 @@ impl Vm {
                     let a = self.pop(line, col)?;
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x >> y)),
-                        (a, b) => return Err(IonError::type_err(
-                            format!("'>>' expects int, got {} and {}", a.type_name(), b.type_name()),
-                            line, col,
-                        )),
+                        (a, b) => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "'>>' expects int, got {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ),
+                                line,
+                                col,
+                            ))
+                        }
                     }
                 }
 
@@ -232,22 +271,26 @@ impl Vm {
                 Op::Lt => {
                     let b = self.pop(line, col)?;
                     let a = self.pop(line, col)?;
-                    self.stack.push(Value::Bool(self.compare_lt(&a, &b, line, col)?));
+                    self.stack
+                        .push(Value::Bool(self.compare_lt(&a, &b, line, col)?));
                 }
                 Op::Gt => {
                     let b = self.pop(line, col)?;
                     let a = self.pop(line, col)?;
-                    self.stack.push(Value::Bool(self.compare_lt(&b, &a, line, col)?));
+                    self.stack
+                        .push(Value::Bool(self.compare_lt(&b, &a, line, col)?));
                 }
                 Op::LtEq => {
                     let b = self.pop(line, col)?;
                     let a = self.pop(line, col)?;
-                    self.stack.push(Value::Bool(!self.compare_lt(&b, &a, line, col)?));
+                    self.stack
+                        .push(Value::Bool(!self.compare_lt(&b, &a, line, col)?));
                 }
                 Op::GtEq => {
                     let b = self.pop(line, col)?;
                     let a = self.pop(line, col)?;
-                    self.stack.push(Value::Bool(!self.compare_lt(&a, &b, line, col)?));
+                    self.stack
+                        .push(Value::Bool(!self.compare_lt(&a, &b, line, col)?));
                 }
 
                 // --- Logic ---
@@ -287,12 +330,10 @@ impl Vm {
                     let name_idx = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
                     let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                    let val = self.env.get_sym(sym)
-                        .cloned()
-                        .ok_or_else(|| {
-                            let name = self.env.resolve(sym);
-                            IonError::name(format!("undefined variable: {}", name), line, col)
-                        })?;
+                    let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
+                        let name = self.env.resolve(sym);
+                        IonError::name(format!("undefined variable: {}", name), line, col)
+                    })?;
                     self.stack.push(val);
                 }
                 Op::SetLocal => {
@@ -300,7 +341,8 @@ impl Vm {
                     self.ip += 2;
                     let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
                     let val = self.pop(line, col)?;
-                    self.env.set_sym(sym, val.clone())
+                    self.env
+                        .set_sym(sym, val.clone())
                         .map_err(|e| IonError::runtime(e, line, col))?;
                     self.stack.push(val); // assignment is an expression
                 }
@@ -308,12 +350,10 @@ impl Vm {
                     let name_idx = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
                     let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                    let val = self.env.get_sym(sym)
-                        .cloned()
-                        .ok_or_else(|| {
-                            let name = self.env.resolve(sym);
-                            IonError::name(format!("undefined variable: {}", name), line, col)
-                        })?;
+                    let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
+                        let name = self.env.resolve(sym);
+                        IonError::name(format!("undefined variable: {}", name), line, col)
+                    })?;
                     self.stack.push(val);
                 }
                 Op::SetGlobal => {
@@ -321,7 +361,8 @@ impl Vm {
                     self.ip += 2;
                     let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
                     let val = self.pop(line, col)?;
-                    self.env.set_sym(sym, val.clone())
+                    self.env
+                        .set_sym(sym, val.clone())
                         .map_err(|e| IonError::runtime(e, line, col))?;
                     self.stack.push(val);
                 }
@@ -331,7 +372,10 @@ impl Vm {
                     let mutable = chunk.read_u8(self.ip) != 0;
                     self.ip += 1;
                     let val = self.pop(line, col)?;
-                    self.locals.push(LocalSlot { value: val, mutable });
+                    self.locals.push(LocalSlot {
+                        value: val,
+                        mutable,
+                    });
                 }
                 Op::GetLocalSlot => {
                     let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
@@ -345,7 +389,9 @@ impl Vm {
                     let val = self.pop(line, col)?;
                     if !self.locals[slot].mutable {
                         return Err(IonError::runtime(
-                            "cannot assign to immutable variable".to_string(), line, col,
+                            "cannot assign to immutable variable".to_string(),
+                            line,
+                            col,
                         ));
                     }
                     self.locals[slot].value = val.clone();
@@ -524,8 +570,12 @@ impl Vm {
                         }
                         other => {
                             return Err(IonError::type_err(
-                                format!("? operator requires Option or Result, got {}", other.type_name()),
-                                line, col,
+                                format!(
+                                    "? operator requires Option or Result, got {}",
+                                    other.type_name()
+                                ),
+                                line,
+                                col,
                             ));
                         }
                     }
@@ -558,7 +608,11 @@ impl Vm {
                     let _arg_count = chunk.read_u8(self.ip);
                     self.ip += 1;
                     // Pipe is handled by the compiler rewriting to Call
-                    return Err(IonError::runtime("pipe opcode should not be executed directly", line, col));
+                    return Err(IonError::runtime(
+                        "pipe opcode should not be executed directly",
+                        line,
+                        col,
+                    ));
                 }
 
                 // --- Pattern matching ---
@@ -586,8 +640,11 @@ impl Vm {
                             self.ip += 1;
                             match &val {
                                 Value::List(items) => {
-                                    if has_rest { items.len() >= min_len }
-                                    else { items.len() == min_len }
+                                    if has_rest {
+                                        items.len() >= min_len
+                                    } else {
+                                        items.len() == min_len
+                                    }
                                 }
                                 _ => false,
                             }
@@ -632,7 +689,8 @@ impl Vm {
                             let val = self.peek(line, col)?;
                             match val {
                                 Value::Tuple(items) | Value::List(items) => {
-                                    self.stack.push(items.get(idx).cloned().unwrap_or(Value::Unit));
+                                    self.stack
+                                        .push(items.get(idx).cloned().unwrap_or(Value::Unit));
                                 }
                                 _ => self.stack.push(Value::Unit),
                             }
@@ -650,8 +708,12 @@ impl Vm {
                     self.ip += 1;
                     let end = self.pop(line, col)?;
                     let start = self.pop(line, col)?;
-                    let s = start.as_int().ok_or_else(|| IonError::type_err("range start must be int", line, col))?;
-                    let e = end.as_int().ok_or_else(|| IonError::type_err("range end must be int", line, col))?;
+                    let s = start
+                        .as_int()
+                        .ok_or_else(|| IonError::type_err("range start must be int", line, col))?;
+                    let e = end
+                        .as_int()
+                        .ok_or_else(|| IonError::type_err("range end must be int", line, col))?;
                     let items: Vec<Value> = if inclusive {
                         (s..=e).map(Value::Int).collect()
                     } else {
@@ -686,15 +748,21 @@ impl Vm {
                                     fields.insert(k, v);
                                 }
                             }
-                            _ => return Err(IonError::type_err(
-                                "spread in struct constructor requires a struct", line, col
-                            )),
+                            _ => {
+                                return Err(IonError::type_err(
+                                    "spread in struct constructor requires a struct",
+                                    line,
+                                    col,
+                                ))
+                            }
                         }
                         // Apply overrides
                         for pair in overrides.chunks(2) {
                             let fname = match &pair[0] {
                                 Value::Str(s) => s.clone(),
-                                _ => return Err(IonError::runtime("invalid field name", line, col)),
+                                _ => {
+                                    return Err(IonError::runtime("invalid field name", line, col))
+                                }
                             };
                             fields.insert(fname, pair[1].clone());
                         }
@@ -705,7 +773,9 @@ impl Vm {
                         for pair in items.chunks(2) {
                             let fname = match &pair[0] {
                                 Value::Str(s) => s.clone(),
-                                _ => return Err(IonError::runtime("invalid field name", line, col)),
+                                _ => {
+                                    return Err(IonError::runtime("invalid field name", line, col))
+                                }
                             };
                             fields.insert(fname, pair[1].clone());
                         }
@@ -746,20 +816,23 @@ impl Vm {
                         Value::Tuple(items) => Box::new(items.into_iter()),
                         Value::Dict(map) => Box::new(
                             map.into_iter()
-                                .map(|(k, v)| Value::Tuple(vec![Value::Str(k), v]))
+                                .map(|(k, v)| Value::Tuple(vec![Value::Str(k), v])),
                         ),
                         Value::Str(s) => {
-                            let chars: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+                            let chars: Vec<Value> =
+                                s.chars().map(|c| Value::Str(c.to_string())).collect();
                             Box::new(chars.into_iter())
                         }
                         Value::Bytes(bytes) => {
-                            let vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                            let vals: Vec<Value> =
+                                bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
                             Box::new(vals.into_iter())
                         }
                         other => {
                             return Err(IonError::type_err(
                                 format!("cannot iterate over {}", other.type_name()),
-                                line, col,
+                                line,
+                                col,
                             ));
                         }
                     };
@@ -772,7 +845,9 @@ impl Vm {
                     self.ip += 2;
                     // Pop the previous iteration value/placeholder
                     self.pop(line, col)?;
-                    let iter = self.iterators.last_mut()
+                    let iter = self
+                        .iterators
+                        .last_mut()
                         .ok_or_else(|| IonError::runtime("no active iterator", line, col))?;
                     match iter.next() {
                         Some(val) => {
@@ -852,12 +927,20 @@ impl Vm {
                                 }
                             }
                             if !found {
-                                return Err(IonError::runtime("DictMerge: no dict on stack", line, col));
+                                return Err(IonError::runtime(
+                                    "DictMerge: no dict on stack",
+                                    line,
+                                    col,
+                                ));
                             }
                         }
-                        _ => return Err(IonError::type_err(
-                            ion_str!("spread requires a dict").to_string(), line, col
-                        )),
+                        _ => {
+                            return Err(IonError::type_err(
+                                ion_str!("spread requires a dict").to_string(),
+                                line,
+                                col,
+                            ))
+                        }
                     }
                 }
 
@@ -868,10 +951,19 @@ impl Vm {
                     let has_start = flags & 1 != 0;
                     let has_end = flags & 2 != 0;
                     let inclusive = flags & 4 != 0;
-                    let end_val = if has_end { Some(self.pop(line, col)?) } else { None };
-                    let start_val = if has_start { Some(self.pop(line, col)?) } else { None };
+                    let end_val = if has_end {
+                        Some(self.pop(line, col)?)
+                    } else {
+                        None
+                    };
+                    let start_val = if has_start {
+                        Some(self.pop(line, col)?)
+                    } else {
+                        None
+                    };
                     let obj = self.pop(line, col)?;
-                    let result = self.slice_access(obj, start_val, end_val, inclusive, line, col)?;
+                    let result =
+                        self.slice_access(obj, start_val, end_val, inclusive, line, col)?;
                     self.stack.push(result);
                 }
 
@@ -898,19 +990,33 @@ impl Vm {
 
     fn decode_op(&self, byte: u8, line: usize, col: usize) -> Result<Op, IonError> {
         if byte > Op::Print as u8 {
-            return Err(IonError::runtime(format!("invalid opcode: {}", byte), line, col));
+            return Err(IonError::runtime(
+                format!("invalid opcode: {}", byte),
+                line,
+                col,
+            ));
         }
         // SAFETY: Op is repr(u8) and we checked the range
-        Ok(unsafe { std::mem::transmute(byte) })
+        Ok(unsafe { std::mem::transmute::<u8, crate::bytecode::Op>(byte) })
     }
 
-    fn slice_access(&self, obj: Value, start: Option<Value>, end: Option<Value>, inclusive: bool, line: usize, col: usize) -> Result<Value, IonError> {
+    fn slice_access(
+        &self,
+        obj: Value,
+        start: Option<Value>,
+        end: Option<Value>,
+        inclusive: bool,
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         let get_idx = |v: Option<Value>, default: i64| -> Result<i64, IonError> {
             match v {
                 Some(Value::Int(n)) => Ok(n),
                 None => Ok(default),
                 Some(other) => Err(IonError::type_err(
-                    format!("slice index must be int, got {}", other.type_name()), line, col,
+                    format!("slice index must be int, got {}", other.type_name()),
+                    line,
+                    col,
                 )),
             }
         };
@@ -919,7 +1025,11 @@ impl Vm {
                 let len = items.len() as i64;
                 let s = get_idx(start, 0)?.max(0).min(len) as usize;
                 let e_raw = get_idx(end, len)?;
-                let e = if inclusive { (e_raw + 1).max(0).min(len) as usize } else { e_raw.max(0).min(len) as usize };
+                let e = if inclusive {
+                    (e_raw + 1).max(0).min(len) as usize
+                } else {
+                    e_raw.max(0).min(len) as usize
+                };
                 Ok(Value::List(items[s..e].to_vec()))
             }
             Value::Str(string) => {
@@ -927,29 +1037,41 @@ impl Vm {
                 let len = chars.len() as i64;
                 let s = get_idx(start, 0)?.max(0).min(len) as usize;
                 let e_raw = get_idx(end, len)?;
-                let e = if inclusive { (e_raw + 1).max(0).min(len) as usize } else { e_raw.max(0).min(len) as usize };
+                let e = if inclusive {
+                    (e_raw + 1).max(0).min(len) as usize
+                } else {
+                    e_raw.max(0).min(len) as usize
+                };
                 Ok(Value::Str(chars[s..e].iter().collect()))
             }
             Value::Bytes(bytes) => {
                 let len = bytes.len() as i64;
                 let s = get_idx(start, 0)?.max(0).min(len) as usize;
                 let e_raw = get_idx(end, len)?;
-                let e = if inclusive { (e_raw + 1).max(0).min(len) as usize } else { e_raw.max(0).min(len) as usize };
+                let e = if inclusive {
+                    (e_raw + 1).max(0).min(len) as usize
+                } else {
+                    e_raw.max(0).min(len) as usize
+                };
                 Ok(Value::Bytes(bytes[s..e].to_vec()))
             }
             _ => Err(IonError::type_err(
-                format!("cannot slice {}", obj.type_name()), line, col,
+                format!("cannot slice {}", obj.type_name()),
+                line,
+                col,
             )),
         }
     }
 
     fn pop(&mut self, line: usize, col: usize) -> Result<Value, IonError> {
-        self.stack.pop()
+        self.stack
+            .pop()
             .ok_or_else(|| IonError::runtime("stack underflow", line, col))
     }
 
     fn peek(&self, line: usize, col: usize) -> Result<Value, IonError> {
-        self.stack.last()
+        self.stack
+            .last()
             .cloned()
             .ok_or_else(|| IonError::runtime("stack underflow (peek)", line, col))
     }
@@ -962,7 +1084,12 @@ impl Vm {
     }
 
     /// Resolve a constant pool string to a Symbol, interning it in the env's string pool.
-    fn const_to_sym(&mut self, val: &Value, line: usize, col: usize) -> Result<crate::intern::Symbol, IonError> {
+    fn const_to_sym(
+        &mut self,
+        val: &Value,
+        line: usize,
+        col: usize,
+    ) -> Result<crate::intern::Symbol, IonError> {
         match val {
             Value::Str(s) => Ok(self.env.intern(s)),
             _ => Err(IonError::runtime("expected string constant", line, col)),
@@ -990,7 +1117,8 @@ impl Vm {
             }
             _ => Err(IonError::type_err(
                 format!("cannot add {} and {}", a.type_name(), b.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
@@ -1003,7 +1131,8 @@ impl Vm {
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x - *y as f64)),
             _ => Err(IonError::type_err(
                 format!("cannot subtract {} from {}", b.type_name(), a.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
@@ -1019,7 +1148,8 @@ impl Vm {
             }
             _ => Err(IonError::type_err(
                 format!("cannot multiply {} and {}", a.type_name(), b.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
@@ -1033,7 +1163,8 @@ impl Vm {
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x / *y as f64)),
             _ => Err(IonError::type_err(
                 format!("cannot divide {} by {}", a.type_name(), b.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
@@ -1047,7 +1178,8 @@ impl Vm {
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x % *y as f64)),
             _ => Err(IonError::type_err(
                 format!("cannot modulo {} by {}", a.type_name(), b.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
@@ -1058,7 +1190,8 @@ impl Vm {
             Value::Float(n) => Ok(Value::Float(-n)),
             _ => Err(IonError::type_err(
                 format!("cannot negate {}", val.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
@@ -1072,94 +1205,133 @@ impl Vm {
             (Value::Str(x), Value::Str(y)) => Ok(x < y),
             _ => Err(IonError::type_err(
                 format!("cannot compare {} and {}", a.type_name(), b.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
 
     // ---- Field/Index access ----
 
-    fn get_field(&self, obj: Value, field: &str, line: usize, col: usize) -> Result<Value, IonError> {
+    fn get_field(
+        &self,
+        obj: Value,
+        field: &str,
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match &obj {
-            Value::Dict(map) => {
-                Ok(match map.get(field) {
-                    Some(v) => v.clone(),
-                    None => Value::Option(None),
-                })
-            }
-            Value::HostStruct { fields, .. } => {
-                fields.get(field).cloned()
-                    .ok_or_else(|| IonError::runtime(format!("field '{}' not found", field), line, col))
-            }
-            Value::List(items) => {
-                match field {
-                    "len" => Ok(Value::Int(items.len() as i64)),
-                    _ => Err(IonError::runtime(format!("list has no field '{}'", field), line, col)),
-                }
-            }
-            Value::Str(s) => {
-                match field {
-                    "len" => Ok(Value::Int(s.len() as i64)),
-                    _ => Err(IonError::runtime(format!("string has no field '{}'", field), line, col)),
-                }
-            }
-            Value::Tuple(items) => {
-                match field {
-                    "len" => Ok(Value::Int(items.len() as i64)),
-                    _ => Err(IonError::runtime(format!("tuple has no field '{}'", field), line, col)),
-                }
-            }
+            Value::Dict(map) => Ok(match map.get(field) {
+                Some(v) => v.clone(),
+                None => Value::Option(None),
+            }),
+            Value::HostStruct { fields, .. } => fields.get(field).cloned().ok_or_else(|| {
+                IonError::runtime(format!("field '{}' not found", field), line, col)
+            }),
+            Value::List(items) => match field {
+                "len" => Ok(Value::Int(items.len() as i64)),
+                _ => Err(IonError::runtime(
+                    format!("list has no field '{}'", field),
+                    line,
+                    col,
+                )),
+            },
+            Value::Str(s) => match field {
+                "len" => Ok(Value::Int(s.len() as i64)),
+                _ => Err(IonError::runtime(
+                    format!("string has no field '{}'", field),
+                    line,
+                    col,
+                )),
+            },
+            Value::Tuple(items) => match field {
+                "len" => Ok(Value::Int(items.len() as i64)),
+                _ => Err(IonError::runtime(
+                    format!("tuple has no field '{}'", field),
+                    line,
+                    col,
+                )),
+            },
             _ => Err(IonError::type_err(
                 format!("cannot access field '{}' on {}", field, obj.type_name()),
-                line, col,
+                line,
+                col,
             )),
         }
     }
 
-    fn get_index(&self, obj: Value, index: Value, line: usize, col: usize) -> Result<Value, IonError> {
+    fn get_index(
+        &self,
+        obj: Value,
+        index: Value,
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match (&obj, &index) {
             (Value::List(items), Value::Int(i)) => {
                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
-                items.get(idx).cloned()
-                    .ok_or_else(|| IonError::runtime(format!("index {} out of range", i), line, col))
+                items.get(idx).cloned().ok_or_else(|| {
+                    IonError::runtime(format!("index {} out of range", i), line, col)
+                })
             }
             (Value::Tuple(items), Value::Int(i)) => {
                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
-                items.get(idx).cloned()
-                    .ok_or_else(|| IonError::runtime(format!("index {} out of range", i), line, col))
-            }
-            (Value::Dict(map), Value::Str(key)) => {
-                Ok(match map.get(key) {
-                    Some(v) => v.clone(),
-                    None => Value::Option(None),
+                items.get(idx).cloned().ok_or_else(|| {
+                    IonError::runtime(format!("index {} out of range", i), line, col)
                 })
             }
+            (Value::Dict(map), Value::Str(key)) => Ok(match map.get(key) {
+                Some(v) => v.clone(),
+                None => Value::Option(None),
+            }),
             (Value::Str(s), Value::Int(i)) => {
                 let idx = if *i < 0 { s.len() as i64 + i } else { *i } as usize;
-                s.chars().nth(idx)
+                s.chars()
+                    .nth(idx)
                     .map(|c| Value::Str(c.to_string()))
-                    .ok_or_else(|| IonError::runtime(format!("index {} out of range", i), line, col))
+                    .ok_or_else(|| {
+                        IonError::runtime(format!("index {} out of range", i), line, col)
+                    })
             }
             (Value::Bytes(bytes), Value::Int(i)) => {
                 let idx = if *i < 0 { bytes.len() as i64 + i } else { *i } as usize;
-                bytes.get(idx)
+                bytes
+                    .get(idx)
                     .map(|&b| Value::Int(b as i64))
-                    .ok_or_else(|| IonError::runtime(format!("index {} out of range", i), line, col))
+                    .ok_or_else(|| {
+                        IonError::runtime(format!("index {} out of range", i), line, col)
+                    })
             }
             _ => Err(IonError::type_err(
-                format!("cannot index {} with {}", obj.type_name(), index.type_name()),
-                line, col,
+                format!(
+                    "cannot index {} with {}",
+                    obj.type_name(),
+                    index.type_name()
+                ),
+                line,
+                col,
             )),
         }
     }
 
     /// Set index on a container, returning the modified container.
-    fn set_index(&self, obj: Value, index: Value, value: Value, line: usize, col: usize) -> Result<Value, IonError> {
+    fn set_index(
+        &self,
+        obj: Value,
+        index: Value,
+        value: Value,
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match (obj, &index) {
             (Value::List(mut items), Value::Int(i)) => {
                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                 if idx >= items.len() {
-                    return Err(IonError::runtime(format!("index {} out of range", i), line, col));
+                    return Err(IonError::runtime(
+                        format!("index {} out of range", i),
+                        line,
+                        col,
+                    ));
                 }
                 items[idx] = value;
                 Ok(Value::List(items))
@@ -1169,51 +1341,80 @@ impl Vm {
                 Ok(Value::Dict(map))
             }
             (obj, _) => Err(IonError::type_err(
-                format!("cannot set index on {}", obj.type_name()), line, col,
+                format!("cannot set index on {}", obj.type_name()),
+                line,
+                col,
             )),
         }
     }
 
     /// Set field on an object, returning the modified object.
-    fn set_field(&self, obj: Value, field: &str, value: Value, line: usize, col: usize) -> Result<Value, IonError> {
+    fn set_field(
+        &self,
+        obj: Value,
+        field: &str,
+        value: Value,
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match obj {
             Value::Dict(mut map) => {
                 map.insert(field.to_string(), value);
                 Ok(Value::Dict(map))
             }
-            Value::HostStruct { type_name, mut fields } => {
+            Value::HostStruct {
+                type_name,
+                mut fields,
+            } => {
                 if fields.contains_key(field) {
                     fields.insert(field.to_string(), value);
                     Ok(Value::HostStruct { type_name, fields })
                 } else {
-                    Err(IonError::runtime(format!("field '{}' not found on {}", field, type_name), line, col))
+                    Err(IonError::runtime(
+                        format!("field '{}' not found on {}", field, type_name),
+                        line,
+                        col,
+                    ))
                 }
             }
             _ => Err(IonError::type_err(
-                format!("cannot set field on {}", obj.type_name()), line, col,
+                format!("cannot set field on {}", obj.type_name()),
+                line,
+                col,
             )),
         }
     }
 
     // ---- Method calls ----
 
-    fn call_method(&mut self, receiver: Value, method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn call_method(
+        &mut self,
+        receiver: Value,
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         // Handle closure-based methods that need &mut self for invoke_value
         match (&receiver, method) {
             // List closure methods
             (Value::List(items), "map") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("map requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("map requires a function argument", line, col)
+                })?;
                 let mut result = Vec::new();
                 for item in items {
-                    result.push(self.invoke_value(func, &[item.clone()], line, col)?);
+                    result.push(self.invoke_value(func, std::slice::from_ref(item), line, col)?);
                 }
                 return Ok(Value::List(result));
             }
             (Value::List(items), "filter") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("filter requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("filter requires a function argument", line, col)
+                })?;
                 let mut result = Vec::new();
                 for item in items {
-                    let keep = self.invoke_value(func, &[item.clone()], line, col)?;
+                    let keep = self.invoke_value(func, std::slice::from_ref(item), line, col)?;
                     if keep.is_truthy() {
                         result.push(item.clone());
                     }
@@ -1222,7 +1423,9 @@ impl Vm {
             }
             (Value::List(items), "fold") => {
                 let init = args.first().cloned().unwrap_or(Value::Unit);
-                let func = args.get(1).ok_or_else(|| IonError::runtime("fold requires an initial value and a function", line, col))?;
+                let func = args.get(1).ok_or_else(|| {
+                    IonError::runtime("fold requires an initial value and a function", line, col)
+                })?;
                 let mut acc = init;
                 for item in items {
                     acc = self.invoke_value(func, &[acc, item.clone()], line, col)?;
@@ -1230,10 +1433,12 @@ impl Vm {
                 return Ok(acc);
             }
             (Value::List(items), "flat_map") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("flat_map requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("flat_map requires a function argument", line, col)
+                })?;
                 let mut result = Vec::new();
                 for item in items {
-                    let mapped = self.invoke_value(func, &[item.clone()], line, col)?;
+                    let mapped = self.invoke_value(func, std::slice::from_ref(item), line, col)?;
                     match mapped {
                         Value::List(sub) => result.extend(sub),
                         other => result.push(other),
@@ -1242,47 +1447,79 @@ impl Vm {
                 return Ok(Value::List(result));
             }
             (Value::List(items), "any") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("any requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("any requires a function argument", line, col)
+                })?;
                 for item in items {
-                    if self.invoke_value(func, &[item.clone()], line, col)?.is_truthy() {
+                    if self
+                        .invoke_value(func, std::slice::from_ref(item), line, col)?
+                        .is_truthy()
+                    {
                         return Ok(Value::Bool(true));
                     }
                 }
                 return Ok(Value::Bool(false));
             }
             (Value::List(items), "all") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("all requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("all requires a function argument", line, col)
+                })?;
                 for item in items {
-                    if !self.invoke_value(func, &[item.clone()], line, col)?.is_truthy() {
+                    if !self
+                        .invoke_value(func, std::slice::from_ref(item), line, col)?
+                        .is_truthy()
+                    {
                         return Ok(Value::Bool(false));
                     }
                 }
                 return Ok(Value::Bool(true));
             }
             (Value::List(items), "sort_by") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("sort_by requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("sort_by requires a function argument", line, col)
+                })?;
                 let mut result = items.to_vec();
                 let mut err: Option<IonError> = None;
                 let func_clone = func.clone();
                 result.sort_by(|a, b| {
-                    if err.is_some() { return std::cmp::Ordering::Equal; }
+                    if err.is_some() {
+                        return std::cmp::Ordering::Equal;
+                    }
                     match self.invoke_value(&func_clone, &[a.clone(), b.clone()], line, col) {
                         Ok(Value::Int(n)) => {
-                            if n < 0 { std::cmp::Ordering::Less }
-                            else if n > 0 { std::cmp::Ordering::Greater }
-                            else { std::cmp::Ordering::Equal }
+                            if n < 0 {
+                                std::cmp::Ordering::Less
+                            } else if n > 0 {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Equal
+                            }
                         }
-                        Ok(_) => { err = Some(IonError::type_err("sort_by function must return int", line, col)); std::cmp::Ordering::Equal }
-                        Err(e) => { err = Some(e); std::cmp::Ordering::Equal }
+                        Ok(_) => {
+                            err = Some(IonError::type_err(
+                                "sort_by function must return int",
+                                line,
+                                col,
+                            ));
+                            std::cmp::Ordering::Equal
+                        }
+                        Err(e) => {
+                            err = Some(e);
+                            std::cmp::Ordering::Equal
+                        }
                     }
                 });
-                if let Some(e) = err { return Err(e); }
+                if let Some(e) = err {
+                    return Err(e);
+                }
                 return Ok(Value::List(result));
             }
 
             // Option closure methods
             (Value::Option(opt), "map") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("map requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("map requires a function argument", line, col)
+                })?;
                 return match opt {
                     Some(v) => {
                         let result = self.invoke_value(func, &[*v.clone()], line, col)?;
@@ -1292,21 +1529,27 @@ impl Vm {
                 };
             }
             (Value::Option(opt), "and_then") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("and_then requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("and_then requires a function argument", line, col)
+                })?;
                 return match opt {
                     Some(v) => self.invoke_value(func, &[*v.clone()], line, col),
                     None => Ok(Value::Option(None)),
                 };
             }
             (Value::Option(opt), "or_else") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("or_else requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("or_else requires a function argument", line, col)
+                })?;
                 return match opt {
                     Some(v) => Ok(Value::Option(Some(v.clone()))),
                     None => self.invoke_value(func, &[], line, col),
                 };
             }
             (Value::Option(opt), "unwrap_or_else") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("unwrap_or_else requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("unwrap_or_else requires a function argument", line, col)
+                })?;
                 return match opt {
                     Some(v) => Ok(*v.clone()),
                     None => self.invoke_value(func, &[], line, col),
@@ -1315,7 +1558,9 @@ impl Vm {
 
             // Result closure methods
             (Value::Result(res), "map") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("map requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("map requires a function argument", line, col)
+                })?;
                 return match res {
                     Ok(v) => {
                         let result = self.invoke_value(func, &[*v.clone()], line, col)?;
@@ -1325,7 +1570,9 @@ impl Vm {
                 };
             }
             (Value::Result(res), "map_err") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("map_err requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("map_err requires a function argument", line, col)
+                })?;
                 return match res {
                     Ok(v) => Ok(Value::Result(Ok(v.clone()))),
                     Err(e) => {
@@ -1335,21 +1582,27 @@ impl Vm {
                 };
             }
             (Value::Result(res), "and_then") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("and_then requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("and_then requires a function argument", line, col)
+                })?;
                 return match res {
                     Ok(v) => self.invoke_value(func, &[*v.clone()], line, col),
                     Err(e) => Ok(Value::Result(Err(e.clone()))),
                 };
             }
             (Value::Result(res), "or_else") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("or_else requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("or_else requires a function argument", line, col)
+                })?;
                 return match res {
                     Ok(v) => Ok(Value::Result(Ok(v.clone()))),
                     Err(e) => self.invoke_value(func, &[*e.clone()], line, col),
                 };
             }
             (Value::Result(res), "unwrap_or_else") => {
-                let func = args.first().ok_or_else(|| IonError::runtime("unwrap_or_else requires a function argument", line, col))?;
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("unwrap_or_else requires a function argument", line, col)
+                })?;
                 return match res {
                     Ok(v) => Ok(*v.clone()),
                     Err(e) => self.invoke_value(func, &[*e.clone()], line, col),
@@ -1370,17 +1623,27 @@ impl Vm {
             Value::Result(_) => self.result_method(&receiver, method, args, line, col),
             _ => Err(IonError::type_err(
                 format!("{} has no method '{}'", receiver.type_name(), method),
-                line, col,
+                line,
+                col,
             )),
         }
     }
 
-    fn list_method(&self, items: &[Value], method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn list_method(
+        &self,
+        items: &[Value],
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match method {
             "len" => Ok(Value::Int(items.len() as i64)),
             "push" => {
                 let mut new = items.to_vec();
-                for a in args { new.push(a.clone()); }
+                for a in args {
+                    new.push(a.clone());
+                }
                 Ok(Value::List(new))
             }
             "pop" => {
@@ -1388,9 +1651,9 @@ impl Vm {
                 let val = new.pop().unwrap_or(Value::Unit);
                 Ok(val)
             }
-            "contains" => {
-                Ok(Value::Bool(args.first().map(|a| items.contains(a)).unwrap_or(false)))
-            }
+            "contains" => Ok(Value::Bool(
+                args.first().map(|a| items.contains(a)).unwrap_or(false),
+            )),
             "is_empty" => Ok(Value::Bool(items.is_empty())),
             "reverse" => {
                 let mut new = items.to_vec();
@@ -1398,42 +1661,39 @@ impl Vm {
                 Ok(Value::List(new))
             }
             "join" => {
-                let sep = args.first()
-                    .and_then(|a| a.as_str())
-                    .unwrap_or("");
-                let s: String = items.iter()
+                let sep = args.first().and_then(|a| a.as_str()).unwrap_or("");
+                let s: String = items
+                    .iter()
                     .map(|v| v.to_string())
                     .collect::<Vec<_>>()
                     .join(sep);
                 Ok(Value::Str(s))
             }
             "enumerate" => {
-                let pairs: Vec<Value> = items.iter().enumerate()
+                let pairs: Vec<Value> = items
+                    .iter()
+                    .enumerate()
                     .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
                     .collect();
                 Ok(Value::List(pairs))
             }
-            "first" => {
-                Ok(match items.first() {
-                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
-                    None => Value::Option(None),
-                })
-            }
-            "last" => {
-                Ok(match items.last() {
-                    Some(v) => Value::Option(Some(Box::new(v.clone()))),
-                    None => Value::Option(None),
-                })
-            }
+            "first" => Ok(match items.first() {
+                Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                None => Value::Option(None),
+            }),
+            "last" => Ok(match items.last() {
+                Some(v) => Value::Option(Some(Box::new(v.clone()))),
+                None => Value::Option(None),
+            }),
             "sort" => {
                 let mut sorted = items.to_vec();
-                sorted.sort_by(|a, b| {
-                    match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
-                        _ => std::cmp::Ordering::Equal,
+                sorted.sort_by(|a, b| match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                    (Value::Float(x), Value::Float(y)) => {
+                        x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
                     }
+                    (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                    _ => std::cmp::Ordering::Equal,
                 });
                 Ok(Value::List(sorted))
             }
@@ -1450,30 +1710,58 @@ impl Vm {
             }
             "zip" => {
                 if let Some(Value::List(other)) = args.first() {
-                    let result: Vec<Value> = items.iter().zip(other.iter())
+                    let result: Vec<Value> = items
+                        .iter()
+                        .zip(other.iter())
                         .map(|(a, b)| Value::Tuple(vec![a.clone(), b.clone()]))
                         .collect();
                     Ok(Value::List(result))
                 } else {
-                    Err(IonError::type_err("zip requires a list argument".to_string(), line, col))
+                    Err(IonError::type_err(
+                        "zip requires a list argument".to_string(),
+                        line,
+                        col,
+                    ))
                 }
             }
-            _ => Err(IonError::type_err(format!("list has no method '{}'", method), line, col)),
+            _ => Err(IonError::type_err(
+                format!("list has no method '{}'", method),
+                line,
+                col,
+            )),
         }
     }
 
-    fn tuple_method(&self, items: &[Value], method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn tuple_method(
+        &self,
+        items: &[Value],
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match method {
             "len" => Ok(Value::Int(items.len() as i64)),
-            "contains" => {
-                Ok(Value::Bool(args.first().map(|a| items.contains(a)).unwrap_or(false)))
-            }
+            "contains" => Ok(Value::Bool(
+                args.first().map(|a| items.contains(a)).unwrap_or(false),
+            )),
             "to_list" => Ok(Value::List(items.to_vec())),
-            _ => Err(IonError::type_err(format!("tuple has no method '{}'", method), line, col)),
+            _ => Err(IonError::type_err(
+                format!("tuple has no method '{}'", method),
+                line,
+                col,
+            )),
         }
     }
 
-    fn str_method(&self, s: &str, method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn str_method(
+        &self,
+        s: &str,
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match method {
             "len" => Ok(Value::Int(s.len() as i64)),
             "to_upper" => Ok(Value::Str(s.to_uppercase())),
@@ -1509,8 +1797,9 @@ impl Vm {
             "trim_start" => Ok(Value::Str(s.trim_start().to_string())),
             "trim_end" => Ok(Value::Str(s.trim_end().to_string())),
             "repeat" => {
-                let n = args.first().and_then(|a| a.as_int())
-                    .ok_or_else(|| IonError::type_err("repeat requires int argument".to_string(), line, col))?;
+                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("repeat requires int argument".to_string(), line, col)
+                })?;
                 Ok(Value::Str(s.repeat(n as usize)))
             }
             "find" => {
@@ -1520,60 +1809,85 @@ impl Vm {
                     None => Value::Option(None),
                 })
             }
-            "to_int" => {
-                Ok(match s.trim().parse::<i64>() {
-                    std::result::Result::Ok(n) => Value::Result(Ok(Box::new(Value::Int(n)))),
-                    std::result::Result::Err(e) => Value::Result(Err(Box::new(Value::Str(e.to_string())))),
-                })
-            }
-            "to_float" => {
-                Ok(match s.trim().parse::<f64>() {
-                    std::result::Result::Ok(f) => Value::Result(Ok(Box::new(Value::Float(f)))),
-                    std::result::Result::Err(e) => Value::Result(Err(Box::new(Value::Str(e.to_string())))),
-                })
-            }
+            "to_int" => Ok(match s.trim().parse::<i64>() {
+                std::result::Result::Ok(n) => Value::Result(Ok(Box::new(Value::Int(n)))),
+                std::result::Result::Err(e) => {
+                    Value::Result(Err(Box::new(Value::Str(e.to_string()))))
+                }
+            }),
+            "to_float" => Ok(match s.trim().parse::<f64>() {
+                std::result::Result::Ok(f) => Value::Result(Ok(Box::new(Value::Float(f)))),
+                std::result::Result::Err(e) => {
+                    Value::Result(Err(Box::new(Value::Str(e.to_string()))))
+                }
+            }),
             "reverse" => Ok(Value::Str(s.chars().rev().collect())),
             "slice" => {
                 let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args.get(1).and_then(|a| a.as_int()).map(|n| n as usize).unwrap_or(s.len());
+                let end = args
+                    .get(1)
+                    .and_then(|a| a.as_int())
+                    .map(|n| n as usize)
+                    .unwrap_or(s.len());
                 let start = start.min(s.len());
                 let end = end.min(s.len());
                 Ok(Value::Str(s[start..end].to_string()))
             }
-            _ => Err(IonError::type_err(format!("string has no method '{}'", method), line, col)),
+            _ => Err(IonError::type_err(
+                format!("string has no method '{}'", method),
+                line,
+                col,
+            )),
         }
     }
 
-    fn bytes_method(&self, bytes: &[u8], method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn bytes_method(
+        &self,
+        bytes: &[u8],
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match method {
             "len" => Ok(Value::Int(bytes.len() as i64)),
             "is_empty" => Ok(Value::Bool(bytes.is_empty())),
             "contains" => {
-                let byte = args.first().and_then(|a| a.as_int())
-                    .ok_or_else(|| IonError::type_err("bytes.contains() requires an int".to_string(), line, col))?;
+                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("bytes.contains() requires an int".to_string(), line, col)
+                })?;
                 Ok(Value::Bool(bytes.contains(&(byte as u8))))
             }
             "slice" => {
                 let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args.get(1).and_then(|a| a.as_int()).map(|n| n as usize).unwrap_or(bytes.len());
+                let end = args
+                    .get(1)
+                    .and_then(|a| a.as_int())
+                    .map(|n| n as usize)
+                    .unwrap_or(bytes.len());
                 let start = start.min(bytes.len());
                 let end = end.min(bytes.len());
                 Ok(Value::Bytes(bytes[start..end].to_vec()))
             }
-            "to_list" => Ok(Value::List(bytes.iter().map(|&b| Value::Int(b as i64)).collect())),
-            "to_str" => {
-                match std::str::from_utf8(bytes) {
-                    std::result::Result::Ok(s) => Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string()))))),
-                    std::result::Result::Err(e) => Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e)))))),
+            "to_list" => Ok(Value::List(
+                bytes.iter().map(|&b| Value::Int(b as i64)).collect(),
+            )),
+            "to_str" => match std::str::from_utf8(bytes) {
+                std::result::Result::Ok(s) => {
+                    Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string())))))
                 }
-            }
+                std::result::Result::Err(e) => {
+                    Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e))))))
+                }
+            },
             "to_hex" => {
                 let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
                 Ok(Value::Str(hex))
             }
             "find" => {
-                let needle = args.first().and_then(|a| a.as_int())
-                    .ok_or_else(|| IonError::type_err("bytes.find() requires an int".to_string(), line, col))?;
+                let needle = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("bytes.find() requires an int".to_string(), line, col)
+                })?;
                 let pos = bytes.iter().position(|&b| b == needle as u8);
                 Ok(match pos {
                     Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
@@ -1586,17 +1900,29 @@ impl Vm {
                 Ok(Value::Bytes(rev))
             }
             "push" => {
-                let byte = args.first().and_then(|a| a.as_int())
-                    .ok_or_else(|| IonError::type_err("bytes.push() requires an int".to_string(), line, col))?;
+                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("bytes.push() requires an int".to_string(), line, col)
+                })?;
                 let mut new = bytes.to_vec();
                 new.push(byte as u8);
                 Ok(Value::Bytes(new))
             }
-            _ => Err(IonError::type_err(format!("bytes has no method '{}'", method), line, col)),
+            _ => Err(IonError::type_err(
+                format!("bytes has no method '{}'", method),
+                line,
+                col,
+            )),
         }
     }
 
-    fn dict_method(&self, map: &IndexMap<String, Value>, method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn dict_method(
+        &self,
+        map: &IndexMap<String, Value>,
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         match method {
             "len" => Ok(Value::Int(map.len() as i64)),
             "keys" => {
@@ -1620,7 +1946,9 @@ impl Vm {
             }
             "is_empty" => Ok(Value::Bool(map.is_empty())),
             "entries" => Ok(Value::List(
-                map.iter().map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()])).collect()
+                map.iter()
+                    .map(|(k, v)| Value::Tuple(vec![Value::Str(k.clone()), v.clone()]))
+                    .collect(),
             )),
             "insert" => {
                 let key = args.first().and_then(|a| a.as_str()).unwrap_or("");
@@ -1643,14 +1971,29 @@ impl Vm {
                     }
                     Ok(Value::Dict(new_map))
                 } else {
-                    Err(IonError::type_err("merge requires a dict argument".to_string(), line, col))
+                    Err(IonError::type_err(
+                        "merge requires a dict argument".to_string(),
+                        line,
+                        col,
+                    ))
                 }
             }
-            _ => Err(IonError::type_err(format!("dict has no method '{}'", method), line, col)),
+            _ => Err(IonError::type_err(
+                format!("dict has no method '{}'", method),
+                line,
+                col,
+            )),
         }
     }
 
-    fn option_method(&self, val: &Value, method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn option_method(
+        &self,
+        val: &Value,
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         let opt = match val {
             Value::Option(o) => o,
             _ => return Err(IonError::type_err("expected Option", line, col)),
@@ -1658,25 +2001,36 @@ impl Vm {
         match method {
             "is_some" => Ok(Value::Bool(opt.is_some())),
             "is_none" => Ok(Value::Bool(opt.is_none())),
-            "unwrap_or" => {
-                Ok(opt.as_ref().map(|v| *v.clone()).unwrap_or_else(|| {
-                    args.first().cloned().unwrap_or(Value::Unit)
-                }))
-            }
-            "expect" => {
-                match opt {
-                    Some(v) => Ok(*v.clone()),
-                    None => {
-                        let msg = args.first().and_then(|a| a.as_str()).unwrap_or("called expect on None");
-                        Err(IonError::runtime(msg.to_string(), line, col))
-                    }
+            "unwrap_or" => Ok(opt
+                .as_ref()
+                .map(|v| *v.clone())
+                .unwrap_or_else(|| args.first().cloned().unwrap_or(Value::Unit))),
+            "expect" => match opt {
+                Some(v) => Ok(*v.clone()),
+                None => {
+                    let msg = args
+                        .first()
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("called expect on None");
+                    Err(IonError::runtime(msg.to_string(), line, col))
                 }
-            }
-            _ => Err(IonError::type_err(format!("Option has no method '{}'", method), line, col)),
+            },
+            _ => Err(IonError::type_err(
+                format!("Option has no method '{}'", method),
+                line,
+                col,
+            )),
         }
     }
 
-    fn result_method(&self, val: &Value, method: &str, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn result_method(
+        &self,
+        val: &Value,
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         let res = match val {
             Value::Result(r) => r,
             _ => return Err(IonError::type_err("expected Result", line, col)),
@@ -1684,30 +2038,38 @@ impl Vm {
         match method {
             "is_ok" => Ok(Value::Bool(res.is_ok())),
             "is_err" => Ok(Value::Bool(res.is_err())),
-            "unwrap_or" => {
-                Ok(match res {
-                    Ok(v) => *v.clone(),
-                    Err(_) => args.first().cloned().unwrap_or(Value::Unit),
-                })
-            }
-            "expect" => {
-                match res {
-                    Ok(v) => Ok(*v.clone()),
-                    Err(e) => {
-                        let msg = args.first().and_then(|a| a.as_str())
-                            .unwrap_or("called expect on Err");
-                        Err(IonError::runtime(format!("{}: {}", msg, e), line, col))
-                    }
+            "unwrap_or" => Ok(match res {
+                Ok(v) => *v.clone(),
+                Err(_) => args.first().cloned().unwrap_or(Value::Unit),
+            }),
+            "expect" => match res {
+                Ok(v) => Ok(*v.clone()),
+                Err(e) => {
+                    let msg = args
+                        .first()
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("called expect on Err");
+                    Err(IonError::runtime(format!("{}: {}", msg, e), line, col))
                 }
-            }
-            _ => Err(IonError::type_err(format!("Result has no method '{}'", method), line, col)),
+            },
+            _ => Err(IonError::type_err(
+                format!("Result has no method '{}'", method),
+                line,
+                col,
+            )),
         }
     }
 
     // ---- Function calls ----
 
     /// Invoke a function value with arguments directly (not from the stack).
-    fn invoke_value(&mut self, func: &Value, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+    fn invoke_value(
+        &mut self,
+        func: &Value,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
         // Push func and args onto stack, then call
         self.stack.push(func.clone());
         for arg in args {
@@ -1756,7 +2118,10 @@ impl Vm {
                         } else {
                             Value::Unit
                         };
-                        self.locals.push(LocalSlot { value: val, mutable: false });
+                        self.locals.push(LocalSlot {
+                            value: val,
+                            mutable: false,
+                        });
                     }
 
                     let fn_id = ion_fn.fn_id;
@@ -1764,7 +2129,9 @@ impl Vm {
                         Some(chunk.clone())
                     } else {
                         let compiler = crate::compiler::Compiler::new();
-                        compiler.compile_fn_body(&ion_fn.params, &ion_fn.body, line).ok()
+                        compiler
+                            .compile_fn_body(&ion_fn.params, &ion_fn.body, line)
+                            .ok()
                     };
                     if let Some(chunk) = chunk_opt {
                         self.fn_cache.entry(fn_id).or_insert_with(|| chunk.clone());
@@ -1790,7 +2157,9 @@ impl Vm {
                         match result {
                             Ok(val) => self.stack.push(val),
                             Err(e) if e.kind == crate::error::ErrorKind::PropagatedErr => {
-                                self.stack.push(Value::Result(Err(Box::new(Value::Str(e.message.clone())))));
+                                self.stack.push(Value::Result(Err(Box::new(Value::Str(
+                                    e.message.clone(),
+                                )))));
                             }
                             Err(e) if e.kind == crate::error::ErrorKind::PropagatedNone => {
                                 self.stack.push(Value::Option(None));
@@ -1802,14 +2171,17 @@ impl Vm {
                         self.locals.truncate(saved_locals_len);
                         self.local_frames.truncate(saved_frames_len);
                         self.locals_base = saved_locals_base;
-                        let mut interp = crate::interpreter::Interpreter::with_env(self.env.clone());
+                        let mut interp =
+                            crate::interpreter::Interpreter::with_env(self.env.clone());
                         let result = interp.eval_block(&ion_fn.body);
                         self.env = interp.take_env();
                         self.env.pop_scope();
                         match result {
                             Ok(val) => self.stack.push(val),
                             Err(e) if e.kind == crate::error::ErrorKind::PropagatedErr => {
-                                self.stack.push(Value::Result(Err(Box::new(Value::Str(e.message.clone())))));
+                                self.stack.push(Value::Result(Err(Box::new(Value::Str(
+                                    e.message.clone(),
+                                )))));
                             }
                             Err(e) if e.kind == crate::error::ErrorKind::PropagatedNone => {
                                 self.stack.push(Value::Option(None));
@@ -1822,7 +2194,8 @@ impl Vm {
                 _ => {
                     return Err(IonError::type_err(
                         format!("cannot call {}", func.type_name()),
-                        line, col,
+                        line,
+                        col,
                     ));
                 }
             }

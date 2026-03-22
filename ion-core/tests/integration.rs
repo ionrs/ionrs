@@ -1,5 +1,5 @@
 use ion_core::engine::Engine;
-use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef, IonType};
+use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef, IonType};
 use ion_core::interpreter::Limits;
 use ion_core::value::Value;
 use ion_core::IonType;
@@ -61,7 +61,11 @@ fn test_let_mut() {
 #[test]
 fn test_immutable_assign_error() {
     let msg = eval_err("let x = 1; x = 2;");
-    assert!(msg.contains("immutable"), "expected immutable error, got: {}", msg);
+    assert!(
+        msg.contains("immutable"),
+        "expected immutable error, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -71,13 +75,20 @@ fn test_shadowing() {
 
 #[test]
 fn test_shadowing_type_change() {
-    assert_eq!(eval(r#"let x = 1; let x = "hello"; x"#), Value::Str("hello".into()));
+    assert_eq!(
+        eval(r#"let x = 1; let x = "hello"; x"#),
+        Value::Str("hello".into())
+    );
 }
 
 #[test]
 fn test_shadowing_freeze() {
     let msg = eval_err("let mut x = 1; let x = x; x = 3;");
-    assert!(msg.contains("immutable"), "expected immutable error, got: {}", msg);
+    assert!(
+        msg.contains("immutable"),
+        "expected immutable error, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -102,7 +113,11 @@ fn test_outer_scope_visible() {
 #[test]
 fn test_inner_scope_not_visible_outside() {
     let msg = eval_err("{ let y = 1; } y;");
-    assert!(msg.contains("undefined"), "expected undefined error, got: {}", msg);
+    assert!(
+        msg.contains("undefined"),
+        "expected undefined error, got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -132,19 +147,30 @@ fn test_int_float_mixed() {
 
 #[test]
 fn test_string_concat() {
-    assert_eq!(eval(r#""hello" + " " + "world""#), Value::Str("hello world".into()));
+    assert_eq!(
+        eval(r#""hello" + " " + "world""#),
+        Value::Str("hello world".into())
+    );
 }
 
 #[test]
 fn test_type_error_add() {
     let msg = eval_err(r#"1 + "hello""#);
-    assert!(msg.contains("cannot apply"), "expected type error, got: {}", msg);
+    assert!(
+        msg.contains("cannot apply"),
+        "expected type error, got: {}",
+        msg
+    );
 }
 
 #[test]
 fn test_division_by_zero() {
     let msg = eval_err("1 / 0");
-    assert!(msg.contains("division by zero"), "expected div zero, got: {}", msg);
+    assert!(
+        msg.contains("division by zero"),
+        "expected div zero, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -204,26 +230,38 @@ fn test_fn_return_last_expr() {
 
 #[test]
 fn test_fn_explicit_return() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         fn f(x) {
             if x > 0 { return x; }
             0 - x
         }
         f(5)
-    "), Value::Int(5));
-    assert_eq!(eval("
+    "
+        ),
+        Value::Int(5)
+    );
+    assert_eq!(
+        eval(
+            "
         fn f(x) {
             if x > 0 { return x; }
             0 - x
         }
         f(-5)
-    "), Value::Int(5));
+    "
+        ),
+        Value::Int(5)
+    );
 }
 
 #[test]
 fn test_fn_default_args() {
-    assert_eq!(eval("fn greet(name, greeting = \"hello\") { greeting + \" \" + name } greet(\"world\")"),
-        Value::Str("hello world".into()));
+    assert_eq!(
+        eval("fn greet(name, greeting = \"hello\") { greeting + \" \" + name } greet(\"world\")"),
+        Value::Str("hello world".into())
+    );
 }
 
 #[test]
@@ -244,22 +282,33 @@ fn test_closure_capture() {
 #[test]
 fn test_closure_capture_by_value() {
     // Closure captures at time of creation, not affected by later shadowing
-    assert_eq!(eval("let x = 1; let f = |y| x + y; let x = 100; f(0)"), Value::Int(1));
+    assert_eq!(
+        eval("let x = 1; let f = |y| x + y; let x = 100; f(0)"),
+        Value::Int(1)
+    );
 }
 
 #[test]
 fn test_higher_order_fn() {
-    assert_eq!(eval("fn apply(f, x) { f(x) } apply(|x| x * 3, 5)"), Value::Int(15));
+    assert_eq!(
+        eval("fn apply(f, x) { f(x) } apply(|x| x * 3, 5)"),
+        Value::Int(15)
+    );
 }
 
 #[test]
 fn test_recursion() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         fn fib(n) {
             if n <= 1 { n } else { fib(n - 1) + fib(n - 2) }
         }
         fib(6)
-    "), Value::Int(8));
+    "
+        ),
+        Value::Int(8)
+    );
 }
 
 // ============================================================
@@ -274,20 +323,31 @@ fn test_if_else_expr() {
 
 #[test]
 fn test_if_as_value() {
-    assert_eq!(eval("let x = if 1 > 0 { 10 } else { 20 }; x"), Value::Int(10));
+    assert_eq!(
+        eval("let x = if 1 > 0 { 10 } else { 20 }; x"),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_else_if() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let x = 5;
         if x > 10 { \"big\" } else if x > 3 { \"medium\" } else { \"small\" }
-    "), Value::Str("medium".into()));
+    "
+        ),
+        Value::Str("medium".into())
+    );
 }
 
 #[test]
 fn test_block_expr_returns_last() {
-    assert_eq!(eval("let x = { let a = 1; let b = 2; a + b }; x"), Value::Int(3));
+    assert_eq!(
+        eval("let x = { let a = 1; let b = 2; a + b }; x"),
+        Value::Int(3)
+    );
 }
 
 #[test]
@@ -301,69 +361,99 @@ fn test_block_trailing_semi_returns_unit() {
 
 #[test]
 fn test_for_loop() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let mut sum = 0;
         for x in [1, 2, 3, 4, 5] {
             sum = sum + x;
         }
         sum
-    "), Value::Int(15));
+    "
+        ),
+        Value::Int(15)
+    );
 }
 
 #[test]
 fn test_for_range() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let mut sum = 0;
         for i in 0..5 {
             sum = sum + i;
         }
         sum
-    "), Value::Int(10));
+    "
+        ),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_while_loop() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let mut i = 0;
         while i < 5 {
             i = i + 1;
         }
         i
-    "), Value::Int(5));
+    "
+        ),
+        Value::Int(5)
+    );
 }
 
 #[test]
 fn test_loop_break() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let mut i = 0;
         loop {
             if i >= 3 { break; }
             i = i + 1;
         }
         i
-    "), Value::Int(3));
+    "
+        ),
+        Value::Int(3)
+    );
 }
 
 #[test]
 fn test_loop_break_value() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let result = loop {
             break 42;
         };
         result
-    "), Value::Int(42));
+    "
+        ),
+        Value::Int(42)
+    );
 }
 
 #[test]
 fn test_for_continue() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let mut sum = 0;
         for x in [1, 2, 3, 4, 5] {
             if x == 3 { continue; }
             sum = sum + x;
         }
         sum
-    "), Value::Int(12));
+    "
+        ),
+        Value::Int(12)
+    );
 }
 
 #[test]
@@ -377,7 +467,11 @@ fn test_compound_assignment() {
 #[test]
 fn test_compound_assign_immutable_error() {
     let msg = eval_err("let x = 10; x += 1;");
-    assert!(msg.contains("immutable"), "expected immutable error, got: {}", msg);
+    assert!(
+        msg.contains("immutable"),
+        "expected immutable error, got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -386,66 +480,94 @@ fn test_compound_assign_immutable_error() {
 
 #[test]
 fn test_match_int() {
-    assert_eq!(eval(r#"match 2 { 1 => "one", 2 => "two", _ => "other" }"#),
-        Value::Str("two".into()));
+    assert_eq!(
+        eval(r#"match 2 { 1 => "one", 2 => "two", _ => "other" }"#),
+        Value::Str("two".into())
+    );
 }
 
 #[test]
 fn test_match_wildcard() {
-    assert_eq!(eval(r#"match 99 { 1 => "one", _ => "other" }"#),
-        Value::Str("other".into()));
+    assert_eq!(
+        eval(r#"match 99 { 1 => "one", _ => "other" }"#),
+        Value::Str("other".into())
+    );
 }
 
 #[test]
 fn test_match_with_guard() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         let score = 85;
         match score {
             s if s >= 90 => "A",
             s if s >= 80 => "B",
             _ => "C",
         }
-    "#), Value::Str("B".into()));
+    "#
+        ),
+        Value::Str("B".into())
+    );
 }
 
 #[test]
 fn test_match_option() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         let x = Some(42);
         match x {
             Some(v) => v,
             None => 0,
         }
-    "#), Value::Int(42));
+    "#
+        ),
+        Value::Int(42)
+    );
 }
 
 #[test]
 fn test_match_result() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         let x = Ok(10);
         match x {
             Ok(v) => v * 2,
             Err(e) => 0,
         }
-    "#), Value::Int(20));
+    "#
+        ),
+        Value::Int(20)
+    );
 }
 
 #[test]
 fn test_match_nested() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         let x = Ok(Some(5));
         match x {
             Ok(Some(v)) => v,
             Ok(None) => 0,
             Err(e) => -1,
         }
-    "#), Value::Int(5));
+    "#
+        ),
+        Value::Int(5)
+    );
 }
 
 #[test]
 fn test_non_exhaustive_match_error() {
     let msg = eval_err("match 5 { 1 => 10 }");
-    assert!(msg.contains("non-exhaustive"), "expected non-exhaustive, got: {}", msg);
+    assert!(
+        msg.contains("non-exhaustive"),
+        "expected non-exhaustive, got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -454,7 +576,10 @@ fn test_non_exhaustive_match_error() {
 
 #[test]
 fn test_some_none() {
-    assert_eq!(eval("Some(42)"), Value::Option(Some(Box::new(Value::Int(42)))));
+    assert_eq!(
+        eval("Some(42)"),
+        Value::Option(Some(Box::new(Value::Int(42))))
+    );
     assert_eq!(eval("None"), Value::Option(None));
 }
 
@@ -471,11 +596,18 @@ fn test_question_mark_ok() {
 #[test]
 fn test_question_mark_err_propagation() {
     // ? on Err inside a function returns Result(Err) at function boundary
-    let result = Engine::new().eval(r#"
+    let result = Engine::new()
+        .eval(
+            r#"
         fn inner() { let x = Err("fail"); x? }
         inner()
-    "#).unwrap();
-    assert_eq!(result, Value::Result(Err(Box::new(Value::Str("fail".to_string())))));
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        result,
+        Value::Result(Err(Box::new(Value::Str("fail".to_string()))))
+    );
 }
 
 #[test]
@@ -486,7 +618,9 @@ fn test_question_mark_some() {
 #[test]
 fn test_question_mark_none_propagation() {
     // ? on None inside a function returns Option(None) at function boundary
-    let result = Engine::new().eval("fn f() { let x = None; x? } f()").unwrap();
+    let result = Engine::new()
+        .eval("fn f() { let x = None; x? } f()")
+        .unwrap();
     assert_eq!(result, Value::Option(None));
 }
 
@@ -500,7 +634,10 @@ fn test_question_mark_type_error() {
 fn test_question_mark_top_level_err() {
     // ? at top-level returns Result(Err) as value instead of runtime error
     let result = Engine::new().eval(r#"let x = Err("oops"); x?"#).unwrap();
-    assert_eq!(result, Value::Result(Err(Box::new(Value::Str("oops".to_string())))));
+    assert_eq!(
+        result,
+        Value::Result(Err(Box::new(Value::Str("oops".to_string()))))
+    );
 }
 
 #[test]
@@ -538,7 +675,11 @@ fn test_expect_some() {
 #[test]
 fn test_expect_none_error() {
     let msg = eval_err(r#"None.expect("value missing")"#);
-    assert!(msg.contains("value missing"), "expected expect msg, got: {}", msg);
+    assert!(
+        msg.contains("value missing"),
+        "expected expect msg, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -563,24 +704,36 @@ fn test_is_ok_is_err() {
 
 #[test]
 fn test_if_let() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let x = Some(42);
         if let Some(v) = x { v } else { 0 }
-    "), Value::Int(42));
+    "
+        ),
+        Value::Int(42)
+    );
 }
 
 #[test]
 fn test_if_let_no_match() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let x = None;
         if let Some(v) = x { v } else { 0 }
-    "), Value::Int(0));
+    "
+        ),
+        Value::Int(0)
+    );
 }
 
 #[test]
 fn test_while_let() {
     // Simulates popping from a list
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let mut items = [1, 2, 3];
         let mut sum = 0;
         while let [first, ...rest] = items {
@@ -588,7 +741,10 @@ fn test_while_let() {
             items = rest;
         }
         sum
-    "), Value::Int(6));
+    "
+        ),
+        Value::Int(6)
+    );
 }
 
 // ============================================================
@@ -597,39 +753,56 @@ fn test_while_let() {
 
 #[test]
 fn test_list_literal() {
-    assert_eq!(eval("[1, 2, 3]"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("[1, 2, 3]"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
 fn test_list_map() {
-    assert_eq!(eval("[1, 2, 3].map(|x| x * 2)"),
-        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+    assert_eq!(
+        eval("[1, 2, 3].map(|x| x * 2)"),
+        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)])
+    );
 }
 
 #[test]
 fn test_list_filter() {
-    assert_eq!(eval("[1, 2, 3, 4, 5].filter(|x| x > 3)"),
-        Value::List(vec![Value::Int(4), Value::Int(5)]));
+    assert_eq!(
+        eval("[1, 2, 3, 4, 5].filter(|x| x > 3)"),
+        Value::List(vec![Value::Int(4), Value::Int(5)])
+    );
 }
 
 #[test]
 fn test_list_fold() {
-    assert_eq!(eval("[1, 2, 3, 4].fold(0, |acc, x| acc + x)"), Value::Int(10));
+    assert_eq!(
+        eval("[1, 2, 3, 4].fold(0, |acc, x| acc + x)"),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_list_push_returns_new() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         let a = [1, 2];
         let b = a.push(3);
         a
-    "), Value::List(vec![Value::Int(1), Value::Int(2)]));
+    "
+        ),
+        Value::List(vec![Value::Int(1), Value::Int(2)])
+    );
 }
 
 #[test]
 fn test_list_push_result() {
-    assert_eq!(eval("[1, 2].push(3)"),
-        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("[1, 2].push(3)"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
@@ -639,8 +812,14 @@ fn test_list_len() {
 
 #[test]
 fn test_list_first_last() {
-    assert_eq!(eval("[10, 20, 30].first()"), Value::Option(Some(Box::new(Value::Int(10)))));
-    assert_eq!(eval("[10, 20, 30].last()"), Value::Option(Some(Box::new(Value::Int(30)))));
+    assert_eq!(
+        eval("[10, 20, 30].first()"),
+        Value::Option(Some(Box::new(Value::Int(10))))
+    );
+    assert_eq!(
+        eval("[10, 20, 30].last()"),
+        Value::Option(Some(Box::new(Value::Int(30))))
+    );
     assert_eq!(eval("[].first()"), Value::Option(None));
 }
 
@@ -654,14 +833,18 @@ fn test_list_any_all() {
 
 #[test]
 fn test_list_reverse() {
-    assert_eq!(eval("[1, 2, 3].reverse()"),
-        Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)]));
+    assert_eq!(
+        eval("[1, 2, 3].reverse()"),
+        Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)])
+    );
 }
 
 #[test]
 fn test_list_sort() {
-    assert_eq!(eval("[3, 1, 2].sort()"),
-        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("[3, 1, 2].sort()"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
@@ -672,17 +855,26 @@ fn test_list_contains() {
 
 #[test]
 fn test_list_flatten() {
-    assert_eq!(eval("[[1, 2], [3, 4]].flatten()"),
-        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)]));
+    assert_eq!(
+        eval("[[1, 2], [3, 4]].flatten()"),
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(4)
+        ])
+    );
 }
 
 #[test]
 fn test_list_zip() {
-    assert_eq!(eval("[1, 2].zip([3, 4])"),
+    assert_eq!(
+        eval("[1, 2].zip([3, 4])"),
         Value::List(vec![
             Value::Tuple(vec![Value::Int(1), Value::Int(3)]),
             Value::Tuple(vec![Value::Int(2), Value::Int(4)]),
-        ]));
+        ])
+    );
 }
 
 // ============================================================
@@ -720,18 +912,24 @@ fn test_dict_methods() {
 
 #[test]
 fn test_dict_keys_values() {
-    assert_eq!(eval(r#"#{ "a": 1, "b": 2 }.keys()"#),
-        Value::List(vec![Value::Str("a".into()), Value::Str("b".into())]));
-    assert_eq!(eval(r#"#{ "a": 1, "b": 2 }.values()"#),
-        Value::List(vec![Value::Int(1), Value::Int(2)]));
+    assert_eq!(
+        eval(r#"#{ "a": 1, "b": 2 }.keys()"#),
+        Value::List(vec![Value::Str("a".into()), Value::Str("b".into())])
+    );
+    assert_eq!(
+        eval(r#"#{ "a": 1, "b": 2 }.values()"#),
+        Value::List(vec![Value::Int(1), Value::Int(2)])
+    );
 }
 
 #[test]
 fn test_dict_insert_returns_new() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let d = #{ "a": 1 };
         d.insert("b", 2)
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 2);
         assert_eq!(map["b"], Value::Int(2));
@@ -742,10 +940,12 @@ fn test_dict_insert_returns_new() {
 
 #[test]
 fn test_dict_remove_returns_new() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let d = #{ "a": 1, "b": 2 };
         d.remove("a")
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 1);
         assert!(!map.contains_key("a"));
@@ -756,11 +956,13 @@ fn test_dict_remove_returns_new() {
 
 #[test]
 fn test_dict_merge() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let a = #{ "x": 1 };
         let b = #{ "y": 2 };
         a.merge(b)
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 2);
         assert_eq!(map["x"], Value::Int(1));
@@ -776,7 +978,10 @@ fn test_dict_merge() {
 
 #[test]
 fn test_tuple_literal() {
-    assert_eq!(eval("(1, 2, 3)"), Value::Tuple(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("(1, 2, 3)"),
+        Value::Tuple(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
@@ -790,20 +995,37 @@ fn test_tuple_destructuring() {
 
 #[test]
 fn test_fstring() {
-    assert_eq!(eval(r#"let name = "world"; f"hello {name}""#),
-        Value::Str("hello world".into()));
+    assert_eq!(
+        eval(r#"let name = "world"; f"hello {name}""#),
+        Value::Str("hello world".into())
+    );
 }
 
 #[test]
 fn test_fstring_expr() {
-    assert_eq!(eval(r#"f"result = {1 + 2}""#),
-        Value::Str("result = 3".into()));
+    assert_eq!(
+        eval(r#"f"result = {1 + 2}""#),
+        Value::Str("result = 3".into())
+    );
+}
+
+#[test]
+fn test_fstring_nested_quotes() {
+    // Nested double quotes inside f-string interpolation
+    assert_eq!(
+        eval(r#"fn greet(name) { f"hi {name}" } f"says: {greet("world")}""#),
+        Value::Str("says: hi world".into())
+    );
+    // Method call with string arg inside f-string
+    assert_eq!(
+        eval(r#"f"result: {"hello world".replace("world", "ion")}""#),
+        Value::Str("result: hello ion".into())
+    );
 }
 
 #[test]
 fn test_regular_string_no_interp() {
-    assert_eq!(eval(r#""hello {name}""#),
-        Value::Str("hello {name}".into()));
+    assert_eq!(eval(r#""hello {name}""#), Value::Str("hello {name}".into()));
 }
 
 // ============================================================
@@ -812,14 +1034,23 @@ fn test_regular_string_no_interp() {
 
 #[test]
 fn test_range_exclusive() {
-    assert_eq!(eval("0..3"),
-        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2)]));
+    assert_eq!(
+        eval("0..3"),
+        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2)])
+    );
 }
 
 #[test]
 fn test_range_inclusive() {
-    assert_eq!(eval("0..=3"),
-        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("0..=3"),
+        Value::List(vec![
+            Value::Int(0),
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3)
+        ])
+    );
 }
 
 // ============================================================
@@ -828,27 +1059,42 @@ fn test_range_inclusive() {
 
 #[test]
 fn test_pipe_basic() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         fn double(x) { x * 2 }
         5 |> double()
-    "), Value::Int(10));
+    "
+        ),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_pipe_chain() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         fn add(x, y) { x + y }
         fn double(x) { x * 2 }
         5 |> add(3) |> double()
-    "), Value::Int(16));
+    "
+        ),
+        Value::Int(16)
+    );
 }
 
 #[test]
 fn test_pipe_bare_fn() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         fn double(x) { x * 2 }
         5 |> double
-    "), Value::Int(10));
+    "
+        ),
+        Value::Int(10)
+    );
 }
 
 // ============================================================
@@ -863,10 +1109,14 @@ fn test_len() {
 
 #[test]
 fn test_range_fn() {
-    assert_eq!(eval("range(3)"),
-        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2)]));
-    assert_eq!(eval("range(2, 5)"),
-        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)]));
+    assert_eq!(
+        eval("range(3)"),
+        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2)])
+    );
+    assert_eq!(
+        eval("range(2, 5)"),
+        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)])
+    );
 }
 
 #[test]
@@ -883,7 +1133,10 @@ fn test_type_of() {
 #[test]
 fn test_string_methods() {
     assert_eq!(eval(r#""hello".len()"#), Value::Int(5));
-    assert_eq!(eval(r#""hello world".contains("world")"#), Value::Bool(true));
+    assert_eq!(
+        eval(r#""hello world".contains("world")"#),
+        Value::Bool(true)
+    );
     assert_eq!(eval(r#""hello".starts_with("hel")"#), Value::Bool(true));
     assert_eq!(eval(r#""hello".ends_with("llo")"#), Value::Bool(true));
     assert_eq!(eval(r#""  hello  ".trim()"#), Value::Str("hello".into()));
@@ -893,20 +1146,34 @@ fn test_string_methods() {
 
 #[test]
 fn test_string_split() {
-    assert_eq!(eval(r#""a,b,c".split(",")"#),
-        Value::List(vec![Value::Str("a".into()), Value::Str("b".into()), Value::Str("c".into())]));
+    assert_eq!(
+        eval(r#""a,b,c".split(",")"#),
+        Value::List(vec![
+            Value::Str("a".into()),
+            Value::Str("b".into()),
+            Value::Str("c".into())
+        ])
+    );
 }
 
 #[test]
 fn test_string_replace() {
-    assert_eq!(eval(r#""hello world".replace("world", "ion")"#),
-        Value::Str("hello ion".into()));
+    assert_eq!(
+        eval(r#""hello world".replace("world", "ion")"#),
+        Value::Str("hello ion".into())
+    );
 }
 
 #[test]
 fn test_string_trim_variants() {
-    assert_eq!(eval(r#""  hello  ".trim_start()"#), Value::Str("hello  ".into()));
-    assert_eq!(eval(r#""  hello  ".trim_end()"#), Value::Str("  hello".into()));
+    assert_eq!(
+        eval(r#""  hello  ".trim_start()"#),
+        Value::Str("hello  ".into())
+    );
+    assert_eq!(
+        eval(r#""  hello  ".trim_end()"#),
+        Value::Str("  hello".into())
+    );
 }
 
 #[test]
@@ -917,19 +1184,31 @@ fn test_string_repeat() {
 
 #[test]
 fn test_string_find() {
-    assert_eq!(eval(r#""hello world".find("world")"#), Value::Option(Some(Box::new(Value::Int(6)))));
+    assert_eq!(
+        eval(r#""hello world".find("world")"#),
+        Value::Option(Some(Box::new(Value::Int(6))))
+    );
     assert_eq!(eval(r#""hello".find("xyz")"#), Value::Option(None));
 }
 
 #[test]
 fn test_string_to_int() {
-    assert_eq!(eval(r#""42".to_int()"#), Value::Result(Ok(Box::new(Value::Int(42)))));
-    assert_eq!(eval(r#"" -7 ".to_int()"#), Value::Result(Ok(Box::new(Value::Int(-7)))));
+    assert_eq!(
+        eval(r#""42".to_int()"#),
+        Value::Result(Ok(Box::new(Value::Int(42))))
+    );
+    assert_eq!(
+        eval(r#"" -7 ".to_int()"#),
+        Value::Result(Ok(Box::new(Value::Int(-7))))
+    );
 }
 
 #[test]
 fn test_string_to_float() {
-    assert_eq!(eval(r#""3.14".to_float()"#), Value::Result(Ok(Box::new(Value::Float(3.14)))));
+    assert_eq!(
+        eval(r#""3.14".to_float()"#),
+        Value::Result(Ok(Box::new(Value::Float(3.14))))
+    );
 }
 
 #[test]
@@ -966,11 +1245,9 @@ fn test_engine_last_expr_return() {
 #[test]
 fn test_engine_register_fn() {
     let mut engine = Engine::new();
-    engine.register_fn("square", |args: &[Value]| {
-        match &args[0] {
-            Value::Int(n) => Ok(Value::Int(n * n)),
-            _ => Err("expected int".to_string()),
-        }
+    engine.register_fn("square", |args: &[Value]| match &args[0] {
+        Value::Int(n) => Ok(Value::Int(n * n)),
+        _ => Err("expected int".to_string()),
     });
     assert_eq!(engine.eval("square(5)").unwrap(), Value::Int(25));
 }
@@ -981,31 +1258,48 @@ fn test_engine_register_fn() {
 
 #[test]
 fn test_fibonacci_functional() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         fn fib(n) {
             if n <= 1 { n } else { fib(n - 1) + fib(n - 2) }
         }
         [0, 1, 2, 3, 4, 5, 6].map(|n| fib(n))
-    "), Value::List(vec![
-        Value::Int(0), Value::Int(1), Value::Int(1), Value::Int(2),
-        Value::Int(3), Value::Int(5), Value::Int(8),
-    ]));
+    "
+        ),
+        Value::List(vec![
+            Value::Int(0),
+            Value::Int(1),
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(5),
+            Value::Int(8),
+        ])
+    );
 }
 
 #[test]
 fn test_dict_pipeline() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let data = #{ "name": "Alice", "age": 30 };
         let updated = data.insert("role", "admin");
         updated.get("role")
-    "#);
-    assert_eq!(val, Value::Option(Some(Box::new(Value::Str("admin".into())))));
+    "#,
+    );
+    assert_eq!(
+        val,
+        Value::Option(Some(Box::new(Value::Str("admin".into()))))
+    );
 }
 
 #[test]
 fn test_error_propagation_chain() {
     // Chain of ? operators
-    let result = Engine::new().eval(r#"
+    let result = Engine::new()
+        .eval(
+            r#"
         fn parse(input) {
             if input == "bad" {
                 Err("parse error")
@@ -1018,14 +1312,18 @@ fn test_error_propagation_chain() {
             Ok(val * 2)
         }
         process("good")
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(result, Value::Result(Ok(Box::new(Value::Int(84)))));
 }
 
 #[test]
 fn test_error_propagation_failure() {
     // ? propagation across nested function boundaries returns Result(Err) value
-    let result = Engine::new().eval(r#"
+    let result = Engine::new()
+        .eval(
+            r#"
         fn parse(input) {
             if input == "bad" {
                 Err("parse error")
@@ -1038,81 +1336,111 @@ fn test_error_propagation_failure() {
             Ok(val * 2)
         }
         process("bad")
-    "#).unwrap();
-    assert_eq!(result, Value::Result(Err(Box::new(Value::Str("parse error".to_string())))));
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        result,
+        Value::Result(Err(Box::new(Value::Str("parse error".to_string()))))
+    );
 }
 
 #[test]
 fn test_question_mark_success_path() {
     // ? on Ok/Some inside a function unwraps and continues
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         fn process(input) {
             let val = Ok(input)?;
             val * 2
         }
         process(21)
-    "#), Value::Int(42));
+    "#
+        ),
+        Value::Int(42)
+    );
 }
 
 #[test]
 fn test_question_mark_option_propagation_across_fns() {
     // ? on None propagates across function boundary as Option(None)
-    let result = Engine::new().eval(r#"
+    let result = Engine::new()
+        .eval(
+            r#"
         fn get_first(items) {
             let v = items.first()?;
             Some(v * 10)
         }
         get_first([])
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(result, Value::Option(None));
 
     // ? on Some succeeds
-    let result2 = Engine::new().eval(r#"
+    let result2 = Engine::new()
+        .eval(
+            r#"
         fn get_first(items) {
             let v = items.first()?;
             Some(v * 10)
         }
         get_first([5, 6, 7])
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(result2, Value::Option(Some(Box::new(Value::Int(50)))));
 }
 
 #[test]
 fn test_nested_closures() {
-    assert_eq!(eval("
+    assert_eq!(
+        eval(
+            "
         fn make_adder(x) {
             |y| x + y
         }
         let add5 = make_adder(5);
         let add10 = make_adder(10);
         add5(3) + add10(3)
-    "), Value::Int(21));
+    "
+        ),
+        Value::Int(21)
+    );
 }
 
 #[test]
 fn test_for_dict_iteration() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         let mut sum = 0;
         for (key, val) in #{ "a": 1, "b": 2, "c": 3 } {
             sum = sum + val;
         }
         sum
-    "#), Value::Int(6));
+    "#
+        ),
+        Value::Int(6)
+    );
 }
 
 #[test]
 fn test_list_of_dicts() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let people = [
             #{ "name": "Alice", "age": 30 },
             #{ "name": "Bob", "age": 25 },
         ];
         people.map(|p| p["name"])
-    "#);
-    assert_eq!(val, Value::List(vec![
-        Value::Str("Alice".into()),
-        Value::Str("Bob".into()),
-    ]));
+    "#,
+    );
+    assert_eq!(
+        val,
+        Value::List(vec![Value::Str("Alice".into()), Value::Str("Bob".into()),])
+    );
 }
 
 // ============================================================
@@ -1121,34 +1449,53 @@ fn test_list_of_dicts() {
 
 #[test]
 fn test_list_comp_basic() {
-    assert_eq!(eval("[x * 2 for x in [1, 2, 3]]"),
-        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+    assert_eq!(
+        eval("[x * 2 for x in [1, 2, 3]]"),
+        Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)])
+    );
 }
 
 #[test]
 fn test_list_comp_with_filter() {
-    assert_eq!(eval("[x for x in [1, 2, 3, 4, 5] if x > 3]"),
-        Value::List(vec![Value::Int(4), Value::Int(5)]));
+    assert_eq!(
+        eval("[x for x in [1, 2, 3, 4, 5] if x > 3]"),
+        Value::List(vec![Value::Int(4), Value::Int(5)])
+    );
 }
 
 #[test]
 fn test_list_comp_with_transform_and_filter() {
-    assert_eq!(eval("[x * x for x in [1, 2, 3, 4, 5] if x % 2 == 0]"),
-        Value::List(vec![Value::Int(4), Value::Int(16)]));
+    assert_eq!(
+        eval("[x * x for x in [1, 2, 3, 4, 5] if x % 2 == 0]"),
+        Value::List(vec![Value::Int(4), Value::Int(16)])
+    );
 }
 
 #[test]
 fn test_list_comp_tuple_pattern() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         let pairs = [(1, "a"), (2, "b"), (3, "c")];
         [n for (n, _s) in pairs if n > 1]
-    "#), Value::List(vec![Value::Int(2), Value::Int(3)]));
+    "#
+        ),
+        Value::List(vec![Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
 fn test_list_comp_over_range() {
-    assert_eq!(eval("[x * x for x in range(5)]"),
-        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(4), Value::Int(9), Value::Int(16)]));
+    assert_eq!(
+        eval("[x * x for x in range(5)]"),
+        Value::List(vec![
+            Value::Int(0),
+            Value::Int(1),
+            Value::Int(4),
+            Value::Int(9),
+            Value::Int(16)
+        ])
+    );
 }
 
 // ============================================================
@@ -1186,10 +1533,12 @@ fn test_dict_comp_with_filter() {
 
 #[test]
 fn test_dict_spread_basic() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let base = #{ "a": 1, "b": 2 };
         #{ ...base, "c": 3 }
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 3);
         assert_eq!(map["a"], Value::Int(1));
@@ -1202,10 +1551,12 @@ fn test_dict_spread_basic() {
 
 #[test]
 fn test_dict_spread_override() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let base = #{ "a": 1, "b": 2 };
         #{ ...base, "b": 99 }
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 2);
         assert_eq!(map["a"], Value::Int(1));
@@ -1217,11 +1568,13 @@ fn test_dict_spread_override() {
 
 #[test]
 fn test_dict_spread_multiple() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let a = #{ "x": 1 };
         let b = #{ "y": 2 };
         #{ ...a, ...b, "z": 3 }
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map.len(), 3);
         assert_eq!(map["x"], Value::Int(1));
@@ -1277,20 +1630,27 @@ fn test_json_decode_object() {
 
 #[test]
 fn test_json_decode_array() {
-    assert_eq!(eval(r#"json_decode("[1, 2, 3]")"#),
-        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval(r#"json_decode("[1, 2, 3]")"#),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
 fn test_json_roundtrip() {
-    let val = eval(r#"
+    let val = eval(
+        r#"
         let data = #{ "name": "test", "values": [1, 2, 3] };
         let encoded = json_encode(data);
         json_decode(encoded)
-    "#);
+    "#,
+    );
     if let Value::Dict(map) = val {
         assert_eq!(map["name"], Value::Str("test".into()));
-        assert_eq!(map["values"], Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+        assert_eq!(
+            map["values"],
+            Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+        );
     } else {
         panic!("expected dict");
     }
@@ -1309,35 +1669,64 @@ fn test_json_decode_invalid() {
 #[test]
 fn test_max_call_depth() {
     let mut engine = Engine::new();
-    engine.set_limits(Limits { max_call_depth: 10, max_loop_iters: 1_000_000 });
-    let err = engine.eval("
+    engine.set_limits(Limits {
+        max_call_depth: 10,
+        max_loop_iters: 1_000_000,
+    });
+    let err = engine
+        .eval(
+            "
         fn recurse(n) { recurse(n + 1) }
         recurse(0)
-    ").unwrap_err();
-    assert!(err.message.contains("maximum call depth"), "got: {}", err.message);
+    ",
+        )
+        .unwrap_err();
+    assert!(
+        err.message.contains("maximum call depth"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[test]
 fn test_max_loop_iters() {
     let mut engine = Engine::new();
-    engine.set_limits(Limits { max_call_depth: 512, max_loop_iters: 100 });
-    let err = engine.eval("
+    engine.set_limits(Limits {
+        max_call_depth: 512,
+        max_loop_iters: 100,
+    });
+    let err = engine
+        .eval(
+            "
         let mut i = 0;
         while true { i = i + 1; }
-    ").unwrap_err();
-    assert!(err.message.contains("maximum loop iterations"), "got: {}", err.message);
+    ",
+        )
+        .unwrap_err();
+    assert!(
+        err.message.contains("maximum loop iterations"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[test]
 fn test_loop_within_limit() {
     let mut engine = Engine::new();
-    engine.set_limits(Limits { max_call_depth: 512, max_loop_iters: 100 });
-    let result = engine.eval("
+    engine.set_limits(Limits {
+        max_call_depth: 512,
+        max_loop_iters: 100,
+    });
+    let result = engine
+        .eval(
+            "
         let mut sum = 0;
         let mut i = 0;
         while i < 50 { sum = sum + i; i = i + 1; }
         sum
-    ").unwrap();
+    ",
+        )
+        .unwrap();
     assert_eq!(result, Value::Int(1225));
 }
 
@@ -1400,10 +1789,22 @@ fn engine_with_types() -> Engine {
     engine.register_enum(HostEnumDef {
         name: "Color".into(),
         variants: vec![
-            HostVariantDef { name: "Red".into(), arity: 0 },
-            HostVariantDef { name: "Green".into(), arity: 0 },
-            HostVariantDef { name: "Blue".into(), arity: 0 },
-            HostVariantDef { name: "Custom".into(), arity: 3 },
+            HostVariantDef {
+                name: "Red".into(),
+                arity: 0,
+            },
+            HostVariantDef {
+                name: "Green".into(),
+                arity: 0,
+            },
+            HostVariantDef {
+                name: "Blue".into(),
+                arity: 0,
+            },
+            HostVariantDef {
+                name: "Custom".into(),
+                arity: 3,
+            },
         ],
     });
     engine
@@ -1412,7 +1813,9 @@ fn engine_with_types() -> Engine {
 #[test]
 fn test_host_struct_construct() {
     let mut engine = engine_with_types();
-    let val = engine.eval(r#"Config { host: "localhost", port: 8080, debug: true }"#).unwrap();
+    let val = engine
+        .eval(r#"Config { host: "localhost", port: 8080, debug: true }"#)
+        .unwrap();
     if let Value::HostStruct { type_name, fields } = &val {
         assert_eq!(type_name, "Config");
         assert_eq!(fields["host"], Value::Str("localhost".into()));
@@ -1426,10 +1829,14 @@ fn test_host_struct_construct() {
 #[test]
 fn test_host_struct_field_access() {
     let mut engine = engine_with_types();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let cfg = Config { host: "localhost", port: 8080, debug: false };
         cfg.host
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Str("localhost".into()));
 }
 
@@ -1437,36 +1844,54 @@ fn test_host_struct_field_access() {
 fn test_host_struct_missing_field_error() {
     let mut engine = engine_with_types();
     let err = engine.eval(r#"Config { host: "localhost" }"#).unwrap_err();
-    assert!(err.message.contains("missing field"), "got: {}", err.message);
+    assert!(
+        err.message.contains("missing field"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[test]
 fn test_host_struct_unknown_field_error() {
     let mut engine = engine_with_types();
-    let err = engine.eval(r#"Config { host: "x", port: 80, debug: true, extra: 1 }"#).unwrap_err();
-    assert!(err.message.contains("unknown field"), "got: {}", err.message);
+    let err = engine
+        .eval(r#"Config { host: "x", port: 80, debug: true, extra: 1 }"#)
+        .unwrap_err();
+    assert!(
+        err.message.contains("unknown field"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[test]
 fn test_host_struct_pattern_match() {
     let mut engine = engine_with_types();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let cfg = Config { host: "localhost", port: 8080, debug: true };
         match cfg {
             Config { host, port } => f"{host}:{port}",
         }
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Str("localhost:8080".into()));
 }
 
 #[test]
 fn test_host_struct_spread() {
     let mut engine = engine_with_types();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let base = Config { host: "localhost", port: 8080, debug: false };
         let updated = Config { ...base, debug: true };
         updated.debug
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Bool(true));
 }
 
@@ -1478,29 +1903,39 @@ fn test_host_struct_spread() {
 fn test_host_enum_unit_variant() {
     let mut engine = engine_with_types();
     let val = engine.eval("Color::Red").unwrap();
-    assert_eq!(val, Value::HostEnum {
-        enum_name: "Color".into(),
-        variant: "Red".into(),
-        data: vec![],
-    });
+    assert_eq!(
+        val,
+        Value::HostEnum {
+            enum_name: "Color".into(),
+            variant: "Red".into(),
+            data: vec![],
+        }
+    );
 }
 
 #[test]
 fn test_host_enum_data_variant() {
     let mut engine = engine_with_types();
     let val = engine.eval("Color::Custom(255, 128, 0)").unwrap();
-    assert_eq!(val, Value::HostEnum {
-        enum_name: "Color".into(),
-        variant: "Custom".into(),
-        data: vec![Value::Int(255), Value::Int(128), Value::Int(0)],
-    });
+    assert_eq!(
+        val,
+        Value::HostEnum {
+            enum_name: "Color".into(),
+            variant: "Custom".into(),
+            data: vec![Value::Int(255), Value::Int(128), Value::Int(0)],
+        }
+    );
 }
 
 #[test]
 fn test_host_enum_unknown_variant_error() {
     let mut engine = engine_with_types();
     let err = engine.eval("Color::Yellow").unwrap_err();
-    assert!(err.message.contains("unknown variant"), "got: {}", err.message);
+    assert!(
+        err.message.contains("unknown variant"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[test]
@@ -1513,21 +1948,27 @@ fn test_host_enum_wrong_arity_error() {
 #[test]
 fn test_host_enum_pattern_match() {
     let mut engine = engine_with_types();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let c = Color::Custom(255, 128, 0);
         match c {
             Color::Red => "red",
             Color::Custom(r, g, b) => f"rgb({r},{g},{b})",
             _ => "other",
         }
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Str("rgb(255,128,0)".into()));
 }
 
 #[test]
 fn test_host_enum_match_unit_variant() {
     let mut engine = engine_with_types();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let c = Color::Green;
         match c {
             Color::Red => "red",
@@ -1535,17 +1976,23 @@ fn test_host_enum_match_unit_variant() {
             Color::Blue => "blue",
             _ => "other",
         }
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Str("green".into()));
 }
 
 #[test]
 fn test_host_struct_display() {
     let mut engine = engine_with_types();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let cfg = Config { host: "localhost", port: 8080, debug: true };
         f"{cfg}"
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     if let Value::Str(s) = &val {
         assert!(s.contains("Config"), "got: {}", s);
         assert!(s.contains("localhost"), "got: {}", s);
@@ -1595,24 +2042,33 @@ fn test_sqrt() {
 
 #[test]
 fn test_list_join() {
-    assert_eq!(eval(r#"["a", "b", "c"].join(", ")"#), Value::Str("a, b, c".into()));
+    assert_eq!(
+        eval(r#"["a", "b", "c"].join(", ")"#),
+        Value::Str("a, b, c".into())
+    );
     assert_eq!(eval(r#"[1, 2, 3].join("-")"#), Value::Str("1-2-3".into()));
 }
 
 #[test]
 fn test_list_enumerate() {
-    assert_eq!(eval(r#"["a", "b"].enumerate()"#), Value::List(vec![
-        Value::Tuple(vec![Value::Int(0), Value::Str("a".into())]),
-        Value::Tuple(vec![Value::Int(1), Value::Str("b".into())]),
-    ]));
+    assert_eq!(
+        eval(r#"["a", "b"].enumerate()"#),
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(0), Value::Str("a".into())]),
+            Value::Tuple(vec![Value::Int(1), Value::Str("b".into())]),
+        ])
+    );
 }
 
 #[test]
 fn test_enumerate_builtin() {
-    assert_eq!(eval(r#"enumerate(["x", "y"])"#), Value::List(vec![
-        Value::Tuple(vec![Value::Int(0), Value::Str("x".into())]),
-        Value::Tuple(vec![Value::Int(1), Value::Str("y".into())]),
-    ]));
+    assert_eq!(
+        eval(r#"enumerate(["x", "y"])"#),
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(0), Value::Str("x".into())]),
+            Value::Tuple(vec![Value::Int(1), Value::Str("y".into())]),
+        ])
+    );
 }
 
 #[test]
@@ -1675,10 +2131,14 @@ fn test_derive_struct_from_ion() {
 fn test_derive_struct_in_script() {
     let mut engine = Engine::new();
     engine.register_type::<Point>();
-    let val = engine.eval("
+    let val = engine
+        .eval(
+            "
         let p = Point { x: 10.0, y: 20.0 };
         p.x + p.y
-    ").unwrap();
+    ",
+        )
+        .unwrap();
     assert_eq!(val, Value::Float(30.0));
 }
 
@@ -1686,27 +2146,36 @@ fn test_derive_struct_in_script() {
 fn test_derive_set_typed_get_typed() {
     let mut engine = Engine::new();
     engine.register_type::<UserProfile>();
-    let profile = UserProfile { name: "Alice".into(), age: 30, active: true };
+    let profile = UserProfile {
+        name: "Alice".into(),
+        age: 30,
+        active: true,
+    };
     engine.set_typed("user", &profile);
     let val = engine.eval(r#"f"{user.name} is {user.age}""#).unwrap();
     assert_eq!(val, Value::Str("Alice is 30".into()));
 
-    engine.eval("let result = UserProfile { name: \"Bob\", age: 25, active: false };").unwrap();
+    engine
+        .eval("let result = UserProfile { name: \"Bob\", age: 25, active: false };")
+        .unwrap();
     let result: UserProfile = engine.get_typed("result").unwrap();
     assert_eq!(result.name, "Bob");
     assert_eq!(result.age, 25);
-    assert_eq!(result.active, false);
+    assert!(!result.active);
 }
 
 #[test]
 fn test_derive_enum_to_ion() {
     let s = Shape::Circle(5.0);
     let val = s.to_ion();
-    assert_eq!(val, Value::HostEnum {
-        enum_name: "Shape".into(),
-        variant: "Circle".into(),
-        data: vec![Value::Float(5.0)],
-    });
+    assert_eq!(
+        val,
+        Value::HostEnum {
+            enum_name: "Shape".into(),
+            variant: "Circle".into(),
+            data: vec![Value::Float(5.0)],
+        }
+    );
 }
 
 #[test]
@@ -1718,7 +2187,10 @@ fn test_derive_enum_from_ion() {
     };
     let s = Shape::from_ion(&val).unwrap();
     match s {
-        Shape::Rect(w, h) => { assert_eq!(w, 3.0); assert_eq!(h, 4.0); }
+        Shape::Rect(w, h) => {
+            assert_eq!(w, 3.0);
+            assert_eq!(h, 4.0);
+        }
         _ => panic!("expected Rect"),
     }
 }
@@ -1727,14 +2199,18 @@ fn test_derive_enum_from_ion() {
 fn test_derive_enum_in_script() {
     let mut engine = Engine::new();
     engine.register_type::<Shape>();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let s = Shape::Circle(5.0);
         match s {
             Shape::Circle(r) => r * r * 3.14,
             Shape::Rect(w, h) => w * h,
             Shape::Empty => 0.0,
         }
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Float(78.5));
 }
 
@@ -1742,14 +2218,18 @@ fn test_derive_enum_in_script() {
 fn test_derive_enum_unit_variant_in_script() {
     let mut engine = Engine::new();
     engine.register_type::<Shape>();
-    let val = engine.eval(r#"
+    let val = engine
+        .eval(
+            r#"
         let s = Shape::Empty;
         match s {
             Shape::Circle(r) => r,
             Shape::Empty => 0.0,
             _ => -1.0,
         }
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     assert_eq!(val, Value::Float(0.0));
 }
 
@@ -1759,7 +2239,9 @@ fn test_derive_roundtrip_typed() {
     engine.register_type::<Point>();
     let original = Point { x: 42.0, y: 99.0 };
     engine.set_typed("p", &original);
-    engine.eval("let p2 = Point { x: p.x * 2.0, y: p.y * 2.0 };").unwrap();
+    engine
+        .eval("let p2 = Point { x: p.x * 2.0, y: p.y * 2.0 };")
+        .unwrap();
     let result: Point = engine.get_typed("p2").unwrap();
     assert_eq!(result.x, 84.0);
     assert_eq!(result.y, 198.0);
@@ -1819,20 +2301,32 @@ fn test_bitwise_type_error() {
 
 #[test]
 fn test_option_map() {
-    assert_eq!(eval("Some(5).map(|x| x * 2)"), Value::Option(Some(Box::new(Value::Int(10)))));
+    assert_eq!(
+        eval("Some(5).map(|x| x * 2)"),
+        Value::Option(Some(Box::new(Value::Int(10))))
+    );
     assert_eq!(eval("None.map(|x| x * 2)"), Value::Option(None));
 }
 
 #[test]
 fn test_option_and_then() {
-    assert_eq!(eval("Some(5).and_then(|x| Some(x + 1))"), Value::Option(Some(Box::new(Value::Int(6)))));
+    assert_eq!(
+        eval("Some(5).and_then(|x| Some(x + 1))"),
+        Value::Option(Some(Box::new(Value::Int(6))))
+    );
     assert_eq!(eval("None.and_then(|x| Some(x + 1))"), Value::Option(None));
 }
 
 #[test]
 fn test_option_or_else() {
-    assert_eq!(eval("Some(5).or_else(|| Some(0))"), Value::Option(Some(Box::new(Value::Int(5)))));
-    assert_eq!(eval("None.or_else(|| Some(99))"), Value::Option(Some(Box::new(Value::Int(99)))));
+    assert_eq!(
+        eval("Some(5).or_else(|| Some(0))"),
+        Value::Option(Some(Box::new(Value::Int(5))))
+    );
+    assert_eq!(
+        eval("None.or_else(|| Some(99))"),
+        Value::Option(Some(Box::new(Value::Int(99))))
+    );
 }
 
 #[test]
@@ -1843,27 +2337,50 @@ fn test_option_unwrap_or_else() {
 
 #[test]
 fn test_result_map() {
-    assert_eq!(eval("Ok(5).map(|x| x * 2)"), Value::Result(Ok(Box::new(Value::Int(10)))));
-    assert_eq!(eval("Err(\"bad\").map(|x| x * 2)"), Value::Result(Err(Box::new(Value::Str("bad".to_string())))));
+    assert_eq!(
+        eval("Ok(5).map(|x| x * 2)"),
+        Value::Result(Ok(Box::new(Value::Int(10))))
+    );
+    assert_eq!(
+        eval("Err(\"bad\").map(|x| x * 2)"),
+        Value::Result(Err(Box::new(Value::Str("bad".to_string()))))
+    );
 }
 
 #[test]
 fn test_result_map_err() {
-    assert_eq!(eval("Ok(5).map_err(|e| f\"wrapped: {e}\")"), Value::Result(Ok(Box::new(Value::Int(5)))));
-    assert_eq!(eval("Err(\"bad\").map_err(|e| f\"wrapped: {e}\")"),
-        Value::Result(Err(Box::new(Value::Str("wrapped: bad".to_string())))));
+    assert_eq!(
+        eval("Ok(5).map_err(|e| f\"wrapped: {e}\")"),
+        Value::Result(Ok(Box::new(Value::Int(5))))
+    );
+    assert_eq!(
+        eval("Err(\"bad\").map_err(|e| f\"wrapped: {e}\")"),
+        Value::Result(Err(Box::new(Value::Str("wrapped: bad".to_string()))))
+    );
 }
 
 #[test]
 fn test_result_and_then() {
-    assert_eq!(eval("Ok(5).and_then(|x| Ok(x + 1))"), Value::Result(Ok(Box::new(Value::Int(6)))));
-    assert_eq!(eval("Err(\"bad\").and_then(|x| Ok(x + 1))"), Value::Result(Err(Box::new(Value::Str("bad".to_string())))));
+    assert_eq!(
+        eval("Ok(5).and_then(|x| Ok(x + 1))"),
+        Value::Result(Ok(Box::new(Value::Int(6))))
+    );
+    assert_eq!(
+        eval("Err(\"bad\").and_then(|x| Ok(x + 1))"),
+        Value::Result(Err(Box::new(Value::Str("bad".to_string()))))
+    );
 }
 
 #[test]
 fn test_result_or_else() {
-    assert_eq!(eval("Ok(5).or_else(|e| Ok(0))"), Value::Result(Ok(Box::new(Value::Int(5)))));
-    assert_eq!(eval("Err(\"bad\").or_else(|e| Ok(99))"), Value::Result(Ok(Box::new(Value::Int(99)))));
+    assert_eq!(
+        eval("Ok(5).or_else(|e| Ok(0))"),
+        Value::Result(Ok(Box::new(Value::Int(5))))
+    );
+    assert_eq!(
+        eval("Err(\"bad\").or_else(|e| Ok(99))"),
+        Value::Result(Ok(Box::new(Value::Int(99))))
+    );
 }
 
 #[test]
@@ -1878,11 +2395,14 @@ fn test_result_unwrap_or_else() {
 
 #[test]
 fn test_string_chars() {
-    assert_eq!(eval("\"abc\".chars()"), Value::List(vec![
-        Value::Str("a".to_string()),
-        Value::Str("b".to_string()),
-        Value::Str("c".to_string()),
-    ]));
+    assert_eq!(
+        eval("\"abc\".chars()"),
+        Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("b".to_string()),
+            Value::Str("c".to_string()),
+        ])
+    );
 }
 
 #[test]
@@ -1909,13 +2429,19 @@ fn test_bytes_literal() {
 #[test]
 fn test_bytes_escape_sequences() {
     assert_eq!(eval(r#"b"\x00\xff""#), Value::Bytes(vec![0x00, 0xff]));
-    assert_eq!(eval(r#"b"\n\t\r""#), Value::Bytes(vec![b'\n', b'\t', b'\r']));
+    assert_eq!(
+        eval(r#"b"\n\t\r""#),
+        Value::Bytes(vec![b'\n', b'\t', b'\r'])
+    );
     assert_eq!(eval(r#"b"\0""#), Value::Bytes(vec![0]));
 }
 
 #[test]
 fn test_bytes_concat() {
-    assert_eq!(eval(r#"b"hello" + b" world""#), Value::Bytes(b"hello world".to_vec()));
+    assert_eq!(
+        eval(r#"b"hello" + b" world""#),
+        Value::Bytes(b"hello world".to_vec())
+    );
 }
 
 #[test]
@@ -1934,30 +2460,43 @@ fn test_bytes_methods() {
 
 #[test]
 fn test_bytes_slice() {
-    assert_eq!(eval(r#"b"hello".slice(1, 3)"#), Value::Bytes(b"el".to_vec()));
+    assert_eq!(
+        eval(r#"b"hello".slice(1, 3)"#),
+        Value::Bytes(b"el".to_vec())
+    );
     assert_eq!(eval(r#"b"hello".slice(2)"#), Value::Bytes(b"llo".to_vec()));
 }
 
 #[test]
 fn test_bytes_to_list() {
-    assert_eq!(eval(r#"b"abc".to_list()"#), Value::List(vec![
-        Value::Int(97), Value::Int(98), Value::Int(99),
-    ]));
+    assert_eq!(
+        eval(r#"b"abc".to_list()"#),
+        Value::List(vec![Value::Int(97), Value::Int(98), Value::Int(99),])
+    );
 }
 
 #[test]
 fn test_bytes_to_str() {
-    assert_eq!(eval(r#"b"hello".to_str()"#), Value::Result(Ok(Box::new(Value::Str("hello".to_string())))));
+    assert_eq!(
+        eval(r#"b"hello".to_str()"#),
+        Value::Result(Ok(Box::new(Value::Str("hello".to_string()))))
+    );
 }
 
 #[test]
 fn test_bytes_to_hex() {
-    assert_eq!(eval(r#"b"\xde\xad".to_hex()"#), Value::Str("dead".to_string()));
+    assert_eq!(
+        eval(r#"b"\xde\xad".to_hex()"#),
+        Value::Str("dead".to_string())
+    );
 }
 
 #[test]
 fn test_bytes_find() {
-    assert_eq!(eval(r#"b"abc".find(98)"#), Value::Option(Some(Box::new(Value::Int(1)))));
+    assert_eq!(
+        eval(r#"b"abc".find(98)"#),
+        Value::Option(Some(Box::new(Value::Int(1))))
+    );
     assert_eq!(eval(r#"b"abc".find(0)"#), Value::Option(None));
 }
 
@@ -1973,7 +2512,10 @@ fn test_bytes_push() {
 
 #[test]
 fn test_bytes_constructor() {
-    assert_eq!(eval(r#"bytes([65, 66, 67])"#), Value::Bytes(b"ABC".to_vec()));
+    assert_eq!(
+        eval(r#"bytes([65, 66, 67])"#),
+        Value::Bytes(b"ABC".to_vec())
+    );
     assert_eq!(eval(r#"bytes("hello")"#), Value::Bytes(b"hello".to_vec()));
     assert_eq!(eval(r#"bytes(3)"#), Value::Bytes(vec![0, 0, 0]));
     assert_eq!(eval(r#"bytes()"#), Value::Bytes(Vec::new()));
@@ -1981,7 +2523,10 @@ fn test_bytes_constructor() {
 
 #[test]
 fn test_bytes_from_hex() {
-    assert_eq!(eval(r#"bytes_from_hex("deadbeef")"#), Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef]));
+    assert_eq!(
+        eval(r#"bytes_from_hex("deadbeef")"#),
+        Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef])
+    );
 }
 
 #[test]
@@ -1997,25 +2542,42 @@ fn test_bytes_equality() {
 
 #[test]
 fn test_bytes_truthy() {
-    assert_eq!(eval(r#"if b"hello" { true } else { false }"#), Value::Bool(true));
-    assert_eq!(eval(r#"if b"" { true } else { false }"#), Value::Bool(false));
+    assert_eq!(
+        eval(r#"if b"hello" { true } else { false }"#),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval(r#"if b"" { true } else { false }"#),
+        Value::Bool(false)
+    );
 }
 
 #[test]
 fn test_bytes_pattern_match() {
-    assert_eq!(eval(r#"match b"abc" { b"abc" => 1, _ => 2 }"#), Value::Int(1));
-    assert_eq!(eval(r#"match b"xyz" { b"abc" => 1, _ => 2 }"#), Value::Int(2));
+    assert_eq!(
+        eval(r#"match b"abc" { b"abc" => 1, _ => 2 }"#),
+        Value::Int(1)
+    );
+    assert_eq!(
+        eval(r#"match b"xyz" { b"abc" => 1, _ => 2 }"#),
+        Value::Int(2)
+    );
 }
 
 #[test]
 fn test_bytes_for_loop() {
-    assert_eq!(eval(r#"let mut sum = 0; for b in b"abc".to_list() { sum += b; } sum"#),
-        Value::Int(97 + 98 + 99));
+    assert_eq!(
+        eval(r#"let mut sum = 0; for b in b"abc".to_list() { sum += b; } sum"#),
+        Value::Int(97 + 98 + 99)
+    );
 }
 
 #[test]
 fn test_bytes_display() {
-    assert_eq!(eval("let x = b\"hello\"; f\"{x}\""), Value::Str("b\"hello\"".to_string()));
+    assert_eq!(
+        eval("let x = b\"hello\"; f\"{x}\""),
+        Value::Str("b\"hello\"".to_string())
+    );
 }
 
 // ============================================================
@@ -2024,27 +2586,42 @@ fn test_bytes_display() {
 
 #[test]
 fn test_list_slice() {
-    assert_eq!(eval("[1, 2, 3, 4, 5][1..3]"), Value::List(vec![Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("[1, 2, 3, 4, 5][1..3]"),
+        Value::List(vec![Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
 fn test_list_slice_from_start() {
-    assert_eq!(eval("[1, 2, 3, 4, 5][..2]"), Value::List(vec![Value::Int(1), Value::Int(2)]));
+    assert_eq!(
+        eval("[1, 2, 3, 4, 5][..2]"),
+        Value::List(vec![Value::Int(1), Value::Int(2)])
+    );
 }
 
 #[test]
 fn test_list_slice_to_end() {
-    assert_eq!(eval("[1, 2, 3, 4, 5][3..]"), Value::List(vec![Value::Int(4), Value::Int(5)]));
+    assert_eq!(
+        eval("[1, 2, 3, 4, 5][3..]"),
+        Value::List(vec![Value::Int(4), Value::Int(5)])
+    );
 }
 
 #[test]
 fn test_list_slice_inclusive() {
-    assert_eq!(eval("[1, 2, 3, 4, 5][1..=3]"), Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)]));
+    assert_eq!(
+        eval("[1, 2, 3, 4, 5][1..=3]"),
+        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)])
+    );
 }
 
 #[test]
 fn test_list_slice_full() {
-    assert_eq!(eval("[1, 2, 3][..]"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("[1, 2, 3][..]"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
@@ -2063,14 +2640,19 @@ fn test_bytes_slice_syntax() {
 
 #[test]
 fn test_slice_out_of_bounds_clamps() {
-    assert_eq!(eval("[1, 2, 3][0..100]"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("[1, 2, 3][0..100]"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
     assert_eq!(eval("[1, 2, 3][5..10]"), Value::List(vec![]));
 }
 
 #[test]
 fn test_slice_with_variables() {
-    assert_eq!(eval("let start = 1; let end = 3; [10, 20, 30, 40][start..end]"),
-        Value::List(vec![Value::Int(20), Value::Int(30)]));
+    assert_eq!(
+        eval("let start = 1; let end = 3; [10, 20, 30, 40][start..end]"),
+        Value::List(vec![Value::Int(20), Value::Int(30)])
+    );
 }
 
 // ============================================================
@@ -2079,20 +2661,26 @@ fn test_slice_with_variables() {
 
 #[test]
 fn test_for_over_bytes() {
-    assert_eq!(eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#),
-        Value::Int(97 + 98 + 99));
+    assert_eq!(
+        eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#),
+        Value::Int(97 + 98 + 99)
+    );
 }
 
 #[test]
 fn test_for_over_tuple() {
-    assert_eq!(eval("let mut sum = 0; for x in (1, 2, 3) { sum += x; } sum"),
-        Value::Int(6));
+    assert_eq!(
+        eval("let mut sum = 0; for x in (1, 2, 3) { sum += x; } sum"),
+        Value::Int(6)
+    );
 }
 
 #[test]
 fn test_for_over_string() {
-    assert_eq!(eval(r#"let mut s = ""; for c in "abc" { s = s + c + "-"; } s"#),
-        Value::Str("a-b-c-".to_string()));
+    assert_eq!(
+        eval(r#"let mut s = ""; for c in "abc" { s = s + c + "-"; } s"#),
+        Value::Str("a-b-c-".to_string())
+    );
 }
 
 // ============================================================
@@ -2103,56 +2691,92 @@ fn test_for_over_string() {
 mod vm_integration {
     use super::*;
 
-#[test]
-fn test_vm_fn_simple() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval("fn add(a, b) { a + b } add(3, 4)").unwrap(), Value::Int(7));
-}
+    #[test]
+    fn test_vm_fn_simple() {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine.vm_eval("fn add(a, b) { a + b } add(3, 4)").unwrap(),
+            Value::Int(7)
+        );
+    }
 
-#[test]
-fn test_vm_fn_nested_calls() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval("fn double(x) { x * 2 } fn quad(x) { double(double(x)) } quad(5)").unwrap(), Value::Int(20));
-}
+    #[test]
+    fn test_vm_fn_nested_calls() {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine
+                .vm_eval("fn double(x) { x * 2 } fn quad(x) { double(double(x)) } quad(5)")
+                .unwrap(),
+            Value::Int(20)
+        );
+    }
 
-#[test]
-fn test_vm_fn_closure() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval("let x = 10; fn add_x(y) { x + y } add_x(5)").unwrap(), Value::Int(15));
-}
+    #[test]
+    fn test_vm_fn_closure() {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine
+                .vm_eval("let x = 10; fn add_x(y) { x + y } add_x(5)")
+                .unwrap(),
+            Value::Int(15)
+        );
+    }
 
-#[test]
-fn test_vm_fn_default_params() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval("fn greet(name = \"world\") { name } greet()").unwrap(), Value::Str("world".to_string()));
-}
+    #[test]
+    fn test_vm_fn_default_params() {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine
+                .vm_eval("fn greet(name = \"world\") { name } greet()")
+                .unwrap(),
+            Value::Str("world".to_string())
+        );
+    }
 
-#[test]
-fn test_vm_fn_if_in_body() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval("fn abs(x) { if x < 0 { -x } else { x } } abs(-5)").unwrap(), Value::Int(5));
-}
+    #[test]
+    fn test_vm_fn_if_in_body() {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine
+                .vm_eval("fn abs(x) { if x < 0 { -x } else { x } } abs(-5)")
+                .unwrap(),
+            Value::Int(5)
+        );
+    }
 
-#[test]
-fn test_vm_fn_loop_in_body() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval("fn sum(n) { let mut s = 0; let mut i = 0; while i < n { s += i; i += 1; } s } sum(5)").unwrap(), Value::Int(10));
-}
+    #[test]
+    fn test_vm_fn_loop_in_body() {
+        let mut engine = Engine::new();
+        assert_eq!(engine.vm_eval("fn sum(n) { let mut s = 0; let mut i = 0; while i < n { s += i; i += 1; } s } sum(5)").unwrap(), Value::Int(10));
+    }
 
-#[test]
-fn test_vm_slice() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval("[1, 2, 3, 4, 5][1..3]").unwrap(), Value::List(vec![Value::Int(2), Value::Int(3)]));
-    assert_eq!(engine.vm_eval("[1, 2, 3][..2]").unwrap(), Value::List(vec![Value::Int(1), Value::Int(2)]));
-    assert_eq!(engine.vm_eval("[1, 2, 3][1..]").unwrap(), Value::List(vec![Value::Int(2), Value::Int(3)]));
-}
+    #[test]
+    fn test_vm_slice() {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine.vm_eval("[1, 2, 3, 4, 5][1..3]").unwrap(),
+            Value::List(vec![Value::Int(2), Value::Int(3)])
+        );
+        assert_eq!(
+            engine.vm_eval("[1, 2, 3][..2]").unwrap(),
+            Value::List(vec![Value::Int(1), Value::Int(2)])
+        );
+        assert_eq!(
+            engine.vm_eval("[1, 2, 3][1..]").unwrap(),
+            Value::List(vec![Value::Int(2), Value::Int(3)])
+        );
+    }
 
-#[test]
-fn test_vm_for_bytes() {
-    let mut engine = Engine::new();
-    assert_eq!(engine.vm_eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#).unwrap(), Value::Int(97 + 98 + 99));
-}
-
+    #[test]
+    fn test_vm_for_bytes() {
+        let mut engine = Engine::new();
+        assert_eq!(
+            engine
+                .vm_eval(r#"let mut sum = 0; for b in b"abc" { sum += b; } sum"#)
+                .unwrap(),
+            Value::Int(97 + 98 + 99)
+        );
+    }
 } // mod vm_integration
 
 // ============================================================
@@ -2161,27 +2785,42 @@ fn test_vm_for_bytes() {
 
 #[test]
 fn test_list_index_assign() {
-    assert_eq!(eval("let mut a = [1, 2, 3]; a[0] = 10; a"),
-        Value::List(vec![Value::Int(10), Value::Int(2), Value::Int(3)]));
-    assert_eq!(eval("let mut a = [10, 20, 30]; a[1] += 5; a"),
-        Value::List(vec![Value::Int(10), Value::Int(25), Value::Int(30)]));
+    assert_eq!(
+        eval("let mut a = [1, 2, 3]; a[0] = 10; a"),
+        Value::List(vec![Value::Int(10), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        eval("let mut a = [10, 20, 30]; a[1] += 5; a"),
+        Value::List(vec![Value::Int(10), Value::Int(25), Value::Int(30)])
+    );
 }
 
 #[test]
 fn test_dict_index_assign() {
-    assert_eq!(eval("let mut d = #{\"x\": 1}; d[\"x\"] = 42; d.x"), Value::Int(42));
+    assert_eq!(
+        eval("let mut d = #{\"x\": 1}; d[\"x\"] = 42; d.x"),
+        Value::Int(42)
+    );
 }
 
 #[test]
 fn test_dict_field_assign() {
-    assert_eq!(eval("let mut d = #{\"x\": 1, \"y\": 2}; d.x = 99; d.x"), Value::Int(99));
-    assert_eq!(eval("let mut d = #{\"count\": 0}; d.count += 1; d.count += 1; d.count"), Value::Int(2));
+    assert_eq!(
+        eval("let mut d = #{\"x\": 1, \"y\": 2}; d.x = 99; d.x"),
+        Value::Int(99)
+    );
+    assert_eq!(
+        eval("let mut d = #{\"count\": 0}; d.count += 1; d.count += 1; d.count"),
+        Value::Int(2)
+    );
 }
 
 #[test]
 fn test_index_assign_negative() {
-    assert_eq!(eval("let mut a = [1, 2, 3]; a[-1] = 99; a"),
-        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(99)]));
+    assert_eq!(
+        eval("let mut a = [1, 2, 3]; a[-1] = 99; a"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(99)])
+    );
 }
 
 // --- Multi-error reporting ---
@@ -2191,7 +2830,11 @@ fn test_multi_error_reports_all() {
     let mut engine = Engine::new();
     let err = engine.eval("let x = ; let y = ; 42").unwrap_err();
     // Should have the first error plus at least one additional
-    assert!(!err.additional.is_empty(), "expected multiple errors, got just one: {}", err.message);
+    assert!(
+        !err.additional.is_empty(),
+        "expected multiple errors, got just one: {}",
+        err.message
+    );
 }
 
 #[test]
@@ -2199,7 +2842,11 @@ fn test_multi_error_single_error_no_additional() {
     let mut engine = Engine::new();
     let err = engine.eval("let x = ;").unwrap_err();
     // Single error should have no additional errors
-    assert!(err.additional.is_empty(), "expected single error, got additional: {:?}", err.additional);
+    assert!(
+        err.additional.is_empty(),
+        "expected single error, got additional: {:?}",
+        err.additional
+    );
 }
 
 #[test]
@@ -2209,7 +2856,11 @@ fn test_multi_error_format_with_source() {
     let err = engine.eval(src).unwrap_err();
     let formatted = err.format_with_source(src);
     // Should contain error text for both lines
-    assert!(formatted.contains("error[parse]"), "formatted: {}", formatted);
+    assert!(
+        formatted.contains("error[parse]"),
+        "formatted: {}",
+        formatted
+    );
 }
 
 // ============================================================
@@ -2218,22 +2869,36 @@ fn test_multi_error_format_with_source() {
 
 #[test]
 fn test_flat_map() {
-    assert_eq!(eval("[1, 2, 3].flat_map(|x| [x, x * 10])"), Value::List(vec![
-        Value::Int(1), Value::Int(10),
-        Value::Int(2), Value::Int(20),
-        Value::Int(3), Value::Int(30),
-    ]));
+    assert_eq!(
+        eval("[1, 2, 3].flat_map(|x| [x, x * 10])"),
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(10),
+            Value::Int(2),
+            Value::Int(20),
+            Value::Int(3),
+            Value::Int(30),
+        ])
+    );
 }
 
 #[test]
 fn test_triple_quoted_string() {
-    assert_eq!(eval(r#""""hello
-world""""#), Value::Str("hello\nworld".to_string()));
+    assert_eq!(
+        eval(
+            r#""""hello
+world""""#
+        ),
+        Value::Str("hello\nworld".to_string())
+    );
 }
 
 #[test]
 fn test_triple_quoted_fstring() {
-    assert_eq!(eval(r#"let x = 42; f"""value: {x}""""#), Value::Str("value: 42".to_string()));
+    assert_eq!(
+        eval(r#"let x = 42; f"""value: {x}""""#),
+        Value::Str("value: 42".to_string())
+    );
 }
 
 #[test]
@@ -2276,19 +2941,51 @@ fn test_assert_with_message() {
 }
 
 #[test]
+fn test_assert_eq_pass() {
+    assert_eq!(eval("assert_eq(1, 1)"), Value::Unit);
+    assert_eq!(eval(r#"assert_eq("a", "a")"#), Value::Unit);
+}
+
+#[test]
+fn test_assert_eq_fail() {
+    let result = Engine::new().eval("assert_eq(1, 2)");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("expected 1, got 2"));
+}
+
+#[test]
+fn test_assert_eq_with_message() {
+    let result = Engine::new().eval(r#"assert_eq(1, 2, "values differ")"#);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().message;
+    assert!(msg.contains("values differ"));
+    assert!(msg.contains("expected 1, got 2"));
+}
+
+#[test]
 fn test_named_args() {
-    assert_eq!(eval("fn add(a, b) { a - b } add(b: 10, a: 3)"), Value::Int(-7));
+    assert_eq!(
+        eval("fn add(a, b) { a - b } add(b: 10, a: 3)"),
+        Value::Int(-7)
+    );
 }
 
 #[test]
 fn test_named_args_with_defaults() {
-    assert_eq!(eval(r#"fn greet(name, greeting = "hi") { f"{greeting} {name}" } greet(greeting: "hello", name: "world")"#),
-        Value::Str("hello world".to_string()));
+    assert_eq!(
+        eval(
+            r#"fn greet(name, greeting = "hi") { f"{greeting} {name}" } greet(greeting: "hello", name: "world")"#
+        ),
+        Value::Str("hello world".to_string())
+    );
 }
 
 #[test]
 fn test_named_args_mixed() {
-    assert_eq!(eval("fn f(a, b, c) { a * 100 + b * 10 + c } f(1, c: 3, b: 2)"), Value::Int(123));
+    assert_eq!(
+        eval("fn f(a, b, c) { a * 100 + b * 10 + c } f(1, c: 3, b: 2)"),
+        Value::Int(123)
+    );
 }
 
 #[test]
@@ -2304,7 +3001,10 @@ fn test_tuple_contains() {
 
 #[test]
 fn test_tuple_to_list() {
-    assert_eq!(eval("(1, 2, 3).to_list()"), Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+    assert_eq!(
+        eval("(1, 2, 3).to_list()"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
 }
 
 #[test]
@@ -2315,15 +3015,79 @@ fn test_string_multiply() {
 
 #[test]
 fn test_range_for_loop() {
-    assert_eq!(eval("let mut s = 0; for i in 0..5 { s += i; } s"), Value::Int(10));
+    assert_eq!(
+        eval("let mut s = 0; for i in 0..5 { s += i; } s"),
+        Value::Int(10)
+    );
 }
 
 #[test]
 fn test_range_inclusive_for_loop() {
-    assert_eq!(eval("let mut s = 0; for i in 1..=5 { s += i; } s"), Value::Int(15));
+    assert_eq!(
+        eval("let mut s = 0; for i in 1..=5 { s += i; } s"),
+        Value::Int(15)
+    );
 }
 
 #[test]
 fn test_multiline_lambda() {
-    assert_eq!(eval("let f = |x| { let y = x * 2; y + 1 }; f(5)"), Value::Int(11));
+    assert_eq!(
+        eval("let f = |x| { let y = x * 2; y + 1 }; f(5)"),
+        Value::Int(11)
+    );
+}
+
+// ============================================================
+// Section: try/catch
+// ============================================================
+
+#[test]
+fn test_try_catch_no_error() {
+    assert_eq!(eval("try { 42 } catch e { 0 }"), Value::Int(42));
+}
+
+#[test]
+fn test_try_catch_with_error() {
+    assert_eq!(
+        eval(r#"try { assert(false, "boom"); 1 } catch e { e }"#),
+        Value::Str("boom".to_string())
+    );
+}
+
+#[test]
+fn test_try_catch_division_by_zero() {
+    assert_eq!(eval("try { 1 / 0 } catch e { -1 }"), Value::Int(-1));
+}
+
+#[test]
+fn test_try_catch_nested() {
+    assert_eq!(
+        eval(
+            r#"
+            try {
+                try { assert(false, "inner") } catch e { f"caught: {e}" }
+            } catch e { "outer" }
+        "#
+        ),
+        Value::Str("caught: inner".to_string())
+    );
+}
+
+#[test]
+fn test_try_catch_as_expression() {
+    assert_eq!(
+        eval(
+            r#"
+            let result = try {
+                let x = 10;
+                let y = 0;
+                x / y
+            } catch e {
+                -1
+            };
+            result
+        "#
+        ),
+        Value::Int(-1)
+    );
 }

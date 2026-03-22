@@ -48,9 +48,13 @@ fn run_file(path: &str, use_vm: bool) {
     let mut engine = Engine::new();
     let result = if use_vm {
         #[cfg(feature = "vm")]
-        { engine.vm_eval(&source) }
+        {
+            engine.vm_eval(&source)
+        }
         #[cfg(not(feature = "vm"))]
-        { engine.eval(&source) }
+        {
+            engine.eval(&source)
+        }
     } else {
         engine.eval(&source)
     };
@@ -148,9 +152,13 @@ fn run_repl(use_vm: bool) {
 
         let result = if vm_mode {
             #[cfg(feature = "vm")]
-            { engine.vm_eval(&source) }
+            {
+                engine.vm_eval(&source)
+            }
             #[cfg(not(feature = "vm"))]
-            { engine.eval(&source) }
+            {
+                engine.eval(&source)
+            }
         } else {
             engine.eval(&source)
         };

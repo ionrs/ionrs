@@ -10,7 +10,12 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source: source.as_bytes(), pos: 0, line: 1, col: 1 }
+        Self {
+            source: source.as_bytes(),
+            pos: 0,
+            line: 1,
+            col: 1,
+        }
     }
 
     pub fn tokenize(&mut self) -> Result<Vec<SpannedToken>, IonError> {
@@ -98,7 +103,11 @@ impl<'a> Lexer<'a> {
         }
 
         // Triple-quoted f-strings
-        if ch == b'f' && self.peek_at(1) == b'"' && self.peek_at(2) == b'"' && self.peek_at(3) == b'"' {
+        if ch == b'f'
+            && self.peek_at(1) == b'"'
+            && self.peek_at(2) == b'"'
+            && self.peek_at(3) == b'"'
+        {
             self.advance(); // consume 'f'
             return self.lex_triple_string(line, col, true);
         }
@@ -144,7 +153,8 @@ impl<'a> Lexer<'a> {
                 } else {
                     Err(IonError::lex(
                         format!("{}{}", ion_str!("unexpected character: "), '#'),
-                        line, col,
+                        line,
+                        col,
                     ))
                 }
             }
@@ -268,7 +278,8 @@ impl<'a> Lexer<'a> {
             }
             _ => Err(IonError::lex(
                 format!("{}{}", ion_str!("unexpected character: "), ch as char),
-                line, col,
+                line,
+                col,
             )),
         }
     }
@@ -295,14 +306,14 @@ impl<'a> Lexer<'a> {
             .collect();
 
         if is_float {
-            let val: f64 = text.parse().map_err(|_| {
-                IonError::lex(ion_str!("invalid float literal"), line, col)
-            })?;
+            let val: f64 = text
+                .parse()
+                .map_err(|_| IonError::lex(ion_str!("invalid float literal"), line, col))?;
             Ok(self.spanned(Token::Float(val), line, col))
         } else {
-            let val: i64 = text.parse().map_err(|_| {
-                IonError::lex(ion_str!("invalid integer literal"), line, col)
-            })?;
+            let val: i64 = text
+                .parse()
+                .map_err(|_| IonError::lex(ion_str!("invalid integer literal"), line, col))?;
             Ok(self.spanned(Token::Int(val), line, col))
         }
     }
@@ -315,26 +326,101 @@ impl<'a> Lexer<'a> {
     ) -> Result<SpannedToken, IonError> {
         self.advance(); // consume opening "
         let mut s = String::new();
+        let mut interp_depth = 0u32; // track {} nesting in f-string interpolation
 
-        while self.pos < self.source.len() && self.peek() != b'"' {
+        while self.pos < self.source.len() {
             let ch = self.peek();
+
+            // In f-string interpolation mode, track braces and allow quotes
+            if is_fstr && interp_depth > 0 {
+                if ch == b'"' {
+                    // Skip over nested string inside interpolation
+                    self.advance();
+                    s.push('"');
+                    while self.pos < self.source.len() && self.peek() != b'"' {
+                        if self.peek() == b'\\' {
+                            self.advance();
+                            s.push('\\');
+                            if self.pos < self.source.len() {
+                                s.push(self.peek() as char);
+                                self.advance();
+                            }
+                        } else {
+                            s.push(self.peek() as char);
+                            self.advance();
+                        }
+                    }
+                    if self.pos < self.source.len() {
+                        self.advance(); // closing "
+                        s.push('"');
+                    }
+                    continue;
+                } else if ch == b'{' {
+                    interp_depth += 1;
+                    self.advance();
+                    s.push('{');
+                    continue;
+                } else if ch == b'}' {
+                    interp_depth -= 1;
+                    self.advance();
+                    s.push('}');
+                    continue;
+                } else {
+                    self.advance();
+                    s.push(ch as char);
+                    continue;
+                }
+            }
+
+            // Outside interpolation: " terminates the string
+            if ch == b'"' {
+                break;
+            }
+
             if ch == b'\\' {
                 self.advance();
                 match self.peek() {
-                    b'n' => { self.advance(); s.push('\n'); }
-                    b't' => { self.advance(); s.push('\t'); }
-                    b'r' => { self.advance(); s.push('\r'); }
-                    b'\\' => { self.advance(); s.push('\\'); }
-                    b'"' => { self.advance(); s.push('"'); }
-                    b'{' => { self.advance(); s.push('{'); }
-                    b'}' => { self.advance(); s.push('}'); }
+                    b'n' => {
+                        self.advance();
+                        s.push('\n');
+                    }
+                    b't' => {
+                        self.advance();
+                        s.push('\t');
+                    }
+                    b'r' => {
+                        self.advance();
+                        s.push('\r');
+                    }
+                    b'\\' => {
+                        self.advance();
+                        s.push('\\');
+                    }
+                    b'"' => {
+                        self.advance();
+                        s.push('"');
+                    }
+                    b'{' => {
+                        self.advance();
+                        s.push('{');
+                    }
+                    b'}' => {
+                        self.advance();
+                        s.push('}');
+                    }
                     _ => {
                         return Err(IonError::lex(
                             ion_str!("invalid escape sequence"),
-                            self.line, self.col,
+                            self.line,
+                            self.col,
                         ));
                     }
                 }
+            } else if is_fstr && ch == b'{' {
+                // Enter interpolation mode
+                interp_depth = 1;
+                self.advance();
+                s.push('{');
             } else {
                 self.advance();
                 s.push(ch as char);
@@ -363,7 +449,7 @@ impl<'a> Lexer<'a> {
         self.advance(); // first "
         self.advance(); // second "
         self.advance(); // third "
-        // Skip a leading newline immediately after """
+                        // Skip a leading newline immediately after """
         if self.pos < self.source.len() && self.peek() == b'\n' {
             self.advance();
         }
@@ -371,8 +457,10 @@ impl<'a> Lexer<'a> {
 
         while self.pos < self.source.len() {
             if self.peek() == b'"'
-                && self.pos + 1 < self.source.len() && self.source[self.pos + 1] == b'"'
-                && self.pos + 2 < self.source.len() && self.source[self.pos + 2] == b'"'
+                && self.pos + 1 < self.source.len()
+                && self.source[self.pos + 1] == b'"'
+                && self.pos + 2 < self.source.len()
+                && self.source[self.pos + 2] == b'"'
             {
                 // consume closing """
                 self.advance();
@@ -391,17 +479,39 @@ impl<'a> Lexer<'a> {
             } else if ch == b'\\' {
                 self.advance();
                 match self.peek() {
-                    b'n' => { self.advance(); s.push('\n'); }
-                    b't' => { self.advance(); s.push('\t'); }
-                    b'r' => { self.advance(); s.push('\r'); }
-                    b'\\' => { self.advance(); s.push('\\'); }
-                    b'"' => { self.advance(); s.push('"'); }
-                    b'{' => { self.advance(); s.push('{'); }
-                    b'}' => { self.advance(); s.push('}'); }
+                    b'n' => {
+                        self.advance();
+                        s.push('\n');
+                    }
+                    b't' => {
+                        self.advance();
+                        s.push('\t');
+                    }
+                    b'r' => {
+                        self.advance();
+                        s.push('\r');
+                    }
+                    b'\\' => {
+                        self.advance();
+                        s.push('\\');
+                    }
+                    b'"' => {
+                        self.advance();
+                        s.push('"');
+                    }
+                    b'{' => {
+                        self.advance();
+                        s.push('{');
+                    }
+                    b'}' => {
+                        self.advance();
+                        s.push('}');
+                    }
                     _ => {
                         return Err(IonError::lex(
                             ion_str!("invalid escape sequence"),
-                            self.line, self.col,
+                            self.line,
+                            self.col,
                         ));
                     }
                 }
@@ -411,7 +521,11 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Err(IonError::lex(ion_str!("unterminated triple-quoted string"), line, col))
+        Err(IonError::lex(
+            ion_str!("unterminated triple-quoted string"),
+            line,
+            col,
+        ))
     }
 
     fn lex_bytes(&mut self, line: usize, col: usize) -> Result<SpannedToken, IonError> {
@@ -423,28 +537,55 @@ impl<'a> Lexer<'a> {
             if ch == b'\\' {
                 self.advance();
                 match self.peek() {
-                    b'n' => { self.advance(); bytes.push(b'\n'); }
-                    b't' => { self.advance(); bytes.push(b'\t'); }
-                    b'r' => { self.advance(); bytes.push(b'\r'); }
-                    b'\\' => { self.advance(); bytes.push(b'\\'); }
-                    b'"' => { self.advance(); bytes.push(b'"'); }
-                    b'0' => { self.advance(); bytes.push(0); }
+                    b'n' => {
+                        self.advance();
+                        bytes.push(b'\n');
+                    }
+                    b't' => {
+                        self.advance();
+                        bytes.push(b'\t');
+                    }
+                    b'r' => {
+                        self.advance();
+                        bytes.push(b'\r');
+                    }
+                    b'\\' => {
+                        self.advance();
+                        bytes.push(b'\\');
+                    }
+                    b'"' => {
+                        self.advance();
+                        bytes.push(b'"');
+                    }
+                    b'0' => {
+                        self.advance();
+                        bytes.push(0);
+                    }
                     b'x' => {
                         self.advance(); // consume 'x'
                         let hi = self.advance();
                         let lo = self.advance();
                         let val = hex_digit(hi).ok_or_else(|| {
-                            IonError::lex(ion_str!("invalid hex escape in byte string"), self.line, self.col)
+                            IonError::lex(
+                                ion_str!("invalid hex escape in byte string"),
+                                self.line,
+                                self.col,
+                            )
                         })? << 4
                             | hex_digit(lo).ok_or_else(|| {
-                                IonError::lex(ion_str!("invalid hex escape in byte string"), self.line, self.col)
+                                IonError::lex(
+                                    ion_str!("invalid hex escape in byte string"),
+                                    self.line,
+                                    self.col,
+                                )
                             })?;
                         bytes.push(val);
                     }
                     _ => {
                         return Err(IonError::lex(
                             ion_str!("invalid escape sequence in byte string"),
-                            self.line, self.col,
+                            self.line,
+                            self.col,
                         ));
                     }
                 }
@@ -455,7 +596,11 @@ impl<'a> Lexer<'a> {
         }
 
         if self.pos >= self.source.len() {
-            return Err(IonError::lex(ion_str!("unterminated byte string"), line, col));
+            return Err(IonError::lex(
+                ion_str!("unterminated byte string"),
+                line,
+                col,
+            ));
         }
         self.advance(); // consume closing "
 
@@ -493,6 +638,8 @@ impl<'a> Lexer<'a> {
             "spawn" => Token::Spawn,
             "await" => Token::Await,
             "select" => Token::Select,
+            "try" => Token::Try,
+            "catch" => Token::Catch,
             _ => Token::Ident(text.to_string()),
         };
         Ok(self.spanned(token, line, col))
@@ -513,16 +660,28 @@ mod tests {
     use super::*;
 
     fn lex(src: &str) -> Vec<Token> {
-        Lexer::new(src).tokenize().unwrap().into_iter().map(|t| t.token).collect()
+        Lexer::new(src)
+            .tokenize()
+            .unwrap()
+            .into_iter()
+            .map(|t| t.token)
+            .collect()
     }
 
     #[test]
     fn test_basic_tokens() {
         let tokens = lex("let x = 42;");
-        assert_eq!(tokens, vec![
-            Token::Let, Token::Ident("x".into()), Token::Eq,
-            Token::Int(42), Token::Semicolon, Token::Eof,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Let,
+                Token::Ident("x".into()),
+                Token::Eq,
+                Token::Int(42),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
     }
 
     #[test]
@@ -546,11 +705,19 @@ mod tests {
     #[test]
     fn test_operators() {
         let tokens = lex("|> .. ... => :: ? !=");
-        assert_eq!(tokens, vec![
-            Token::Pipe, Token::DotDot, Token::DotDotDot,
-            Token::Arrow, Token::ColonColon, Token::Question,
-            Token::BangEq, Token::Eof,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Pipe,
+                Token::DotDot,
+                Token::DotDotDot,
+                Token::Arrow,
+                Token::ColonColon,
+                Token::Question,
+                Token::BangEq,
+                Token::Eof,
+            ]
+        );
     }
 
     #[test]
@@ -562,11 +729,21 @@ mod tests {
     #[test]
     fn test_comments() {
         let tokens = lex("let x = 1; // comment\nlet y = 2;");
-        assert_eq!(tokens, vec![
-            Token::Let, Token::Ident("x".into()), Token::Eq,
-            Token::Int(1), Token::Semicolon,
-            Token::Let, Token::Ident("y".into()), Token::Eq,
-            Token::Int(2), Token::Semicolon, Token::Eof,
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Let,
+                Token::Ident("x".into()),
+                Token::Eq,
+                Token::Int(1),
+                Token::Semicolon,
+                Token::Let,
+                Token::Ident("y".into()),
+                Token::Eq,
+                Token::Int(2),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
     }
 }

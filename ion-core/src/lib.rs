@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 /// Macro for string obfuscation. Returns a `String`.
 /// When the `obfuscate` feature is enabled, strings are encrypted at compile
 /// time and decrypted at runtime via `obfstr`. Without the feature, they
@@ -21,28 +23,30 @@ macro_rules! ion_str {
 /// for contexts requiring `&'static str` like type_name()).
 /// These strings are short type names that are low-value for obfuscation.
 macro_rules! ion_static_str {
-    ($s:literal) => { $s };
+    ($s:literal) => {
+        $s
+    };
 }
 
-pub mod token;
-pub mod lexer;
 pub mod ast;
-pub mod parser;
-pub mod value;
-pub mod intern;
-pub mod env;
-pub mod error;
-pub mod interpreter;
-pub mod host_types;
 #[cfg(feature = "concurrency")]
 pub mod async_rt;
 #[cfg(feature = "vm")]
 pub mod bytecode;
 #[cfg(feature = "vm")]
 pub mod compiler;
+pub mod engine;
+pub mod env;
+pub mod error;
+pub mod host_types;
+pub mod intern;
+pub mod interpreter;
+pub mod lexer;
+pub mod parser;
+pub mod token;
+pub mod value;
 #[cfg(feature = "vm")]
 pub mod vm;
-pub mod engine;
 
 #[cfg(feature = "derive")]
 pub use ion_derive::IonType;

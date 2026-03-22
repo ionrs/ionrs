@@ -3,7 +3,7 @@
 use crate::ast::*;
 use crate::bytecode::{Chunk, FnProto, Op};
 use crate::error::IonError;
-use crate::value::{Value, FnChunkCache};
+use crate::value::{FnChunkCache, Value};
 
 /// A local variable tracked at compile time for stack-slot resolution.
 #[derive(Debug, Clone)]
@@ -34,6 +34,12 @@ pub struct Compiler {
     loop_scope_depth: usize,
 }
 
+impl Default for Compiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -60,32 +66,44 @@ impl Compiler {
                     // Note: we don't need to recurse — just the presence of a fn decl
                     // in the current scope means outer locals might be captured
                 }
-                StmtKind::ExprStmt { expr, .. } => {
-                    if Self::expr_has_closures(expr) { return true; }
+                StmtKind::ExprStmt { expr, .. } if Self::expr_has_closures(expr) => {
+                    return true;
                 }
-                StmtKind::Let { value, .. } => {
-                    if Self::expr_has_closures(value) { return true; }
+                StmtKind::Let { value, .. } if Self::expr_has_closures(value) => {
+                    return true;
                 }
                 StmtKind::For { body, iter, .. } => {
-                    if Self::expr_has_closures(iter) { return true; }
-                    if Self::stmts_have_closures(body) { return true; }
+                    if Self::expr_has_closures(iter) {
+                        return true;
+                    }
+                    if Self::stmts_have_closures(body) {
+                        return true;
+                    }
                 }
                 StmtKind::While { cond, body } => {
-                    if Self::expr_has_closures(cond) { return true; }
-                    if Self::stmts_have_closures(body) { return true; }
+                    if Self::expr_has_closures(cond) {
+                        return true;
+                    }
+                    if Self::stmts_have_closures(body) {
+                        return true;
+                    }
                 }
-                StmtKind::Loop { body } => {
-                    if Self::stmts_have_closures(body) { return true; }
+                StmtKind::Loop { body } if Self::stmts_have_closures(body) => {
+                    return true;
                 }
-                StmtKind::Return { value } => {
-                    if let Some(e) = value { if Self::expr_has_closures(e) { return true; } }
+                StmtKind::Return { value: Some(e) } if Self::expr_has_closures(e) => {
+                    return true;
                 }
-                StmtKind::Assign { value, .. } => {
-                    if Self::expr_has_closures(value) { return true; }
+                StmtKind::Assign { value, .. } if Self::expr_has_closures(value) => {
+                    return true;
                 }
                 StmtKind::WhileLet { expr, body, .. } => {
-                    if Self::expr_has_closures(expr) { return true; }
-                    if Self::stmts_have_closures(body) { return true; }
+                    if Self::expr_has_closures(expr) {
+                        return true;
+                    }
+                    if Self::stmts_have_closures(body) {
+                        return true;
+                    }
                 }
                 _ => {}
             }
@@ -96,10 +114,16 @@ impl Compiler {
     fn expr_has_closures(expr: &Expr) -> bool {
         match &expr.kind {
             ExprKind::Lambda { .. } => true,
-            ExprKind::If { cond, then_body, else_body } => {
+            ExprKind::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 Self::expr_has_closures(cond)
                     || Self::stmts_have_closures(then_body)
-                    || else_body.as_ref().map_or(false, |b| Self::stmts_have_closures(b))
+                    || else_body
+                        .as_ref()
+                        .is_some_and(|b| Self::stmts_have_closures(b))
             }
             ExprKind::Block(stmts) => Self::stmts_have_closures(stmts),
             ExprKind::Call { func, args } => {
@@ -121,16 +145,26 @@ impl Compiler {
                 Self::expr_has_closures(expr)
                     || arms.iter().any(|a| Self::expr_has_closures(&a.body))
             }
-            ExprKind::List(items) => items.iter().any(|e| Self::expr_has_closures(e)),
-            ExprKind::Tuple(items) => items.iter().any(|e| Self::expr_has_closures(e)),
-            ExprKind::ListComp { expr, iter, cond, .. } => {
-                Self::expr_has_closures(expr) || Self::expr_has_closures(iter)
-                    || cond.as_ref().map_or(false, |c| Self::expr_has_closures(c))
+            ExprKind::List(items) => items.iter().any(Self::expr_has_closures),
+            ExprKind::Tuple(items) => items.iter().any(Self::expr_has_closures),
+            ExprKind::ListComp {
+                expr, iter, cond, ..
+            } => {
+                Self::expr_has_closures(expr)
+                    || Self::expr_has_closures(iter)
+                    || cond.as_ref().is_some_and(|c| Self::expr_has_closures(c))
             }
-            ExprKind::IfLet { expr, then_body, else_body, .. } => {
+            ExprKind::IfLet {
+                expr,
+                then_body,
+                else_body,
+                ..
+            } => {
                 Self::expr_has_closures(expr)
                     || Self::stmts_have_closures(then_body)
-                    || else_body.as_ref().map_or(false, |b| Self::stmts_have_closures(b))
+                    || else_body
+                        .as_ref()
+                        .is_some_and(|b| Self::stmts_have_closures(b))
             }
             _ => false,
         }
@@ -141,9 +175,15 @@ impl Compiler {
     fn try_fold_binop(left: &Expr, op: &BinOp, right: &Expr) -> Option<Value> {
         match (&left.kind, op, &right.kind) {
             // Int op Int
-            (ExprKind::Int(a), BinOp::Add, ExprKind::Int(b)) => Some(Value::Int(a.wrapping_add(*b))),
-            (ExprKind::Int(a), BinOp::Sub, ExprKind::Int(b)) => Some(Value::Int(a.wrapping_sub(*b))),
-            (ExprKind::Int(a), BinOp::Mul, ExprKind::Int(b)) => Some(Value::Int(a.wrapping_mul(*b))),
+            (ExprKind::Int(a), BinOp::Add, ExprKind::Int(b)) => {
+                Some(Value::Int(a.wrapping_add(*b)))
+            }
+            (ExprKind::Int(a), BinOp::Sub, ExprKind::Int(b)) => {
+                Some(Value::Int(a.wrapping_sub(*b)))
+            }
+            (ExprKind::Int(a), BinOp::Mul, ExprKind::Int(b)) => {
+                Some(Value::Int(a.wrapping_mul(*b)))
+            }
             (ExprKind::Int(a), BinOp::Div, ExprKind::Int(b)) if *b != 0 => Some(Value::Int(a / b)),
             (ExprKind::Int(a), BinOp::Mod, ExprKind::Int(b)) if *b != 0 => Some(Value::Int(a % b)),
             (ExprKind::Int(a), BinOp::Eq, ExprKind::Int(b)) => Some(Value::Bool(a == b)),
@@ -201,7 +241,10 @@ impl Compiler {
     /// Check if a statement is terminal (control never continues past it).
     #[cfg(feature = "optimize")]
     fn stmt_is_terminal(stmt: &Stmt) -> bool {
-        matches!(&stmt.kind, StmtKind::Return { .. } | StmtKind::Break { .. } | StmtKind::Continue)
+        matches!(
+            &stmt.kind,
+            StmtKind::Return { .. } | StmtKind::Break { .. } | StmtKind::Continue
+        )
     }
 
     /// Resolve a local variable name to its slot index (searching innermost first).
@@ -216,7 +259,10 @@ impl Compiler {
 
     /// Add a local variable to the compile-time tracking.
     fn add_local(&mut self, name: String, _mutable: bool) {
-        self.locals.push(Local { name, depth: self.scope_depth });
+        self.locals.push(Local {
+            name,
+            depth: self.scope_depth,
+        });
     }
 
     /// Begin a new compile-time scope and emit PushScope.
@@ -246,7 +292,8 @@ impl Compiler {
             self.chunk.emit_op_u16(Op::DefineLocal, idx, line);
             self.chunk.emit(if mutable { 1 } else { 0 }, line);
         }
-        self.chunk.emit_op_u8(Op::DefineLocalSlot, if mutable { 1 } else { 0 }, line);
+        self.chunk
+            .emit_op_u8(Op::DefineLocalSlot, if mutable { 1 } else { 0 }, line);
     }
 
     /// Emit a variable write (SetLocalSlot or SetGlobal).
@@ -309,7 +356,11 @@ impl Compiler {
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<(), IonError> {
         let line = stmt.span.line;
         match &stmt.kind {
-            StmtKind::Let { mutable, pattern, value } => {
+            StmtKind::Let {
+                mutable,
+                pattern,
+                value,
+            } => {
                 self.compile_expr(value)?;
                 self.compile_let_pattern(pattern, *mutable, line)?;
             }
@@ -320,7 +371,11 @@ impl Compiler {
             StmtKind::FnDecl { name, params, body } => {
                 self.compile_fn_decl(name, params, body, line)?;
             }
-            StmtKind::For { pattern, iter, body } => {
+            StmtKind::For {
+                pattern,
+                iter,
+                body,
+            } => {
                 self.compile_for(pattern, iter, body, line)?;
             }
             StmtKind::While { cond, body } => {
@@ -376,7 +431,11 @@ impl Compiler {
                 self.compile_assign(target, op, value, line)?;
                 self.chunk.emit_op(Op::Pop, line); // discard assignment result
             }
-            StmtKind::WhileLet { pattern, expr, body } => {
+            StmtKind::WhileLet {
+                pattern,
+                expr,
+                body,
+            } => {
                 let saved_breaks = std::mem::take(&mut self.break_jumps);
                 let saved_in_for = self.in_for_loop;
                 let saved_loop_depth = self.loop_scope_depth;
@@ -403,7 +462,9 @@ impl Compiler {
                 for stmt in body {
                     self.compile_stmt(stmt)?;
                     #[cfg(feature = "optimize")]
-                    if Self::stmt_is_terminal(stmt) { break; }
+                    if Self::stmt_is_terminal(stmt) {
+                        break;
+                    }
                 }
                 self.end_scope(line);
 
@@ -440,7 +501,8 @@ impl Compiler {
                 self.chunk.emit_constant(Value::Float(*n), line);
             }
             ExprKind::Bool(b) => {
-                self.chunk.emit_op(if *b { Op::True } else { Op::False }, line);
+                self.chunk
+                    .emit_op(if *b { Op::True } else { Op::False }, line);
             }
             ExprKind::Str(s) => {
                 self.chunk.emit_constant(Value::Str(s.clone()), line);
@@ -543,7 +605,11 @@ impl Compiler {
                 }
             }
 
-            ExprKind::If { cond, then_body, else_body } => {
+            ExprKind::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 // Condition is not in tail position (already cleared)
                 self.compile_expr(cond)?;
                 let then_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
@@ -578,7 +644,9 @@ impl Compiler {
                 // Named arguments require interpreter fallback
                 if args.iter().any(|a| a.name.is_some()) {
                     return Err(IonError::runtime(
-                        "named arguments not supported in VM".to_string(), line, 0,
+                        "named arguments not supported in VM".to_string(),
+                        line,
+                        0,
                     ));
                 }
                 // Sub-expressions are not in tail position (already cleared above)
@@ -597,14 +665,16 @@ impl Compiler {
                 for item in items {
                     self.compile_expr(item)?;
                 }
-                self.chunk.emit_op_u16(Op::BuildList, items.len() as u16, line);
+                self.chunk
+                    .emit_op_u16(Op::BuildList, items.len() as u16, line);
             }
 
             ExprKind::Tuple(items) => {
                 for item in items {
                     self.compile_expr(item)?;
                 }
-                self.chunk.emit_op_u16(Op::BuildTuple, items.len() as u16, line);
+                self.chunk
+                    .emit_op_u16(Op::BuildTuple, items.len() as u16, line);
             }
 
             ExprKind::Dict(entries) => {
@@ -650,7 +720,12 @@ impl Compiler {
                 self.chunk.emit_op_span(Op::GetIndex, line, col);
             }
 
-            ExprKind::Slice { expr: inner, start, end, inclusive } => {
+            ExprKind::Slice {
+                expr: inner,
+                start,
+                end,
+                inclusive,
+            } => {
                 self.compile_expr(inner)?;
                 let mut flags: u8 = 0;
                 if let Some(s) = start {
@@ -667,7 +742,11 @@ impl Compiler {
                 self.chunk.emit_op_u8(Op::Slice, flags, line);
             }
 
-            ExprKind::MethodCall { expr: inner, method, args } => {
+            ExprKind::MethodCall {
+                expr: inner,
+                method,
+                args,
+            } => {
                 self.compile_expr(inner)?;
                 for arg in args {
                     self.compile_expr(&arg.value)?;
@@ -680,7 +759,10 @@ impl Compiler {
             ExprKind::Lambda { params, body } => {
                 // Build lambda body as a single expression statement for tree-walk fallback
                 let body_stmt = Stmt {
-                    kind: StmtKind::ExprStmt { expr: *body.clone(), has_semi: false },
+                    kind: StmtKind::ExprStmt {
+                        expr: *body.clone(),
+                        has_semi: false,
+                    },
                     span: expr.span,
                 };
                 // Precompile lambda body
@@ -694,7 +776,9 @@ impl Compiler {
                 // When closures exist, also define params in env so they can be captured
                 if fn_compiler.needs_env_locals {
                     for (i, p) in params.iter().enumerate() {
-                        fn_compiler.chunk.emit_op_u16(Op::GetLocalSlot, i as u16, line);
+                        fn_compiler
+                            .chunk
+                            .emit_op_u16(Op::GetLocalSlot, i as u16, line);
                         let idx = fn_compiler.chunk.add_constant(Value::Str(p.clone()));
                         fn_compiler.chunk.emit_op_u16(Op::DefineLocal, idx, line);
                         fn_compiler.chunk.emit(0, line);
@@ -709,10 +793,13 @@ impl Compiler {
 
                 let fn_value = Value::Fn(crate::value::IonFn::new(
                     "<lambda>".to_string(),
-                    params.iter().map(|n| crate::ast::Param {
-                        name: n.clone(),
-                        default: None,
-                    }).collect(),
+                    params
+                        .iter()
+                        .map(|n| crate::ast::Param {
+                            name: n.clone(),
+                            default: None,
+                        })
+                        .collect(),
                     vec![body_stmt],
                     std::collections::HashMap::new(),
                 ));
@@ -735,7 +822,8 @@ impl Compiler {
                         }
                     }
                 }
-                self.chunk.emit_op_u16(Op::BuildFString, parts.len() as u16, line);
+                self.chunk
+                    .emit_op_u16(Op::BuildFString, parts.len() as u16, line);
             }
 
             ExprKind::PipeOp { left, right } => {
@@ -748,7 +836,8 @@ impl Compiler {
                         for arg in args {
                             self.compile_expr(&arg.value)?;
                         }
-                        self.chunk.emit_op_u8(Op::Call, (args.len() + 1) as u8, line);
+                        self.chunk
+                            .emit_op_u8(Op::Call, (args.len() + 1) as u8, line);
                     }
                     _ => {
                         // bare function: left |> func  →  func(left)
@@ -764,29 +853,53 @@ impl Compiler {
                 self.chunk.emit_op(Op::Try, line);
             }
 
-            ExprKind::Range { start, end, inclusive } => {
+            ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
                 self.compile_expr(start)?;
                 self.compile_expr(end)?;
-                self.chunk.emit_op_u8(Op::BuildRange, if *inclusive { 1 } else { 0 }, line);
+                self.chunk
+                    .emit_op_u8(Op::BuildRange, if *inclusive { 1 } else { 0 }, line);
             }
 
             ExprKind::LoopExpr(body) => {
                 self.compile_loop(body, line)?;
             }
 
-            ExprKind::Match { expr: subject, arms } => {
+            ExprKind::Match {
+                expr: subject,
+                arms,
+            } => {
                 self.compile_match(subject, arms, line)?;
             }
 
-            ExprKind::ListComp { expr: item_expr, pattern, iter, cond } => {
+            ExprKind::ListComp {
+                expr: item_expr,
+                pattern,
+                iter,
+                cond,
+            } => {
                 self.compile_list_comp(item_expr, pattern, iter, cond.as_deref(), line)?;
             }
 
-            ExprKind::DictComp { key, value, pattern, iter, cond } => {
+            ExprKind::DictComp {
+                key,
+                value,
+                pattern,
+                iter,
+                cond,
+            } => {
                 self.compile_dict_comp(key, value, pattern, iter, cond.as_deref(), line)?;
             }
 
-            ExprKind::IfLet { pattern, expr: inner, then_body, else_body } => {
+            ExprKind::IfLet {
+                pattern,
+                expr: inner,
+                then_body,
+                else_body,
+            } => {
                 // Evaluate the expression (not in tail position — already cleared)
                 self.compile_expr(inner)?;
 
@@ -823,7 +936,11 @@ impl Compiler {
             }
 
             // Features that fall back to tree-walk for now
-            ExprKind::StructConstruct { name, fields, spread } => {
+            ExprKind::StructConstruct {
+                name,
+                fields,
+                spread,
+            } => {
                 if let Some(spread_expr) = spread {
                     self.compile_expr(spread_expr)?;
                     for (fname, fexpr) in fields {
@@ -861,7 +978,11 @@ impl Compiler {
                 self.chunk.emit((variant_idx & 0xff) as u8, line);
                 self.chunk.emit(0u8, line);
             }
-            ExprKind::EnumVariantCall { enum_name, variant, args } => {
+            ExprKind::EnumVariantCall {
+                enum_name,
+                variant,
+                args,
+            } => {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
@@ -876,19 +997,34 @@ impl Compiler {
             }
 
             #[cfg(feature = "concurrency")]
-            ExprKind::AsyncBlock(_) | ExprKind::SpawnExpr(_) |
-            ExprKind::AwaitExpr(_) | ExprKind::SelectExpr(_) => {
+            ExprKind::AsyncBlock(_)
+            | ExprKind::SpawnExpr(_)
+            | ExprKind::AwaitExpr(_)
+            | ExprKind::SelectExpr(_) => {
                 return Err(IonError::runtime(
                     "concurrency not supported in bytecode VM".to_string(),
-                    line, 0,
+                    line,
+                    0,
                 ));
             }
             #[cfg(not(feature = "concurrency"))]
-            ExprKind::AsyncBlock(_) | ExprKind::SpawnExpr(_) |
-            ExprKind::AwaitExpr(_) | ExprKind::SelectExpr(_) => {
+            ExprKind::AsyncBlock(_)
+            | ExprKind::SpawnExpr(_)
+            | ExprKind::AwaitExpr(_)
+            | ExprKind::SelectExpr(_) => {
                 return Err(IonError::runtime(
                     "concurrency not available".to_string(),
-                    line, 0,
+                    line,
+                    0,
+                ));
+            }
+
+            ExprKind::TryCatch { .. } => {
+                // Fall back to tree-walk for try/catch
+                return Err(IonError::runtime(
+                    "try/catch not supported in bytecode VM".to_string(),
+                    line,
+                    0,
                 ));
             }
         }
@@ -941,7 +1077,12 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_let_pattern(&mut self, pattern: &Pattern, mutable: bool, line: usize) -> Result<(), IonError> {
+    fn compile_let_pattern(
+        &mut self,
+        pattern: &Pattern,
+        mutable: bool,
+        line: usize,
+    ) -> Result<(), IonError> {
         match pattern {
             Pattern::Ident(name) => {
                 self.emit_define_local(name, mutable, line);
@@ -965,7 +1106,8 @@ impl Compiler {
                 }
                 if let Some(rest_pat) = rest {
                     self.chunk.emit_op(Op::Dup, line);
-                    self.chunk.emit_constant(Value::Int(pats.len() as i64), line);
+                    self.chunk
+                        .emit_constant(Value::Int(pats.len() as i64), line);
                     self.chunk.emit_op_u8(Op::Slice, 1, line); // has_start only
                     self.compile_let_pattern(rest_pat, mutable, line)?;
                 }
@@ -977,14 +1119,21 @@ impl Compiler {
             _ => {
                 return Err(IonError::runtime(
                     "complex pattern not yet supported in bytecode VM let".to_string(),
-                    line, 0,
+                    line,
+                    0,
                 ));
             }
         }
         Ok(())
     }
 
-    fn compile_fn_decl(&mut self, name: &str, params: &[Param], body: &[Stmt], line: usize) -> Result<(), IonError> {
+    fn compile_fn_decl(
+        &mut self,
+        name: &str,
+        params: &[Param],
+        body: &[Stmt],
+        line: usize,
+    ) -> Result<(), IonError> {
         // Compile function body into a separate chunk
         let mut fn_compiler = Compiler::new();
         fn_compiler.in_tail_position = true;
@@ -997,8 +1146,12 @@ impl Compiler {
         // When closures exist, also define params in env so they can be captured
         if fn_compiler.needs_env_locals {
             for (i, param) in params.iter().enumerate() {
-                fn_compiler.chunk.emit_op_u16(Op::GetLocalSlot, i as u16, line);
-                let idx = fn_compiler.chunk.add_constant(Value::Str(param.name.clone()));
+                fn_compiler
+                    .chunk
+                    .emit_op_u16(Op::GetLocalSlot, i as u16, line);
+                let idx = fn_compiler
+                    .chunk
+                    .add_constant(Value::Str(param.name.clone()));
                 fn_compiler.chunk.emit_op_u16(Op::DefineLocal, idx, line);
                 fn_compiler.chunk.emit(0, line); // not mutable
             }
@@ -1029,7 +1182,12 @@ impl Compiler {
     }
 
     #[allow(dead_code)]
-    fn compile_lambda(&mut self, params: &[String], body: &Expr, line: usize) -> Result<FnProto, IonError> {
+    fn compile_lambda(
+        &mut self,
+        params: &[String],
+        body: &Expr,
+        line: usize,
+    ) -> Result<FnProto, IonError> {
         let mut fn_compiler = Compiler::new();
         fn_compiler.compile_expr(body)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
@@ -1044,7 +1202,13 @@ impl Compiler {
         })
     }
 
-    fn compile_for(&mut self, pattern: &Pattern, iter: &Expr, body: &[Stmt], line: usize) -> Result<(), IonError> {
+    fn compile_for(
+        &mut self,
+        pattern: &Pattern,
+        iter: &Expr,
+        body: &[Stmt],
+        line: usize,
+    ) -> Result<(), IonError> {
         // Save outer loop context
         let saved_breaks = std::mem::take(&mut self.break_jumps);
         let saved_continue = self.continue_target.take();
@@ -1073,7 +1237,9 @@ impl Compiler {
         for stmt in body {
             self.compile_stmt(stmt)?;
             #[cfg(feature = "optimize")]
-            if Self::stmt_is_terminal(stmt) { break; }
+            if Self::stmt_is_terminal(stmt) {
+                break;
+            }
         }
         self.end_scope(line);
 
@@ -1120,7 +1286,9 @@ impl Compiler {
         for stmt in body {
             self.compile_stmt(stmt)?;
             #[cfg(feature = "optimize")]
-            if Self::stmt_is_terminal(stmt) { break; }
+            if Self::stmt_is_terminal(stmt) {
+                break;
+            }
         }
         self.end_scope(line);
 
@@ -1155,7 +1323,9 @@ impl Compiler {
         for stmt in body {
             self.compile_stmt(stmt)?;
             #[cfg(feature = "optimize")]
-            if Self::stmt_is_terminal(stmt) { break; }
+            if Self::stmt_is_terminal(stmt) {
+                break;
+            }
         }
         self.end_scope(line);
 
@@ -1172,15 +1342,20 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_assign(&mut self, target: &AssignTarget, op: &AssignOp, value: &Expr, line: usize) -> Result<(), IonError> {
+    fn compile_assign(
+        &mut self,
+        target: &AssignTarget,
+        op: &AssignOp,
+        value: &Expr,
+        line: usize,
+    ) -> Result<(), IonError> {
         match target {
             AssignTarget::Ident(name) => {
                 match op {
                     AssignOp::Eq => {
                         self.compile_expr(value)?;
                     }
-                    AssignOp::PlusEq | AssignOp::MinusEq |
-                    AssignOp::StarEq | AssignOp::SlashEq => {
+                    AssignOp::PlusEq | AssignOp::MinusEq | AssignOp::StarEq | AssignOp::SlashEq => {
                         self.emit_get_var(name, line);
                         self.compile_expr(value)?;
                         match op {
@@ -1200,9 +1375,13 @@ impl Compiler {
                 // This only works when obj_expr is an Ident (variable)
                 let var_name = match &obj_expr.kind {
                     ExprKind::Ident(name) => name.clone(),
-                    _ => return Err(IonError::runtime(
-                        "index assignment only supported on variables".to_string(), line, 0,
-                    )),
+                    _ => {
+                        return Err(IonError::runtime(
+                            "index assignment only supported on variables".to_string(),
+                            line,
+                            0,
+                        ))
+                    }
                 };
 
                 // Get the container
@@ -1238,9 +1417,13 @@ impl Compiler {
             AssignTarget::Field(obj_expr, field) => {
                 let var_name = match &obj_expr.kind {
                     ExprKind::Ident(name) => name.clone(),
-                    _ => return Err(IonError::runtime(
-                        "field assignment only supported on variables".to_string(), line, 0,
-                    )),
+                    _ => {
+                        return Err(IonError::runtime(
+                            "field assignment only supported on variables".to_string(),
+                            line,
+                            0,
+                        ))
+                    }
                 };
 
                 self.compile_expr(obj_expr)?;
@@ -1275,7 +1458,12 @@ impl Compiler {
     }
 
     /// Compile a function body to a standalone chunk (for VM-native function execution).
-    pub fn compile_fn_body(mut self, params: &[Param], body: &[Stmt], line: usize) -> Result<Chunk, IonError> {
+    pub fn compile_fn_body(
+        mut self,
+        params: &[Param],
+        body: &[Stmt],
+        line: usize,
+    ) -> Result<Chunk, IonError> {
         self.in_tail_position = true;
         self.needs_env_locals = Self::stmts_have_closures(body);
         // Pre-register parameters as locals
@@ -1296,7 +1484,12 @@ impl Compiler {
         Ok(self.chunk)
     }
 
-    fn compile_match(&mut self, subject: &Expr, arms: &[MatchArm], line: usize) -> Result<(), IonError> {
+    fn compile_match(
+        &mut self,
+        subject: &Expr,
+        arms: &[MatchArm],
+        line: usize,
+    ) -> Result<(), IonError> {
         let was_tail = self.in_tail_position;
         // Store subject in a hidden temp variable (not in tail position)
         self.begin_scope(line);
@@ -1310,7 +1503,8 @@ impl Compiler {
 
         for arm in arms {
             // Load subject for pattern test
-            self.chunk.emit_op_u16(Op::GetLocalSlot, subject_slot as u16, line);
+            self.chunk
+                .emit_op_u16(Op::GetLocalSlot, subject_slot as u16, line);
 
             // Emit pattern test — consumes subject copy, pushes bool
             self.compile_pattern_test(&arm.pattern, line)?;
@@ -1331,7 +1525,8 @@ impl Compiler {
 
             // Bind pattern variables in new scope
             self.begin_scope(line);
-            self.chunk.emit_op_u16(Op::GetLocalSlot, subject_slot as u16, line);
+            self.chunk
+                .emit_op_u16(Op::GetLocalSlot, subject_slot as u16, line);
             self.compile_pattern_bind(&arm.pattern, line)?;
 
             // Compile arm body — inherits tail position
@@ -1372,7 +1567,8 @@ impl Compiler {
                 self.chunk.emit_op(Op::Eq, line);
             }
             Pattern::Bool(b) => {
-                self.chunk.emit_op(if *b { Op::True } else { Op::False }, line);
+                self.chunk
+                    .emit_op(if *b { Op::True } else { Op::False }, line);
                 self.chunk.emit_op(Op::Eq, line);
             }
             Pattern::Str(s) => {
@@ -1397,7 +1593,7 @@ impl Compiler {
                 self.chunk.emit_op_u8(Op::MatchBegin, 1, line); // 1 = test Some
                 let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
                 self.chunk.emit_op(Op::Pop, line); // pop true
-                // Now unwrap the Some and test inner pattern
+                                                   // Now unwrap the Some and test inner pattern
                 self.chunk.emit_op_u8(Op::MatchArm, 1, line); // 1 = unwrap Some
                 self.compile_pattern_test(inner, line)?;
                 let end = self.chunk.emit_jump(Op::Jump, line);
@@ -1431,7 +1627,7 @@ impl Compiler {
                 self.chunk.emit(pats.len() as u8, line); // expected length
                 let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
                 self.chunk.emit_op(Op::Pop, line); // pop true
-                // Test each element
+                                                   // Test each element
                 for (i, pat) in pats.iter().enumerate() {
                     // Load the subject again and index into it
                     self.chunk.emit_op_u8(Op::MatchArm, 4, line); // 4 = get tuple element
@@ -1465,7 +1661,7 @@ impl Compiler {
                 self.chunk.emit(if has_rest { 1 } else { 0 }, line); // has_rest flag
                 let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
                 self.chunk.emit_op(Op::Pop, line); // pop true
-                // Test each element pattern
+                                                   // Test each element pattern
                 for (i, pat) in pats.iter().enumerate() {
                     self.chunk.emit_op_u8(Op::MatchArm, 5, line); // 5 = get list element
                     self.chunk.emit(i as u8, line);
@@ -1490,7 +1686,8 @@ impl Compiler {
                 // For complex patterns (EnumVariant, Struct), fall back
                 return Err(IonError::runtime(
                     "complex pattern not yet supported in bytecode VM match".to_string(),
-                    line, 0,
+                    line,
+                    0,
                 ));
             }
         }
@@ -1506,8 +1703,12 @@ impl Compiler {
             Pattern::Ident(name) => {
                 self.emit_define_local(name, false, line);
             }
-            Pattern::Int(_) | Pattern::Float(_) | Pattern::Bool(_) |
-            Pattern::Str(_) | Pattern::Bytes(_) | Pattern::None => {
+            Pattern::Int(_)
+            | Pattern::Float(_)
+            | Pattern::Bool(_)
+            | Pattern::Str(_)
+            | Pattern::Bytes(_)
+            | Pattern::None => {
                 self.chunk.emit_op(Op::Pop, line); // no bindings for literals
             }
             Pattern::Some(inner) => {
@@ -1543,8 +1744,9 @@ impl Compiler {
                 // If there's a rest pattern, bind the remaining elements
                 if let Some(rest_pat) = rest {
                     self.chunk.emit_op(Op::Dup, line); // dup list
-                    // Slice from pats.len() to end
-                    self.chunk.emit_constant(Value::Int(pats.len() as i64), line);
+                                                       // Slice from pats.len() to end
+                    self.chunk
+                        .emit_constant(Value::Int(pats.len() as i64), line);
                     // Use Slice with has_start only
                     self.chunk.emit_op_u8(Op::Slice, 1, line); // flags: has_start=1
                     self.compile_pattern_bind(rest_pat, line)?;
@@ -1554,14 +1756,22 @@ impl Compiler {
             _ => {
                 return Err(IonError::runtime(
                     "complex pattern binding not yet supported in bytecode VM".to_string(),
-                    line, 0,
+                    line,
+                    0,
                 ));
             }
         }
         Ok(())
     }
 
-    fn compile_list_comp(&mut self, item_expr: &Expr, pattern: &Pattern, iter: &Expr, cond: Option<&Expr>, line: usize) -> Result<(), IonError> {
+    fn compile_list_comp(
+        &mut self,
+        item_expr: &Expr,
+        pattern: &Pattern,
+        iter: &Expr,
+        cond: Option<&Expr>,
+        line: usize,
+    ) -> Result<(), IonError> {
         // Build an empty list, then iterate and append
         self.chunk.emit_op_u16(Op::BuildList, 0, line); // empty list on stack
 
@@ -1607,11 +1817,19 @@ impl Compiler {
 
         self.chunk.patch_jump(exit_jump);
         self.chunk.emit_op(Op::Pop, line); // pop exhausted iterator placeholder
-        // List is still on stack
+                                           // List is still on stack
         Ok(())
     }
 
-    fn compile_dict_comp(&mut self, key_expr: &Expr, value_expr: &Expr, pattern: &Pattern, iter: &Expr, cond: Option<&Expr>, line: usize) -> Result<(), IonError> {
+    fn compile_dict_comp(
+        &mut self,
+        key_expr: &Expr,
+        value_expr: &Expr,
+        pattern: &Pattern,
+        iter: &Expr,
+        cond: Option<&Expr>,
+        line: usize,
+    ) -> Result<(), IonError> {
         // Build an empty dict, then iterate and insert
         self.chunk.emit_op_u16(Op::BuildDict, 0, line);
 

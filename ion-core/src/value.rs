@@ -1,8 +1,8 @@
+use indexmap::IndexMap;
+use serde_json;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
-use indexmap::IndexMap;
-use serde_json;
 
 use crate::ast::{Param, Stmt};
 #[cfg(feature = "vm")]
@@ -26,9 +26,16 @@ pub enum Value {
     Fn(IonFn),
     BuiltinFn(String, BuiltinFn),
     /// Host-injected struct: `TypeName { field: val, ... }`
-    HostStruct { type_name: String, fields: IndexMap<String, Value> },
+    HostStruct {
+        type_name: String,
+        fields: IndexMap<String, Value>,
+    },
     /// Host-injected enum variant: `EnumName::Variant` or `EnumName::Variant(data)`
-    HostEnum { enum_name: String, variant: String, data: Vec<Value> },
+    HostEnum {
+        enum_name: String,
+        variant: String,
+        data: Vec<Value>,
+    },
     /// Async task handle (concurrency feature)
     #[cfg(feature = "concurrency")]
     Task(std::sync::Arc<crate::async_rt::TaskHandle>),
@@ -50,7 +57,12 @@ pub struct IonFn {
 }
 
 impl IonFn {
-    pub fn new(name: String, params: Vec<Param>, body: Vec<Stmt>, captures: HashMap<String, Value>) -> Self {
+    pub fn new(
+        name: String,
+        params: Vec<Param>,
+        body: Vec<Stmt>,
+        captures: HashMap<String, Value>,
+    ) -> Self {
         Self {
             fn_id: NEXT_FN_ID.fetch_add(1, Ordering::Relaxed),
             name,
@@ -105,7 +117,10 @@ impl Value {
     }
 
     pub fn as_int(&self) -> Option<i64> {
-        match self { Value::Int(n) => Some(*n), _ => None }
+        match self {
+            Value::Int(n) => Some(*n),
+            _ => None,
+        }
     }
 
     pub fn as_float(&self) -> Option<f64> {
@@ -117,11 +132,17 @@ impl Value {
     }
 
     pub fn as_str(&self) -> Option<&str> {
-        match self { Value::Str(s) => Some(s), _ => None }
+        match self {
+            Value::Str(s) => Some(s),
+            _ => None,
+        }
     }
 
     pub fn as_bool(&self) -> Option<bool> {
-        match self { Value::Bool(b) => Some(*b), _ => None }
+        match self {
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        }
     }
 }
 
@@ -156,7 +177,9 @@ impl fmt::Display for Value {
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", item)?;
                 }
                 write!(f, "]")
@@ -164,7 +187,9 @@ impl fmt::Display for Value {
             Value::Dict(map) => {
                 write!(f, "#{{")?;
                 for (i, (k, v)) in map.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "\"{}\": {}", k, v)?;
                 }
                 write!(f, "}}")
@@ -172,10 +197,14 @@ impl fmt::Display for Value {
             Value::Tuple(items) => {
                 write!(f, "(")?;
                 for (i, item) in items.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", item)?;
                 }
-                if items.len() == 1 { write!(f, ",")?; }
+                if items.len() == 1 {
+                    write!(f, ",")?;
+                }
                 write!(f, ")")
             }
             Value::Option(opt) => match opt {
@@ -198,17 +227,25 @@ impl fmt::Display for Value {
             Value::HostStruct { type_name, fields } => {
                 write!(f, "{} {{ ", type_name)?;
                 for (i, (k, v)) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}: {}", k, v)?;
                 }
                 write!(f, " }}")
             }
-            Value::HostEnum { enum_name, variant, data } => {
+            Value::HostEnum {
+                enum_name,
+                variant,
+                data,
+            } => {
                 write!(f, "{}::{}", enum_name, variant)?;
                 if !data.is_empty() {
                     write!(f, "(")?;
                     for (i, v) in data.iter().enumerate() {
-                        if i > 0 { write!(f, ", ")?; }
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
                         write!(f, "{}", v)?;
                     }
                     write!(f, ")")?;
@@ -235,12 +272,28 @@ impl PartialEq for Value {
             (Value::Option(a), Value::Option(b)) => a == b,
             (Value::Result(Ok(a)), Value::Result(Ok(b))) => a == b,
             (Value::Result(Err(a)), Value::Result(Err(b))) => a == b,
-            (Value::HostStruct { type_name: a_name, fields: a_fields },
-             Value::HostStruct { type_name: b_name, fields: b_fields }) =>
-                a_name == b_name && a_fields == b_fields,
-            (Value::HostEnum { enum_name: a_en, variant: a_v, data: a_d },
-             Value::HostEnum { enum_name: b_en, variant: b_v, data: b_d }) =>
-                a_en == b_en && a_v == b_v && a_d == b_d,
+            (
+                Value::HostStruct {
+                    type_name: a_name,
+                    fields: a_fields,
+                },
+                Value::HostStruct {
+                    type_name: b_name,
+                    fields: b_fields,
+                },
+            ) => a_name == b_name && a_fields == b_fields,
+            (
+                Value::HostEnum {
+                    enum_name: a_en,
+                    variant: a_v,
+                    data: a_d,
+                },
+                Value::HostEnum {
+                    enum_name: b_en,
+                    variant: b_v,
+                    data: b_d,
+                },
+            ) => a_en == b_en && a_v == b_v && a_d == b_d,
             (Value::Unit, Value::Unit) => true,
             (Value::Option(None), Value::Unit) => false,
             // Task and Channel are not comparable
@@ -261,18 +314,17 @@ impl Value {
                 .unwrap_or(serde_json::Value::Null),
             Value::Bool(b) => serde_json::Value::Bool(*b),
             Value::Str(s) => serde_json::Value::String(s.clone()),
-            Value::List(items) => serde_json::Value::Array(
-                items.iter().map(|v| v.to_json()).collect()
-            ),
+            Value::List(items) => {
+                serde_json::Value::Array(items.iter().map(|v| v.to_json()).collect())
+            }
             Value::Dict(map) => {
-                let obj: serde_json::Map<String, serde_json::Value> = map.iter()
-                    .map(|(k, v)| (k.clone(), v.to_json()))
-                    .collect();
+                let obj: serde_json::Map<String, serde_json::Value> =
+                    map.iter().map(|(k, v)| (k.clone(), v.to_json())).collect();
                 serde_json::Value::Object(obj)
             }
-            Value::Tuple(items) => serde_json::Value::Array(
-                items.iter().map(|v| v.to_json()).collect()
-            ),
+            Value::Tuple(items) => {
+                serde_json::Value::Array(items.iter().map(|v| v.to_json()).collect())
+            }
             Value::Option(Some(v)) => v.to_json(),
             Value::Option(None) | Value::Unit => serde_json::Value::Null,
             Value::Result(Ok(v)) => v.to_json(),
@@ -282,16 +334,27 @@ impl Value {
                 serde_json::Value::Object(map)
             }
             Value::HostStruct { fields, .. } => {
-                let obj: serde_json::Map<String, serde_json::Value> = fields.iter()
+                let obj: serde_json::Map<String, serde_json::Value> = fields
+                    .iter()
                     .map(|(k, v)| (k.clone(), v.to_json()))
                     .collect();
                 serde_json::Value::Object(obj)
             }
-            Value::HostEnum { enum_name, variant, data } => {
+            Value::HostEnum {
+                enum_name,
+                variant,
+                data,
+            } => {
                 let mut map = serde_json::Map::new();
-                map.insert("_type".to_string(), serde_json::Value::String(format!("{}::{}", enum_name, variant)));
+                map.insert(
+                    "_type".to_string(),
+                    serde_json::Value::String(format!("{}::{}", enum_name, variant)),
+                );
                 if !data.is_empty() {
-                    map.insert("data".to_string(), serde_json::Value::Array(data.iter().map(|v| v.to_json()).collect()));
+                    map.insert(
+                        "data".to_string(),
+                        serde_json::Value::Array(data.iter().map(|v| v.to_json()).collect()),
+                    );
                 }
                 serde_json::Value::Object(map)
             }
@@ -324,7 +387,8 @@ impl Value {
                 Value::List(arr.into_iter().map(Value::from_json).collect())
             }
             serde_json::Value::Object(map) => {
-                let dict: IndexMap<String, Value> = map.into_iter()
+                let dict: IndexMap<String, Value> = map
+                    .into_iter()
                     .map(|(k, v)| (k, Value::from_json(v)))
                     .collect();
                 Value::Dict(dict)

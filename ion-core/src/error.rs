@@ -35,7 +35,11 @@ impl IonError {
     fn format_single(err: &IonError, source: &str) -> String {
         let mut out = String::new();
         // Header
-        out.push_str(&format!("\x1b[1;31merror[{}]\x1b[0m: {}\n", err.kind_str(), err.message));
+        out.push_str(&format!(
+            "\x1b[1;31merror[{}]\x1b[0m: {}\n",
+            err.kind_str(),
+            err.message
+        ));
         // Source context
         if err.line > 0 {
             let lines: Vec<&str> = source.lines().collect();
@@ -69,31 +73,73 @@ impl IonError {
     }
 
     pub fn lex(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self { kind: ErrorKind::LexError, message: message.into(), line, col, additional: Vec::new() }
+        Self {
+            kind: ErrorKind::LexError,
+            message: message.into(),
+            line,
+            col,
+            additional: Vec::new(),
+        }
     }
 
     pub fn parse(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self { kind: ErrorKind::ParseError, message: message.into(), line, col, additional: Vec::new() }
+        Self {
+            kind: ErrorKind::ParseError,
+            message: message.into(),
+            line,
+            col,
+            additional: Vec::new(),
+        }
     }
 
     pub fn runtime(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self { kind: ErrorKind::RuntimeError, message: message.into(), line, col, additional: Vec::new() }
+        Self {
+            kind: ErrorKind::RuntimeError,
+            message: message.into(),
+            line,
+            col,
+            additional: Vec::new(),
+        }
     }
 
     pub fn type_err(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self { kind: ErrorKind::TypeError, message: message.into(), line, col, additional: Vec::new() }
+        Self {
+            kind: ErrorKind::TypeError,
+            message: message.into(),
+            line,
+            col,
+            additional: Vec::new(),
+        }
     }
 
     pub fn name(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self { kind: ErrorKind::NameError, message: message.into(), line, col, additional: Vec::new() }
+        Self {
+            kind: ErrorKind::NameError,
+            message: message.into(),
+            line,
+            col,
+            additional: Vec::new(),
+        }
     }
 
     pub fn propagated_err(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self { kind: ErrorKind::PropagatedErr, message: message.into(), line, col, additional: Vec::new() }
+        Self {
+            kind: ErrorKind::PropagatedErr,
+            message: message.into(),
+            line,
+            col,
+            additional: Vec::new(),
+        }
     }
 
     pub fn propagated_none(line: usize, col: usize) -> Self {
-        Self { kind: ErrorKind::PropagatedNone, message: String::new(), line, col, additional: Vec::new() }
+        Self {
+            kind: ErrorKind::PropagatedNone,
+            message: String::new(),
+            line,
+            col,
+            additional: Vec::new(),
+        }
     }
 }
 
@@ -108,9 +154,12 @@ impl fmt::Display for IonError {
             ErrorKind::PropagatedErr => ion_str!("PropagatedErr"),
             ErrorKind::PropagatedNone => ion_str!("PropagatedNone"),
         };
-        write!(f, "{} at {}:{}: {}", kind, self.line, self.col, self.message)
+        write!(
+            f,
+            "{} at {}:{}: {}",
+            kind, self.line, self.col, self.message
+        )
     }
 }
 
 impl std::error::Error for IonError {}
-

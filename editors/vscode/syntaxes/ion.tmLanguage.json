@@ -130,7 +130,7 @@
       "patterns": [
         {
           "name": "keyword.control.ion",
-          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|async|spawn|select)\\b"
+          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|async|spawn|select|try|catch)\\b"
         },
         {
           "name": "keyword.declaration.ion",
@@ -156,7 +156,7 @@
       "patterns": [
         {
           "name": "support.function.ion",
-          "match": "\\b(print|println|len|range|enumerate|type_of|str|int|float|abs|min|max|floor|ceil|round|sqrt|pow|json_encode|json_decode|json_encode_pretty|bytes|bytes_from_hex|assert|channel)\\b"
+          "match": "\\b(print|println|len|range|enumerate|type_of|str|int|float|abs|min|max|floor|ceil|round|sqrt|pow|json_encode|json_decode|json_encode_pretty|bytes|bytes_from_hex|assert|assert_eq|channel)\\b"
         }
       ]
     },

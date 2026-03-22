@@ -11,19 +11,13 @@ pub fn derive_ion_type(input: TokenStream) -> TokenStream {
     match &input.data {
         Data::Struct(data) => derive_struct(name, &name_str, data),
         Data::Enum(data) => derive_enum(name, &name_str, data),
-        Data::Union(_) => {
-            syn::Error::new_spanned(name, "IonType cannot be derived for unions")
-                .to_compile_error()
-                .into()
-        }
+        Data::Union(_) => syn::Error::new_spanned(name, "IonType cannot be derived for unions")
+            .to_compile_error()
+            .into(),
     }
 }
 
-fn derive_struct(
-    name: &syn::Ident,
-    name_str: &str,
-    data: &syn::DataStruct,
-) -> TokenStream {
+fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> TokenStream {
     let fields = match &data.fields {
         Fields::Named(f) => &f.named,
         _ => {
@@ -44,15 +38,18 @@ fn derive_struct(
     });
 
     // from_ion: extract each field
-    let from_ion_fields = field_names.iter().zip(field_name_strs.iter()).map(|(ident, name_s)| {
-        quote! {
-            #ident: {
-                let v = fields.get(#name_s)
-                    .ok_or_else(|| format!("missing field '{}' in {}", #name_s, #name_str))?;
-                ion_core::host_types::IonType::from_ion(v)?
-            },
-        }
-    });
+    let from_ion_fields = field_names
+        .iter()
+        .zip(field_name_strs.iter())
+        .map(|(ident, name_s)| {
+            quote! {
+                #ident: {
+                    let v = fields.get(#name_s)
+                        .ok_or_else(|| format!("missing field '{}' in {}", #name_s, #name_str))?;
+                    ion_core::host_types::IonType::from_ion(v)?
+                },
+            }
+        });
 
     // ion_type_def: field name list
     let def_fields = field_name_strs.iter().map(|s| {
@@ -97,11 +94,7 @@ fn derive_struct(
     expanded.into()
 }
 
-fn derive_enum(
-    name: &syn::Ident,
-    name_str: &str,
-    data: &syn::DataEnum,
-) -> TokenStream {
+fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> TokenStream {
     let variants = &data.variants;
 
     // ion_type_def: variant definitions
