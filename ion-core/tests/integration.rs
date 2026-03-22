@@ -3091,3 +3091,64 @@ fn test_try_catch_as_expression() {
         Value::Int(-1)
     );
 }
+
+// === Unicode consistency tests ===
+
+#[test]
+fn test_string_find_char_offset() {
+    // find() should return char offset, not byte offset
+    assert_eq!(
+        eval(r#""héllo".find("l")"#),
+        Value::Option(Some(Box::new(Value::Int(2))))
+    );
+    assert_eq!(
+        eval(r#""abc".find("c")"#),
+        Value::Option(Some(Box::new(Value::Int(2))))
+    );
+    assert_eq!(eval(r#""abc".find("d")"#), Value::Option(None));
+}
+
+#[test]
+fn test_string_slice_char_offset() {
+    // slice() should use char offsets, not byte offsets
+    assert_eq!(eval(r#""héllo".slice(1, 3)"#), Value::Str("él".to_string()));
+    assert_eq!(
+        eval(r#""hello".slice(1, 4)"#),
+        Value::Str("ell".to_string())
+    );
+}
+
+#[test]
+fn test_string_negative_index_unicode() {
+    // negative indexing should be char-based
+    assert_eq!(eval(r#""héllo"[-1]"#), Value::Str("o".to_string()));
+    assert_eq!(eval(r#""héllo"[-2]"#), Value::Str("l".to_string()));
+}
+
+#[test]
+fn test_sort_mixed_types_error() {
+    let mut engine = Engine::new();
+    let result = engine.eval(r#"[1, "a", 2].sort()"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_sort_homogeneous() {
+    assert_eq!(
+        eval(r#"[3, 1, 2].sort()"#),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        eval(r#"["c", "a", "b"].sort()"#),
+        Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("b".to_string()),
+            Value::Str("c".to_string()),
+        ])
+    );
+}
+
+#[test]
+fn test_sort_empty() {
+    assert_eq!(eval(r#"[].sort()"#), Value::List(vec![]));
+}

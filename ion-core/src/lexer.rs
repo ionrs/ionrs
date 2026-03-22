@@ -60,6 +60,33 @@ impl<'a> Lexer<'a> {
         ch
     }
 
+    /// Consume a full UTF-8 character from the source and push it to the string.
+    fn push_utf8_char(&mut self, s: &mut String) {
+        let b = self.advance();
+        let width = if b < 0x80 {
+            s.push(b as char);
+            return;
+        } else if b < 0xE0 {
+            2
+        } else if b < 0xF0 {
+            3
+        } else {
+            4
+        };
+        let mut bytes = vec![b];
+        for _ in 1..width {
+            if self.pos < self.source.len() {
+                bytes.push(self.advance());
+            }
+        }
+        if let Ok(ch) = std::str::from_utf8(&bytes) {
+            s.push_str(ch);
+        } else {
+            // Invalid UTF-8: push replacement character
+            s.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+
     fn skip_whitespace_and_comments(&mut self) {
         loop {
             while self.pos < self.source.len() && self.peek().is_ascii_whitespace() {
@@ -342,12 +369,10 @@ impl<'a> Lexer<'a> {
                             self.advance();
                             s.push('\\');
                             if self.pos < self.source.len() {
-                                s.push(self.peek() as char);
-                                self.advance();
+                                self.push_utf8_char(&mut s);
                             }
                         } else {
-                            s.push(self.peek() as char);
-                            self.advance();
+                            self.push_utf8_char(&mut s);
                         }
                     }
                     if self.pos < self.source.len() {
@@ -366,8 +391,7 @@ impl<'a> Lexer<'a> {
                     s.push('}');
                     continue;
                 } else {
-                    self.advance();
-                    s.push(ch as char);
+                    self.push_utf8_char(&mut s);
                     continue;
                 }
             }
@@ -422,8 +446,7 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 s.push('{');
             } else {
-                self.advance();
-                s.push(ch as char);
+                self.push_utf8_char(&mut s);
             }
         }
 
@@ -516,8 +539,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
             } else {
-                self.advance();
-                s.push(ch as char);
+                self.push_utf8_char(&mut s);
             }
         }
 

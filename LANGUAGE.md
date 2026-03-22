@@ -623,7 +623,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.contains(sub)` | Bool | Contains substring |
 | `.starts_with(pre)` | Bool | Starts with prefix |
 | `.ends_with(suf)` | Bool | Ends with suffix |
-| `.find(sub)` | Option(Int) | Index of first occurrence |
+| `.find(sub)` | Option(Int) | Char index of first occurrence |
 | `.trim()` | String | Strip leading/trailing whitespace |
 | `.trim_start()` | String | Strip leading whitespace |
 | `.trim_end()` | String | Strip trailing whitespace |
@@ -634,7 +634,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.chars()` | List | List of single-char strings |
 | `.reverse()` | String | Reversed string |
 | `.repeat(n)` | String | Repeat n times |
-| `.slice(start, end)` | String | Substring by byte index |
+| `.slice(start, end)` | String | Substring by char index |
 | `.to_int()` | Result | Parse as integer |
 | `.to_float()` | Result | Parse as float |
 

@@ -1285,7 +1285,8 @@ impl Vm {
                 None => Value::Option(None),
             }),
             (Value::Str(s), Value::Int(i)) => {
-                let idx = if *i < 0 { s.len() as i64 + i } else { *i } as usize;
+                let char_count = s.chars().count() as i64;
+                let idx = if *i < 0 { char_count + i } else { *i } as usize;
                 s.chars()
                     .nth(idx)
                     .map(|c| Value::Str(c.to_string()))
@@ -1686,6 +1687,18 @@ impl Vm {
                 None => Value::Option(None),
             }),
             "sort" => {
+                if !items.is_empty() {
+                    let first_type = std::mem::discriminant(&items[0]);
+                    for item in items.iter().skip(1) {
+                        if std::mem::discriminant(item) != first_type {
+                            return Err(IonError::type_err(
+                                "sort() requires all elements to be the same type".to_string(),
+                                line,
+                                col,
+                            ));
+                        }
+                    }
+                }
                 let mut sorted = items.to_vec();
                 sorted.sort_by(|a, b| match (a, b) {
                     (Value::Int(x), Value::Int(y)) => x.cmp(y),
@@ -1805,7 +1818,10 @@ impl Vm {
             "find" => {
                 let sub = args.first().and_then(|a| a.as_str()).unwrap_or("");
                 Ok(match s.find(sub) {
-                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
+                    Some(byte_idx) => {
+                        let char_idx = s[..byte_idx].chars().count();
+                        Value::Option(Some(Box::new(Value::Int(char_idx as i64))))
+                    }
                     None => Value::Option(None),
                 })
             }
@@ -1823,15 +1839,17 @@ impl Vm {
             }),
             "reverse" => Ok(Value::Str(s.chars().rev().collect())),
             "slice" => {
+                let chars: Vec<char> = s.chars().collect();
+                let char_count = chars.len();
                 let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
                 let end = args
                     .get(1)
                     .and_then(|a| a.as_int())
                     .map(|n| n as usize)
-                    .unwrap_or(s.len());
-                let start = start.min(s.len());
-                let end = end.min(s.len());
-                Ok(Value::Str(s[start..end].to_string()))
+                    .unwrap_or(char_count);
+                let start = start.min(char_count);
+                let end = end.min(char_count);
+                Ok(Value::Str(chars[start..end].iter().collect()))
             }
             _ => Err(IonError::type_err(
                 format!("string has no method '{}'", method),

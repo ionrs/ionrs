@@ -793,3 +793,35 @@ fn cross_try_top_level() {
     assert_both_eq("let x = Ok(42); x?", Value::Int(42));
     assert_both_eq("let x = Some(10); x?", Value::Int(10));
 }
+
+#[test]
+fn cross_string_negative_index_unicode() {
+    assert_both_eq(r#""héllo"[-1]"#, Value::Str("o".to_string()));
+    assert_both_eq(r#""héllo"[-2]"#, Value::Str("l".to_string()));
+    assert_both_eq(r#""héllo"[0]"#, Value::Str("h".to_string()));
+    assert_both_eq(r#""héllo"[1]"#, Value::Str("é".to_string()));
+}
+
+#[test]
+fn cross_string_slice_unicode() {
+    assert_both_eq(r#""héllo".slice(1, 3)"#, Value::Str("él".to_string()));
+    assert_both_eq(r#""hello".slice(0, 3)"#, Value::Str("hel".to_string()));
+}
+
+#[test]
+fn cross_string_find_char_offset() {
+    assert_both_eq(
+        r#""héllo".find("l")"#,
+        Value::Option(Some(Box::new(Value::Int(2)))),
+    );
+    assert_both_eq(r#""hello".find("z")"#, Value::Option(None));
+}
+
+#[test]
+fn cross_sort_homogeneous() {
+    assert_both_eq(
+        r#"[3, 1, 2].sort()"#,
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+    assert_both_eq(r#"[].sort()"#, Value::List(vec![]));
+}
