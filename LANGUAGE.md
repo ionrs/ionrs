@@ -638,6 +638,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.chars()` | List | List of single-char strings |
 | `.pad_start(n, ch?)` | String | Left-pad to width n (default space) |
 | `.pad_end(n, ch?)` | String | Right-pad to width n (default space) |
+| `.strip_prefix(s)` | String | Remove prefix if present |
+| `.strip_suffix(s)` | String | Remove suffix if present |
 | `.reverse()` | String | Reversed string |
 | `.repeat(n)` | String | Repeat n times |
 | `.slice(start, end)` | String | Substring by char index |
@@ -675,6 +677,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.unique()` | List | Remove all duplicates (preserves order) |
 | `.min()` | Option | Minimum element |
 | `.max()` | Option | Maximum element |
+| `.sum()` | Int/Float | Sum of numeric elements |
+| `.window(n)` | List | Sliding windows of size n |
 | `.sort_by(fn)` | List | Sort with custom comparator (fn returns int: neg/0/pos) |
 
 ### Tuple Methods
@@ -697,6 +701,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.contains_key(key)` | Bool | Key exists |
 | `.get(key)` | Option | Get value by key |
 | `.update(other)` | Dict | Merge other dict (overwrites existing keys) |
+| `.keys_of(val)` | List | Keys with the given value |
 | `.insert(key, val)` | Dict | New dict with entry added |
 | `.remove(key)` | Dict | New dict with entry removed |
 | `.merge(other)` | Dict | New dict merging two dicts |

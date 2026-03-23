@@ -156,6 +156,14 @@ pub enum Op {
     /// Set a local by slot index.
     SetLocalSlot, // u16 slot index
 
+    /// Call with named arguments: u8 arg count, then u8 count of named pairs, each is u16 (arg position) + u16 (name constant)
+    CallNamed, // u8 total_args, u8 named_count, then [u8 position, u16 name_idx] * named_count
+
+    /// Begin a try block: push exception handler.
+    TryBegin, // u16 catch handler offset
+    /// End a try block (no error): pop handler, jump over catch.
+    TryEnd, // u16 jump offset past catch block
+
     /// Print (for testing/debugging)
     Print, // u8: 0 = print, 1 = println
 }
@@ -391,7 +399,9 @@ impl Chunk {
                 || x == Op::BuildFString as u8
                 || x == Op::IterNext as u8
                 || x == Op::GetLocalSlot as u8
-                || x == Op::SetLocalSlot as u8 =>
+                || x == Op::SetLocalSlot as u8
+                || x == Op::TryBegin as u8
+                || x == Op::TryEnd as u8 =>
             {
                 3
             }
@@ -401,6 +411,15 @@ impl Chunk {
             x if x == Op::ConstructStruct as u8 => 5,
             // 6-byte (u16 + u16 + u8)
             x if x == Op::ConstructEnum as u8 => 6,
+            // Variable-width: CallNamed: 1(op) + 1(total_args) + 1(named_count) + named_count * 3
+            x if x == Op::CallNamed as u8 => {
+                if offset + 2 < code.len() {
+                    let named_count = code[offset + 2] as usize;
+                    3 + named_count * 3 // op + total_args + named_count + (position u8 + name u16) * count
+                } else {
+                    3
+                }
+            }
             // Variable-width: MatchBegin (u8 kind + extra operands depending on kind)
             x if x == Op::MatchBegin as u8 => {
                 if offset + 1 < code.len() {

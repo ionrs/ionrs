@@ -3440,3 +3440,59 @@ fn test_string_char_len() {
     assert_eq!(eval(r#""héllo".char_len()"#), Value::Int(5));
     assert_eq!(eval(r#""héllo".len()"#), Value::Int(6));
 }
+
+#[test]
+fn test_list_sum() {
+    assert_eq!(eval(r#"[1, 2, 3].sum()"#), Value::Int(6));
+    assert_eq!(eval(r#"[].sum()"#), Value::Int(0));
+    assert_eq!(eval(r#"[1, 2.5, 3].sum()"#), Value::Float(6.5));
+}
+
+#[test]
+fn test_list_window() {
+    assert_eq!(
+        eval(r#"[1, 2, 3, 4].window(2)"#),
+        Value::List(vec![
+            Value::List(vec![Value::Int(1), Value::Int(2)]),
+            Value::List(vec![Value::Int(2), Value::Int(3)]),
+            Value::List(vec![Value::Int(3), Value::Int(4)]),
+        ])
+    );
+    assert_eq!(eval(r#"[1].window(3)"#), Value::List(vec![]));
+}
+
+#[test]
+fn test_string_strip_prefix() {
+    assert_eq!(
+        eval(r#""hello world".strip_prefix("hello ")"#),
+        Value::Str("world".to_string())
+    );
+    assert_eq!(
+        eval(r#""hello".strip_prefix("xyz")"#),
+        Value::Str("hello".to_string())
+    );
+}
+
+#[test]
+fn test_string_strip_suffix() {
+    assert_eq!(
+        eval(r#""hello.ion".strip_suffix(".ion")"#),
+        Value::Str("hello".to_string())
+    );
+    assert_eq!(
+        eval(r#""hello".strip_suffix(".ion")"#),
+        Value::Str("hello".to_string())
+    );
+}
+
+#[test]
+fn test_dict_keys_of() {
+    assert_eq!(
+        eval(r#"#{a: 1, b: 2, c: 1}.keys_of(1)"#),
+        Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("c".to_string()),
+        ])
+    );
+    assert_eq!(eval(r#"#{a: 1}.keys_of(99)"#), Value::List(vec![]));
+}

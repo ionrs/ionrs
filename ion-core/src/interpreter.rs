@@ -1818,6 +1818,45 @@ impl Interpreter {
                 }
                 Ok(Value::Option(Some(Box::new(max.clone()))))
             }
+            "sum" => {
+                let mut int_sum: i64 = 0;
+                let mut float_sum: f64 = 0.0;
+                let mut has_float = false;
+                for item in items {
+                    match item {
+                        Value::Int(n) => int_sum += n,
+                        Value::Float(f) => {
+                            has_float = true;
+                            float_sum += f;
+                        }
+                        _ => {
+                            return Err(IonError::type_err(
+                                ion_str!("sum() requires numeric elements").to_string(),
+                                span.line,
+                                span.col,
+                            )
+                            .into())
+                        }
+                    }
+                }
+                if has_float {
+                    Ok(Value::Float(float_sum + int_sum as f64))
+                } else {
+                    Ok(Value::Int(int_sum))
+                }
+            }
+            "window" => {
+                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("window requires int argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })? as usize;
+                let result: Vec<Value> =
+                    items.windows(n).map(|w| Value::List(w.to_vec())).collect();
+                Ok(Value::List(result))
+            }
             _ => Err(IonError::type_err(
                 format!(
                     "{}{}{}",
@@ -1982,6 +2021,26 @@ impl Interpreter {
             "bytes" => {
                 let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
                 Ok(Value::List(bytes))
+            }
+            "strip_prefix" => {
+                let pre = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("strip_prefix requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
+                Ok(Value::Str(s.strip_prefix(pre).unwrap_or(s).to_string()))
+            }
+            "strip_suffix" => {
+                let suf = args[0].as_str().ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("strip_suffix requires string argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })?;
+                Ok(Value::Str(s.strip_suffix(suf).unwrap_or(s).to_string()))
             }
             "pad_start" => {
                 let width = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
@@ -2237,6 +2296,15 @@ impl Interpreter {
                     .into())
                 }
             }
+            "keys_of" => {
+                let target = &args[0];
+                let keys: Vec<Value> = map
+                    .iter()
+                    .filter(|(_, v)| *v == target)
+                    .map(|(k, _)| Value::Str(k.clone()))
+                    .collect();
+                Ok(Value::List(keys))
+            }
             "zip" => {
                 if let Value::Dict(other) = &args[0] {
                     let mut result = indexmap::IndexMap::new();
@@ -2279,6 +2347,15 @@ impl Interpreter {
         match method {
             "is_some" => Ok(Value::Bool(opt.is_some())),
             "is_none" => Ok(Value::Bool(opt.is_none())),
+            "unwrap" => match opt {
+                Some(v) => Ok(*v),
+                None => {
+                    Err(
+                        IonError::runtime("called unwrap on None".to_string(), span.line, span.col)
+                            .into(),
+                    )
+                }
+            },
             "unwrap_or" => match opt {
                 Some(v) => Ok(*v),
                 None => Ok(args[0].clone()),
@@ -2346,6 +2423,15 @@ impl Interpreter {
         match method {
             "is_ok" => Ok(Value::Bool(res.is_ok())),
             "is_err" => Ok(Value::Bool(res.is_err())),
+            "unwrap" => match res {
+                Ok(v) => Ok(*v),
+                Err(e) => Err(IonError::runtime(
+                    format!("called unwrap on Err: {}", e),
+                    span.line,
+                    span.col,
+                )
+                .into()),
+            },
             "unwrap_or" => match res {
                 Ok(v) => Ok(*v),
                 Err(_) => Ok(args[0].clone()),

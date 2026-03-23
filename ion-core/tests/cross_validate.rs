@@ -996,3 +996,149 @@ fn cross_dict_update() {
 fn cross_string_char_len() {
     assert_both_eq(r#""héllo".char_len()"#, Value::Int(5));
 }
+
+#[test]
+fn cross_list_sum() {
+    assert_both_eq(r#"[1, 2, 3].sum()"#, Value::Int(6));
+    assert_both_eq(r#"[1, 2.5, 3].sum()"#, Value::Float(6.5));
+}
+
+#[test]
+fn cross_list_window() {
+    assert_both_eq(
+        r#"[1, 2, 3].window(2)"#,
+        Value::List(vec![
+            Value::List(vec![Value::Int(1), Value::Int(2)]),
+            Value::List(vec![Value::Int(2), Value::Int(3)]),
+        ]),
+    );
+}
+
+#[test]
+fn cross_string_strip_prefix() {
+    assert_both_eq(
+        r#""hello world".strip_prefix("hello ")"#,
+        Value::Str("world".to_string()),
+    );
+}
+
+#[test]
+fn cross_string_strip_suffix() {
+    assert_both_eq(
+        r#""hello.ion".strip_suffix(".ion")"#,
+        Value::Str("hello".to_string()),
+    );
+}
+
+#[test]
+fn cross_dict_keys_of() {
+    assert_both_eq(
+        r#"#{a: 1, b: 2, c: 1}.keys_of(1)"#,
+        Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("c".to_string()),
+        ]),
+    );
+}
+
+#[test]
+fn cross_try_catch_no_error() {
+    assert_both_eq("try { 42 } catch e { e }", Value::Int(42));
+}
+
+#[test]
+fn cross_try_catch_with_error() {
+    assert_both_eq(
+        r#"try { assert(false, "boom"); 1 } catch e { e }"#,
+        Value::Str("boom".to_string()),
+    );
+}
+
+#[test]
+fn cross_try_catch_division_by_zero() {
+    assert_both_eq(
+        r#"try { 1 / 0 } catch e { "caught" }"#,
+        Value::Str("caught".to_string()),
+    );
+}
+
+#[test]
+fn cross_try_catch_as_expression() {
+    assert_both_eq("let x = try { 10 } catch e { 0 }; x + 1", Value::Int(11));
+}
+
+#[test]
+fn cross_named_args() {
+    assert_both_eq(
+        r#"fn greet(name, greeting) { f"{greeting} {name}" } greet(greeting: "hi", name: "world")"#,
+        Value::Str("hi world".to_string()),
+    );
+}
+
+#[test]
+fn cross_named_args_with_default() {
+    assert_both_eq(
+        r#"fn greet(name, greeting = "hello") { f"{greeting} {name}" } greet(name: "world")"#,
+        Value::Str("hello world".to_string()),
+    );
+}
+
+#[test]
+fn cross_json_encode_decode() {
+    assert_both_eq(
+        r#"json_decode(json_encode(#{a: 1, b: "two"}))"#,
+        Value::Dict(indexmap::indexmap! {
+            "a".to_string() => Value::Int(1),
+            "b".to_string() => Value::Str("two".to_string()),
+        }),
+    );
+}
+
+#[test]
+fn cross_assert_no_error() {
+    assert_both_eq("assert(true); 42", Value::Int(42));
+}
+
+#[test]
+fn cross_assert_eq_pass() {
+    assert_both_eq("assert_eq(1 + 1, 2); true", Value::Bool(true));
+}
+
+#[test]
+fn cross_loop_as_expr() {
+    assert_both_eq(
+        "let mut i = 0; let x = loop { i = i + 1; if i >= 5 { break i; } }; x",
+        Value::Int(5),
+    );
+}
+
+#[test]
+fn cross_enumerate_list() {
+    assert_both_eq(
+        "enumerate([10, 20])",
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(0), Value::Int(10)]),
+            Value::Tuple(vec![Value::Int(1), Value::Int(20)]),
+        ]),
+    );
+}
+
+#[test]
+fn cross_range() {
+    assert_both_eq(
+        "let mut s = 0; for i in range(1, 4) { s = s + i; } s",
+        Value::Int(6),
+    );
+}
+
+#[test]
+fn cross_option_methods() {
+    assert_both_eq("Some(42).unwrap()", Value::Int(42));
+    assert_both_eq("None.unwrap_or(99)", Value::Int(99));
+}
+
+#[test]
+fn cross_result_methods() {
+    assert_both_eq("Ok(42).unwrap()", Value::Int(42));
+    assert_both_eq(r#"Err("bad").unwrap_or(0)"#, Value::Int(0));
+}

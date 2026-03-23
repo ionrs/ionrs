@@ -1566,3 +1566,78 @@ fn test_vm_clamp() {
     assert_eq!(vm_eval("clamp(5, 0, 10)"), Value::Int(5));
     assert_eq!(vm_eval("clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
 }
+
+// === try/catch VM tests ===
+
+#[test]
+fn test_vm_try_catch_no_error() {
+    assert_eq!(vm_eval("try { 42 } catch e { e }"), Value::Int(42));
+}
+
+#[test]
+fn test_vm_try_catch_with_error() {
+    assert_eq!(
+        vm_eval(r#"try { assert(false, "boom"); 1 } catch e { e }"#),
+        Value::Str("boom".to_string())
+    );
+}
+
+#[test]
+fn test_vm_try_catch_division_by_zero() {
+    assert_eq!(
+        vm_eval(r#"try { 1 / 0 } catch e { "caught" }"#),
+        Value::Str("caught".to_string())
+    );
+}
+
+#[test]
+fn test_vm_try_catch_nested() {
+    assert_eq!(
+        vm_eval(
+            r#"
+            try {
+                try { assert(false, "inner"); 1 } catch e { e }
+            } catch e { "outer" }
+        "#
+        ),
+        Value::Str("inner".to_string())
+    );
+}
+
+#[test]
+fn test_vm_try_catch_as_expression() {
+    assert_eq!(
+        vm_eval(r#"let x = try { 10 } catch e { 0 }; x + 1"#),
+        Value::Int(11)
+    );
+}
+
+// === named args VM tests ===
+
+#[test]
+fn test_vm_named_args_basic() {
+    assert_eq!(
+        vm_eval(
+            r#"fn greet(name, greeting) { f"{greeting} {name}" } greet(greeting: "hi", name: "world")"#
+        ),
+        Value::Str("hi world".to_string())
+    );
+}
+
+#[test]
+fn test_vm_named_args_with_default() {
+    assert_eq!(
+        vm_eval(
+            r#"fn greet(name, greeting = "hello") { f"{greeting} {name}" } greet(name: "world")"#
+        ),
+        Value::Str("hello world".to_string())
+    );
+}
+
+#[test]
+fn test_vm_named_args_mixed() {
+    assert_eq!(
+        vm_eval(r#"fn add(a, b) { a + b } add(1, b: 2)"#),
+        Value::Int(3)
+    );
+}

@@ -15,6 +15,19 @@ struct LocalSlot {
     mutable: bool,
 }
 
+/// An exception handler for try/catch blocks.
+#[derive(Debug, Clone)]
+struct ExceptionHandler {
+    /// IP to jump to (start of catch block).
+    catch_ip: usize,
+    /// Stack depth to restore on catch.
+    stack_depth: usize,
+    /// Local frames depth to restore on catch.
+    local_frames_depth: usize,
+    /// Locals depth to restore on catch.
+    locals_depth: usize,
+}
+
 /// The Ion virtual machine.
 pub struct Vm {
     /// Value stack.
@@ -37,6 +50,8 @@ pub struct Vm {
     locals_base: usize,
     /// Host type registry for struct/enum construction.
     types: TypeRegistry,
+    /// Exception handler stack for try/catch.
+    exception_handlers: Vec<ExceptionHandler>,
 }
 
 impl Default for Vm {
@@ -58,6 +73,7 @@ impl Vm {
             local_frames: Vec::with_capacity(16),
             locals_base: 0,
             types: TypeRegistry::default(),
+            exception_handlers: Vec::new(),
         }
     }
 
@@ -74,6 +90,7 @@ impl Vm {
             local_frames: Vec::with_capacity(16),
             locals_base: 0,
             types: TypeRegistry::default(),
+            exception_handlers: Vec::new(),
         }
     }
 
@@ -119,871 +136,955 @@ impl Vm {
             let col = chunk.cols[self.ip];
             self.ip += 1;
 
-            let op = self.decode_op(op_byte, line, col)?;
+            let op = match self.decode_op(op_byte, line, col) {
+                Ok(op) => op,
+                Err(e) => {
+                    if let Some(handler) = self.exception_handlers.pop() {
+                        self.stack.truncate(handler.stack_depth);
+                        self.locals.truncate(handler.locals_depth);
+                        self.local_frames.truncate(handler.local_frames_depth);
+                        self.stack.push(Value::Str(e.message.clone()));
+                        self.ip = handler.catch_ip;
+                        continue;
+                    }
+                    return Err(e);
+                }
+            };
 
+            // Handle TryBegin/TryEnd before dispatch_instruction
             match op {
-                Op::Constant => {
-                    let idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let val = chunk.constants[idx].clone();
-                    self.stack.push(val);
-                }
-
-                Op::True => self.stack.push(Value::Bool(true)),
-                Op::False => self.stack.push(Value::Bool(false)),
-                Op::Unit => self.stack.push(Value::Unit),
-                Op::None => self.stack.push(Value::Option(None)),
-
-                // --- Arithmetic ---
-                Op::Add => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack.push(self.op_add(a, b, line, col)?);
-                }
-                Op::Sub => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack.push(self.op_sub(a, b, line, col)?);
-                }
-                Op::Mul => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack.push(self.op_mul(a, b, line, col)?);
-                }
-                Op::Div => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack.push(self.op_div(a, b, line, col)?);
-                }
-                Op::Mod => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack.push(self.op_mod(a, b, line, col)?);
-                }
-                Op::Neg => {
-                    let val = self.pop(line, col)?;
-                    self.stack.push(self.op_neg(val, line, col)?);
-                }
-
-                // --- Bitwise ---
-                Op::BitAnd => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x & y)),
-                        (a, b) => {
-                            return Err(IonError::type_err(
-                                format!(
-                                    "'&' expects int, got {} and {}",
-                                    a.type_name(),
-                                    b.type_name()
-                                ),
-                                line,
-                                col,
-                            ))
-                        }
-                    }
-                }
-                Op::BitOr => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x | y)),
-                        (a, b) => {
-                            return Err(IonError::type_err(
-                                format!(
-                                    "'|' expects int, got {} and {}",
-                                    a.type_name(),
-                                    b.type_name()
-                                ),
-                                line,
-                                col,
-                            ))
-                        }
-                    }
-                }
-                Op::BitXor => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x ^ y)),
-                        (a, b) => {
-                            return Err(IonError::type_err(
-                                format!(
-                                    "'^' expects int, got {} and {}",
-                                    a.type_name(),
-                                    b.type_name()
-                                ),
-                                line,
-                                col,
-                            ))
-                        }
-                    }
-                }
-                Op::Shl => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x << y)),
-                        (a, b) => {
-                            return Err(IonError::type_err(
-                                format!(
-                                    "'<<' expects int, got {} and {}",
-                                    a.type_name(),
-                                    b.type_name()
-                                ),
-                                line,
-                                col,
-                            ))
-                        }
-                    }
-                }
-                Op::Shr => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x >> y)),
-                        (a, b) => {
-                            return Err(IonError::type_err(
-                                format!(
-                                    "'>>' expects int, got {} and {}",
-                                    a.type_name(),
-                                    b.type_name()
-                                ),
-                                line,
-                                col,
-                            ))
-                        }
-                    }
-                }
-
-                // --- Comparison ---
-                Op::Eq => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack.push(Value::Bool(a == b));
-                }
-                Op::NotEq => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack.push(Value::Bool(a != b));
-                }
-                Op::Lt => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack
-                        .push(Value::Bool(self.compare_lt(&a, &b, line, col)?));
-                }
-                Op::Gt => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack
-                        .push(Value::Bool(self.compare_lt(&b, &a, line, col)?));
-                }
-                Op::LtEq => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack
-                        .push(Value::Bool(!self.compare_lt(&b, &a, line, col)?));
-                }
-                Op::GtEq => {
-                    let b = self.pop(line, col)?;
-                    let a = self.pop(line, col)?;
-                    self.stack
-                        .push(Value::Bool(!self.compare_lt(&a, &b, line, col)?));
-                }
-
-                // --- Logic ---
-                Op::Not => {
-                    let val = self.pop(line, col)?;
-                    self.stack.push(Value::Bool(!val.is_truthy()));
-                }
-                Op::And => {
+                Op::TryBegin => {
                     let offset = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
-                    let top = self.peek(line, col)?;
-                    if !top.is_truthy() {
-                        self.ip += offset; // short-circuit: keep falsy value
-                    }
-                    // If truthy, fall through — Pop will remove it, then eval right
-                }
-                Op::Or => {
-                    let offset = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let top = self.peek(line, col)?;
-                    if top.is_truthy() {
-                        self.ip += offset; // short-circuit: keep truthy value
-                    }
-                }
-
-                // --- Variables ---
-                Op::DefineLocal => {
-                    let name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let mutable = chunk.read_u8(self.ip) != 0;
-                    self.ip += 1;
-                    let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                    let val = self.pop(line, col)?;
-                    self.env.define_sym(sym, val, mutable);
-                }
-                Op::GetLocal => {
-                    let name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                    let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
-                        let name = self.env.resolve(sym);
-                        IonError::name(format!("undefined variable: {}", name), line, col)
-                    })?;
-                    self.stack.push(val);
-                }
-                Op::SetLocal => {
-                    let name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                    let val = self.pop(line, col)?;
-                    self.env
-                        .set_sym(sym, val.clone())
-                        .map_err(|e| IonError::runtime(e, line, col))?;
-                    self.stack.push(val); // assignment is an expression
-                }
-                Op::GetGlobal => {
-                    let name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                    let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
-                        let name = self.env.resolve(sym);
-                        IonError::name(format!("undefined variable: {}", name), line, col)
-                    })?;
-                    self.stack.push(val);
-                }
-                Op::SetGlobal => {
-                    let name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                    let val = self.pop(line, col)?;
-                    self.env
-                        .set_sym(sym, val.clone())
-                        .map_err(|e| IonError::runtime(e, line, col))?;
-                    self.stack.push(val);
-                }
-
-                // --- Stack-slot locals (fast path) ---
-                Op::DefineLocalSlot => {
-                    let mutable = chunk.read_u8(self.ip) != 0;
-                    self.ip += 1;
-                    let val = self.pop(line, col)?;
-                    self.locals.push(LocalSlot {
-                        value: val,
-                        mutable,
+                    let catch_ip = self.ip + offset;
+                    self.exception_handlers.push(ExceptionHandler {
+                        catch_ip,
+                        stack_depth: self.stack.len(),
+                        local_frames_depth: self.local_frames.len(),
+                        locals_depth: self.locals.len(),
                     });
+                    continue;
                 }
-                Op::GetLocalSlot => {
-                    let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
+                Op::TryEnd => {
+                    let offset = chunk.read_u16(self.ip) as usize;
                     self.ip += 2;
-                    let val = self.locals[slot].value.clone();
-                    self.stack.push(val);
+                    self.exception_handlers.pop();
+                    self.ip += offset; // jump over catch block
+                    continue;
                 }
-                Op::SetLocalSlot => {
-                    let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let val = self.pop(line, col)?;
-                    if !self.locals[slot].mutable {
-                        return Err(IonError::runtime(
-                            "cannot assign to immutable variable".to_string(),
+                _ => {}
+            }
+
+            match self.dispatch_instruction(op, chunk, line, col) {
+                Ok(Some(val)) => return Ok(val),
+                Ok(None) => {}
+                Err(e) => {
+                    // Check if we're inside a try block
+                    if e.kind != crate::error::ErrorKind::PropagatedErr
+                        && e.kind != crate::error::ErrorKind::PropagatedNone
+                    {
+                        if let Some(handler) = self.exception_handlers.pop() {
+                            self.stack.truncate(handler.stack_depth);
+                            self.locals.truncate(handler.locals_depth);
+                            self.local_frames.truncate(handler.local_frames_depth);
+                            self.stack.push(Value::Str(e.message.clone()));
+                            self.ip = handler.catch_ip;
+                            continue;
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Ok(self.stack.pop().unwrap_or(Value::Unit))
+    }
+
+    /// Dispatch a single instruction. Returns Ok(Some(val)) for Return, Ok(None) to continue.
+    fn dispatch_instruction(
+        &mut self,
+        op: Op,
+        chunk: &Chunk,
+        line: usize,
+        col: usize,
+    ) -> Result<Option<Value>, IonError> {
+        match op {
+            Op::Constant => {
+                let idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let val = chunk.constants[idx].clone();
+                self.stack.push(val);
+            }
+
+            Op::True => self.stack.push(Value::Bool(true)),
+            Op::False => self.stack.push(Value::Bool(false)),
+            Op::Unit => self.stack.push(Value::Unit),
+            Op::None => self.stack.push(Value::Option(None)),
+
+            // --- Arithmetic ---
+            Op::Add => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack.push(self.op_add(a, b, line, col)?);
+            }
+            Op::Sub => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack.push(self.op_sub(a, b, line, col)?);
+            }
+            Op::Mul => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack.push(self.op_mul(a, b, line, col)?);
+            }
+            Op::Div => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack.push(self.op_div(a, b, line, col)?);
+            }
+            Op::Mod => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack.push(self.op_mod(a, b, line, col)?);
+            }
+            Op::Neg => {
+                let val = self.pop(line, col)?;
+                self.stack.push(self.op_neg(val, line, col)?);
+            }
+
+            // --- Bitwise ---
+            Op::BitAnd => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x & y)),
+                    (a, b) => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "'&' expects int, got {} and {}",
+                                a.type_name(),
+                                b.type_name()
+                            ),
                             line,
                             col,
-                        ));
-                    }
-                    self.locals[slot].value = val.clone();
-                    self.stack.push(val); // assignment is an expression
-                }
-
-                // --- Control flow ---
-                Op::Jump => {
-                    let offset = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    self.ip += offset;
-                }
-                Op::JumpIfFalse => {
-                    let offset = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let val = self.peek(line, col)?;
-                    if !val.is_truthy() {
-                        self.ip += offset;
+                        ))
                     }
                 }
-                Op::Loop => {
-                    let offset = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    self.ip -= offset;
-                }
-
-                // --- Functions ---
-                Op::Call => {
-                    let arg_count = chunk.read_u8(self.ip) as usize;
-                    self.ip += 1;
-                    self.call_function(arg_count, line, col)?;
-                }
-                Op::TailCall => {
-                    let arg_count = chunk.read_u8(self.ip) as usize;
-                    self.ip += 1;
-                    // Extract func and args for trampoline
-                    let args_start = self.stack.len() - arg_count;
-                    let func_idx = args_start - 1;
-                    let func = self.stack[func_idx].clone();
-                    let args: Vec<Value> = self.stack[args_start..].to_vec();
-                    self.stack.truncate(func_idx);
-                    self.pending_tail_call = Some((func, args));
-                    return Ok(Value::Unit); // value is unused; caller checks pending_tail_call
-                }
-                Op::Return => {
-                    // Return the top of stack value
-                    let val = if self.stack.is_empty() {
-                        Value::Unit
-                    } else {
-                        self.pop(line, col)?
-                    };
-                    return Ok(val);
-                }
-
-                // --- Stack ---
-                Op::Pop => {
-                    self.pop(line, col)?;
-                }
-                Op::Dup => {
-                    let val = self.peek(line, col)?;
-                    self.stack.push(val);
-                }
-
-                // --- Composite types ---
-                Op::BuildList => {
-                    let count = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let start = self.stack.len() - count;
-                    let items: Vec<Value> = self.stack.drain(start..).collect();
-                    self.stack.push(Value::List(items));
-                }
-                Op::BuildTuple => {
-                    let count = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let start = self.stack.len() - count;
-                    let items: Vec<Value> = self.stack.drain(start..).collect();
-                    self.stack.push(Value::Tuple(items));
-                }
-                Op::BuildDict => {
-                    let count = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let mut map = IndexMap::new();
-                    // Pop count key-value pairs (pushed in order)
-                    let start = self.stack.len() - count * 2;
-                    let items: Vec<Value> = self.stack.drain(start..).collect();
-                    for pair in items.chunks(2) {
-                        let key = match &pair[0] {
-                            Value::Str(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        map.insert(key, pair[1].clone());
-                    }
-                    self.stack.push(Value::Dict(map));
-                }
-
-                // --- Field/index access ---
-                Op::GetField => {
-                    let field_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let field = self.const_as_str(&chunk.constants[field_idx], line, col)?;
-                    let obj = self.pop(line, col)?;
-                    self.stack.push(self.get_field(obj, &field, line, col)?);
-                }
-                Op::GetIndex => {
-                    let index = self.pop(line, col)?;
-                    let obj = self.pop(line, col)?;
-                    self.stack.push(self.get_index(obj, index, line, col)?);
-                }
-                Op::SetField => {
-                    let field_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let field = self.const_as_str(&chunk.constants[field_idx], line, col)?;
-                    let value = self.pop(line, col)?;
-                    let obj = self.pop(line, col)?;
-                    let result = self.set_field(obj, &field, value, line, col)?;
-                    self.stack.push(result);
-                }
-                Op::SetIndex => {
-                    let value = self.pop(line, col)?;
-                    let index = self.pop(line, col)?;
-                    let obj = self.pop(line, col)?;
-                    let result = self.set_index(obj, index, value, line, col)?;
-                    self.stack.push(result);
-                }
-                Op::MethodCall => {
-                    let method_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let arg_count = chunk.read_u8(self.ip) as usize;
-                    self.ip += 1;
-                    let method = self.const_as_str(&chunk.constants[method_idx], line, col)?;
-                    // Stack: [..., receiver, arg0, arg1, ...]
-                    let start = self.stack.len() - arg_count;
-                    let args: Vec<Value> = self.stack.drain(start..).collect();
-                    let receiver = self.pop(line, col)?;
-                    let result = self.call_method(receiver, &method, &args, line, col)?;
-                    self.stack.push(result);
-                }
-
-                // --- Closures ---
-                Op::Closure => {
-                    let fn_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let val = chunk.constants[fn_idx].clone();
-                    // Attach captures from current env
-                    if let Value::Fn(mut f) = val {
-                        f.captures = self.env.capture();
-                        self.stack.push(Value::Fn(f));
-                    } else {
-                        self.stack.push(val);
+            }
+            Op::BitOr => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x | y)),
+                    (a, b) => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "'|' expects int, got {} and {}",
+                                a.type_name(),
+                                b.type_name()
+                            ),
+                            line,
+                            col,
+                        ))
                     }
                 }
-
-                // --- Option/Result ---
-                Op::WrapSome => {
-                    let val = self.pop(line, col)?;
-                    self.stack.push(Value::Option(Some(Box::new(val))));
-                }
-                Op::WrapOk => {
-                    let val = self.pop(line, col)?;
-                    self.stack.push(Value::Result(Ok(Box::new(val))));
-                }
-                Op::WrapErr => {
-                    let val = self.pop(line, col)?;
-                    self.stack.push(Value::Result(Err(Box::new(val))));
-                }
-                Op::Try => {
-                    let val = self.pop(line, col)?;
-                    match val {
-                        Value::Option(Some(v)) => self.stack.push(*v),
-                        Value::Option(None) => {
-                            return Err(IonError::propagated_none(line, 0));
-                        }
-                        Value::Result(Ok(v)) => self.stack.push(*v),
-                        Value::Result(Err(e)) => {
-                            return Err(IonError::propagated_err(e.to_string(), line, col));
-                        }
-                        other => {
-                            return Err(IonError::type_err(
-                                format!(
-                                    "? operator requires Option or Result, got {}",
-                                    other.type_name()
-                                ),
-                                line,
-                                col,
-                            ));
-                        }
+            }
+            Op::BitXor => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x ^ y)),
+                    (a, b) => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "'^' expects int, got {} and {}",
+                                a.type_name(),
+                                b.type_name()
+                            ),
+                            line,
+                            col,
+                        ))
                     }
                 }
-
-                // --- Scope ---
-                Op::PushScope => {
-                    self.env.push_scope();
-                    self.local_frames.push(self.locals.len());
-                }
-                Op::PopScope => {
-                    self.env.pop_scope();
-                    if let Some(base) = self.local_frames.pop() {
-                        self.locals.truncate(base);
+            }
+            Op::Shl => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x << y)),
+                    (a, b) => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "'<<' expects int, got {} and {}",
+                                a.type_name(),
+                                b.type_name()
+                            ),
+                            line,
+                            col,
+                        ))
                     }
                 }
-
-                // --- String ---
-                Op::BuildFString => {
-                    let count = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let start = self.stack.len() - count;
-                    let parts: Vec<Value> = self.stack.drain(start..).collect();
-                    let s: String = parts.iter().map(|v| v.to_string()).collect();
-                    self.stack.push(Value::Str(s));
+            }
+            Op::Shr => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x >> y)),
+                    (a, b) => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "'>>' expects int, got {} and {}",
+                                a.type_name(),
+                                b.type_name()
+                            ),
+                            line,
+                            col,
+                        ))
+                    }
                 }
+            }
 
-                // --- Pipe ---
-                Op::Pipe => {
-                    let _arg_count = chunk.read_u8(self.ip);
-                    self.ip += 1;
-                    // Pipe is handled by the compiler rewriting to Call
+            // --- Comparison ---
+            Op::Eq => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack.push(Value::Bool(a == b));
+            }
+            Op::NotEq => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack.push(Value::Bool(a != b));
+            }
+            Op::Lt => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack
+                    .push(Value::Bool(self.compare_lt(&a, &b, line, col)?));
+            }
+            Op::Gt => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack
+                    .push(Value::Bool(self.compare_lt(&b, &a, line, col)?));
+            }
+            Op::LtEq => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack
+                    .push(Value::Bool(!self.compare_lt(&b, &a, line, col)?));
+            }
+            Op::GtEq => {
+                let b = self.pop(line, col)?;
+                let a = self.pop(line, col)?;
+                self.stack
+                    .push(Value::Bool(!self.compare_lt(&a, &b, line, col)?));
+            }
+
+            // --- Logic ---
+            Op::Not => {
+                let val = self.pop(line, col)?;
+                self.stack.push(Value::Bool(!val.is_truthy()));
+            }
+            Op::And => {
+                let offset = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let top = self.peek(line, col)?;
+                if !top.is_truthy() {
+                    self.ip += offset; // short-circuit: keep falsy value
+                }
+                // If truthy, fall through — Pop will remove it, then eval right
+            }
+            Op::Or => {
+                let offset = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let top = self.peek(line, col)?;
+                if top.is_truthy() {
+                    self.ip += offset; // short-circuit: keep truthy value
+                }
+            }
+
+            // --- Variables ---
+            Op::DefineLocal => {
+                let name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let mutable = chunk.read_u8(self.ip) != 0;
+                self.ip += 1;
+                let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
+                let val = self.pop(line, col)?;
+                self.env.define_sym(sym, val, mutable);
+            }
+            Op::GetLocal => {
+                let name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
+                let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
+                    let name = self.env.resolve(sym);
+                    IonError::name(format!("undefined variable: {}", name), line, col)
+                })?;
+                self.stack.push(val);
+            }
+            Op::SetLocal => {
+                let name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
+                let val = self.pop(line, col)?;
+                self.env
+                    .set_sym(sym, val.clone())
+                    .map_err(|e| IonError::runtime(e, line, col))?;
+                self.stack.push(val); // assignment is an expression
+            }
+            Op::GetGlobal => {
+                let name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
+                let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
+                    let name = self.env.resolve(sym);
+                    IonError::name(format!("undefined variable: {}", name), line, col)
+                })?;
+                self.stack.push(val);
+            }
+            Op::SetGlobal => {
+                let name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
+                let val = self.pop(line, col)?;
+                self.env
+                    .set_sym(sym, val.clone())
+                    .map_err(|e| IonError::runtime(e, line, col))?;
+                self.stack.push(val);
+            }
+
+            // --- Stack-slot locals (fast path) ---
+            Op::DefineLocalSlot => {
+                let mutable = chunk.read_u8(self.ip) != 0;
+                self.ip += 1;
+                let val = self.pop(line, col)?;
+                self.locals.push(LocalSlot {
+                    value: val,
+                    mutable,
+                });
+            }
+            Op::GetLocalSlot => {
+                let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let val = self.locals[slot].value.clone();
+                self.stack.push(val);
+            }
+            Op::SetLocalSlot => {
+                let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let val = self.pop(line, col)?;
+                if !self.locals[slot].mutable {
                     return Err(IonError::runtime(
-                        "pipe opcode should not be executed directly",
+                        "cannot assign to immutable variable".to_string(),
                         line,
                         col,
                     ));
                 }
+                self.locals[slot].value = val.clone();
+                self.stack.push(val); // assignment is an expression
+            }
 
-                // --- Pattern matching ---
-                Op::MatchBegin => {
-                    // u8: kind (1=Some, 2=Ok, 3=Err, 4=Tuple, 5=List)
-                    let kind = chunk.read_u8(self.ip);
-                    self.ip += 1;
-                    let val = self.pop(line, col)?;
-                    let result = match kind {
-                        1 => matches!(val, Value::Option(Some(_))),
-                        2 => matches!(val, Value::Result(Ok(_))),
-                        3 => matches!(val, Value::Result(Err(_))),
-                        4 => {
-                            let expected_len = chunk.read_u8(self.ip) as usize;
-                            self.ip += 1;
-                            match &val {
-                                Value::Tuple(items) => items.len() == expected_len,
-                                _ => false,
-                            }
-                        }
-                        5 => {
-                            let min_len = chunk.read_u8(self.ip) as usize;
-                            self.ip += 1;
-                            let has_rest = chunk.read_u8(self.ip) != 0;
-                            self.ip += 1;
-                            match &val {
-                                Value::List(items) => {
-                                    if has_rest {
-                                        items.len() >= min_len
-                                    } else {
-                                        items.len() == min_len
-                                    }
-                                }
-                                _ => false,
-                            }
-                        }
-                        _ => false,
-                    };
-                    // Push value back (needed for unwrap) and then bool
-                    self.stack.push(val);
-                    self.stack.push(Value::Bool(result));
+            // --- Control flow ---
+            Op::Jump => {
+                let offset = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                self.ip += offset;
+            }
+            Op::JumpIfFalse => {
+                let offset = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let val = self.peek(line, col)?;
+                if !val.is_truthy() {
+                    self.ip += offset;
                 }
-                Op::MatchArm => {
-                    // u8: kind (1=unwrap Some, 2=unwrap Ok, 3=unwrap Err, 4=get tuple element, 5=get list element)
-                    let kind = chunk.read_u8(self.ip);
+            }
+            Op::Loop => {
+                let offset = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                self.ip -= offset;
+            }
+
+            // --- Functions ---
+            Op::Call => {
+                let arg_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                self.call_function(arg_count, line, col)?;
+            }
+            Op::CallNamed => {
+                let arg_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                let named_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                // Read named arg metadata: (position, name)
+                let mut named_map: Vec<(usize, String)> = Vec::with_capacity(named_count);
+                for _ in 0..named_count {
+                    let pos = chunk.read_u8(self.ip) as usize;
                     self.ip += 1;
-                    match kind {
-                        1 => {
-                            // Unwrap Some: pop Option(Some(v)), push v
-                            let val = self.pop(line, col)?;
-                            match val {
-                                Value::Option(Some(v)) => self.stack.push(*v),
-                                other => self.stack.push(other),
-                            }
-                        }
-                        2 => {
-                            let val = self.pop(line, col)?;
-                            match val {
-                                Value::Result(Ok(v)) => self.stack.push(*v),
-                                other => self.stack.push(other),
-                            }
-                        }
-                        3 => {
-                            let val = self.pop(line, col)?;
-                            match val {
-                                Value::Result(Err(v)) => self.stack.push(*v),
-                                other => self.stack.push(other),
-                            }
-                        }
-                        4 | 5 => {
-                            // Get tuple/list element: u8 index follows
-                            let idx = chunk.read_u8(self.ip) as usize;
-                            self.ip += 1;
-                            let val = self.peek(line, col)?;
-                            match val {
-                                Value::Tuple(items) | Value::List(items) => {
-                                    self.stack
-                                        .push(items.get(idx).cloned().unwrap_or(Value::Unit));
-                                }
-                                _ => self.stack.push(Value::Unit),
-                            }
-                        }
-                        _ => {}
+                    let name_idx = chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    if let Value::Str(name) = &chunk.constants[name_idx] {
+                        named_map.push((pos, name.clone()));
                     }
                 }
-                Op::MatchEnd => {
-                    // Currently unused — match uses Jump/JumpIfFalse directly
-                }
+                self.call_function_named(arg_count, &named_map, line, col)?;
+            }
+            Op::TailCall => {
+                let arg_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                // Extract func and args for trampoline
+                let args_start = self.stack.len() - arg_count;
+                let func_idx = args_start - 1;
+                let func = self.stack[func_idx].clone();
+                let args: Vec<Value> = self.stack[args_start..].to_vec();
+                self.stack.truncate(func_idx);
+                self.pending_tail_call = Some((func, args));
+                return Ok(Some(Value::Unit)); // value is unused; caller checks pending_tail_call
+            }
+            Op::Return => {
+                // Return the top of stack value
+                let val = if self.stack.is_empty() {
+                    Value::Unit
+                } else {
+                    self.pop(line, col)?
+                };
+                return Ok(Some(val));
+            }
 
-                // --- Range ---
-                Op::BuildRange => {
-                    let inclusive = chunk.read_u8(self.ip) != 0;
-                    self.ip += 1;
-                    let end = self.pop(line, col)?;
-                    let start = self.pop(line, col)?;
-                    let s = start
-                        .as_int()
-                        .ok_or_else(|| IonError::type_err("range start must be int", line, col))?;
-                    let e = end
-                        .as_int()
-                        .ok_or_else(|| IonError::type_err("range end must be int", line, col))?;
-                    let items: Vec<Value> = if inclusive {
-                        (s..=e).map(Value::Int).collect()
-                    } else {
-                        (s..e).map(Value::Int).collect()
-                    };
-                    self.stack.push(Value::List(items));
-                }
+            // --- Stack ---
+            Op::Pop => {
+                self.pop(line, col)?;
+            }
+            Op::Dup => {
+                let val = self.peek(line, col)?;
+                self.stack.push(val);
+            }
 
-                // --- Host types ---
-                Op::ConstructStruct => {
-                    let type_name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let raw_count = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let type_name = match &chunk.constants[type_name_idx] {
+            // --- Composite types ---
+            Op::BuildList => {
+                let count = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let start = self.stack.len() - count;
+                let items: Vec<Value> = self.stack.drain(start..).collect();
+                self.stack.push(Value::List(items));
+            }
+            Op::BuildTuple => {
+                let count = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let start = self.stack.len() - count;
+                let items: Vec<Value> = self.stack.drain(start..).collect();
+                self.stack.push(Value::Tuple(items));
+            }
+            Op::BuildDict => {
+                let count = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let mut map = IndexMap::new();
+                // Pop count key-value pairs (pushed in order)
+                let start = self.stack.len() - count * 2;
+                let items: Vec<Value> = self.stack.drain(start..).collect();
+                for pair in items.chunks(2) {
+                    let key = match &pair[0] {
                         Value::Str(s) => s.clone(),
-                        _ => return Err(IonError::runtime("invalid type name", line, col)),
-                    };
-                    let has_spread = raw_count & 0x8000 != 0;
-                    let field_count = raw_count & 0x7FFF;
-                    let mut fields = IndexMap::new();
-                    if has_spread {
-                        // Stack: [..., spread_struct, field_name, field_value, ...]
-                        // Pop override fields first
-                        let override_start = self.stack.len() - field_count * 2;
-                        let overrides: Vec<Value> = self.stack.drain(override_start..).collect();
-                        // Pop spread struct
-                        let spread_val = self.pop(line, col)?;
-                        match spread_val {
-                            Value::HostStruct { fields: sf, .. } => {
-                                for (k, v) in sf {
-                                    fields.insert(k, v);
-                                }
-                            }
-                            _ => {
-                                return Err(IonError::type_err(
-                                    "spread in struct constructor requires a struct",
-                                    line,
-                                    col,
-                                ))
-                            }
-                        }
-                        // Apply overrides
-                        for pair in overrides.chunks(2) {
-                            let fname = match &pair[0] {
-                                Value::Str(s) => s.clone(),
-                                _ => {
-                                    return Err(IonError::runtime("invalid field name", line, col))
-                                }
-                            };
-                            fields.insert(fname, pair[1].clone());
-                        }
-                    } else {
-                        // No spread: fields are pushed as name, value pairs
-                        let start = self.stack.len() - field_count * 2;
-                        let items: Vec<Value> = self.stack.drain(start..).collect();
-                        for pair in items.chunks(2) {
-                            let fname = match &pair[0] {
-                                Value::Str(s) => s.clone(),
-                                _ => {
-                                    return Err(IonError::runtime("invalid field name", line, col))
-                                }
-                            };
-                            fields.insert(fname, pair[1].clone());
-                        }
-                    }
-                    match self.types.construct_struct(&type_name, fields) {
-                        Ok(val) => self.stack.push(val),
-                        Err(msg) => return Err(IonError::runtime(msg, line, col)),
-                    }
-                }
-                Op::ConstructEnum => {
-                    let enum_name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let variant_name_idx = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    let arg_count = chunk.read_u8(self.ip) as usize;
-                    self.ip += 1;
-                    let enum_name = match &chunk.constants[enum_name_idx] {
-                        Value::Str(s) => s.clone(),
-                        _ => return Err(IonError::runtime("invalid enum name", line, col)),
-                    };
-                    let variant_name = match &chunk.constants[variant_name_idx] {
-                        Value::Str(s) => s.clone(),
-                        _ => return Err(IonError::runtime("invalid variant name", line, col)),
-                    };
-                    let start = self.stack.len() - arg_count;
-                    let args: Vec<Value> = self.stack.drain(start..).collect();
-                    match self.types.construct_enum(&enum_name, &variant_name, args) {
-                        Ok(val) => self.stack.push(val),
-                        Err(msg) => return Err(IonError::runtime(msg, line, col)),
-                    }
-                }
-
-                // --- Comprehensions ---
-                Op::IterInit => {
-                    let val = self.pop(line, col)?;
-                    let iter: Box<dyn Iterator<Item = Value>> = match val {
-                        Value::List(items) => Box::new(items.into_iter()),
-                        Value::Tuple(items) => Box::new(items.into_iter()),
-                        Value::Dict(map) => Box::new(
-                            map.into_iter()
-                                .map(|(k, v)| Value::Tuple(vec![Value::Str(k), v])),
-                        ),
-                        Value::Str(s) => {
-                            let chars: Vec<Value> =
-                                s.chars().map(|c| Value::Str(c.to_string())).collect();
-                            Box::new(chars.into_iter())
-                        }
-                        Value::Bytes(bytes) => {
-                            let vals: Vec<Value> =
-                                bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
-                            Box::new(vals.into_iter())
-                        }
-                        other => {
-                            return Err(IonError::type_err(
-                                format!("cannot iterate over {}", other.type_name()),
-                                line,
-                                col,
-                            ));
-                        }
-                    };
-                    self.iterators.push(iter);
-                    // Push a placeholder on stack so IterNext has something
-                    self.stack.push(Value::Unit);
-                }
-                Op::IterNext => {
-                    let offset = chunk.read_u16(self.ip) as usize;
-                    self.ip += 2;
-                    // Pop the previous iteration value/placeholder
-                    self.pop(line, col)?;
-                    let iter = self
-                        .iterators
-                        .last_mut()
-                        .ok_or_else(|| IonError::runtime("no active iterator", line, col))?;
-                    match iter.next() {
-                        Some(val) => {
-                            self.stack.push(val);
-                        }
-                        None => {
-                            self.iterators.pop();
-                            self.stack.push(Value::Unit); // placeholder for the pop after loop
-                            self.ip += offset;
-                        }
-                    }
-                }
-                Op::IterDrop => {
-                    self.iterators.pop();
-                }
-                Op::ListAppend => {
-                    // Stack: [..., list, iter_placeholder, ..., item]
-                    // Pop item, find the list deeper in the stack, append to it
-                    let item = self.pop(line, col)?;
-                    // Find the list — it's below the iterator placeholder
-                    // The list is at position: stack.len() - 1 (after popping item) minus
-                    // however many scope vars are between. Actually, the list is always
-                    // 2 below the current top: [..., list, iter_placeholder, ...]
-                    // But with scopes, it's simpler to find the last List on the stack.
-                    // Actually: stack layout is [..., list, Unit(iter_placeholder), ...]
-                    // Let's find the list by scanning backwards
-                    let mut found = false;
-                    for i in (0..self.stack.len()).rev() {
-                        if let Value::List(_) = &self.stack[i] {
-                            if let Value::List(ref mut items) = self.stack[i] {
-                                items.push(item.clone());
-                            }
-                            found = true;
-                            break;
-                        }
-                    }
-                    if !found {
-                        return Err(IonError::runtime("ListAppend: no list on stack", line, col));
-                    }
-                }
-                Op::DictInsert => {
-                    // Stack: [..., dict, iter_placeholder, ..., key, value]
-                    let value = self.pop(line, col)?;
-                    let key = self.pop(line, col)?;
-                    let key_str = match key {
-                        Value::Str(s) => s,
                         other => other.to_string(),
                     };
-                    let mut found = false;
-                    for i in (0..self.stack.len()).rev() {
-                        if let Value::Dict(_) = &self.stack[i] {
-                            if let Value::Dict(ref mut map) = self.stack[i] {
-                                map.insert(key_str.clone(), value.clone());
-                            }
-                            found = true;
-                            break;
-                        }
+                    map.insert(key, pair[1].clone());
+                }
+                self.stack.push(Value::Dict(map));
+            }
+
+            // --- Field/index access ---
+            Op::GetField => {
+                let field_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let field = self.const_as_str(&chunk.constants[field_idx], line, col)?;
+                let obj = self.pop(line, col)?;
+                self.stack.push(self.get_field(obj, &field, line, col)?);
+            }
+            Op::GetIndex => {
+                let index = self.pop(line, col)?;
+                let obj = self.pop(line, col)?;
+                self.stack.push(self.get_index(obj, index, line, col)?);
+            }
+            Op::SetField => {
+                let field_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let field = self.const_as_str(&chunk.constants[field_idx], line, col)?;
+                let value = self.pop(line, col)?;
+                let obj = self.pop(line, col)?;
+                let result = self.set_field(obj, &field, value, line, col)?;
+                self.stack.push(result);
+            }
+            Op::SetIndex => {
+                let value = self.pop(line, col)?;
+                let index = self.pop(line, col)?;
+                let obj = self.pop(line, col)?;
+                let result = self.set_index(obj, index, value, line, col)?;
+                self.stack.push(result);
+            }
+            Op::MethodCall => {
+                let method_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let arg_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                let method = self.const_as_str(&chunk.constants[method_idx], line, col)?;
+                // Stack: [..., receiver, arg0, arg1, ...]
+                let start = self.stack.len() - arg_count;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                let receiver = self.pop(line, col)?;
+                let result = self.call_method(receiver, &method, &args, line, col)?;
+                self.stack.push(result);
+            }
+
+            // --- Closures ---
+            Op::Closure => {
+                let fn_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let val = chunk.constants[fn_idx].clone();
+                // Attach captures from current env
+                if let Value::Fn(mut f) = val {
+                    f.captures = self.env.capture();
+                    self.stack.push(Value::Fn(f));
+                } else {
+                    self.stack.push(val);
+                }
+            }
+
+            // --- Option/Result ---
+            Op::WrapSome => {
+                let val = self.pop(line, col)?;
+                self.stack.push(Value::Option(Some(Box::new(val))));
+            }
+            Op::WrapOk => {
+                let val = self.pop(line, col)?;
+                self.stack.push(Value::Result(Ok(Box::new(val))));
+            }
+            Op::WrapErr => {
+                let val = self.pop(line, col)?;
+                self.stack.push(Value::Result(Err(Box::new(val))));
+            }
+            Op::Try => {
+                let val = self.pop(line, col)?;
+                match val {
+                    Value::Option(Some(v)) => self.stack.push(*v),
+                    Value::Option(None) => {
+                        return Err(IonError::propagated_none(line, 0));
                     }
-                    if !found {
-                        return Err(IonError::runtime("DictInsert: no dict on stack", line, col));
+                    Value::Result(Ok(v)) => self.stack.push(*v),
+                    Value::Result(Err(e)) => {
+                        return Err(IonError::propagated_err(e.to_string(), line, col));
+                    }
+                    other => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "? operator requires Option or Result, got {}",
+                                other.type_name()
+                            ),
+                            line,
+                            col,
+                        ));
                     }
                 }
-                Op::DictMerge => {
-                    // Stack: [..., target_dict, source_dict]
-                    let source = self.pop(line, col)?;
-                    match source {
-                        Value::Dict(other) => {
-                            // Find the target dict on stack
-                            let mut found = false;
-                            for i in (0..self.stack.len()).rev() {
-                                if let Value::Dict(ref mut map) = self.stack[i] {
-                                    for (k, v) in other {
-                                        map.insert(k, v);
-                                    }
-                                    found = true;
-                                    break;
+            }
+
+            // --- Scope ---
+            Op::PushScope => {
+                self.env.push_scope();
+                self.local_frames.push(self.locals.len());
+            }
+            Op::PopScope => {
+                self.env.pop_scope();
+                if let Some(base) = self.local_frames.pop() {
+                    self.locals.truncate(base);
+                }
+            }
+
+            // --- String ---
+            Op::BuildFString => {
+                let count = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let start = self.stack.len() - count;
+                let parts: Vec<Value> = self.stack.drain(start..).collect();
+                let s: String = parts.iter().map(|v| v.to_string()).collect();
+                self.stack.push(Value::Str(s));
+            }
+
+            // --- Pipe ---
+            Op::Pipe => {
+                let _arg_count = chunk.read_u8(self.ip);
+                self.ip += 1;
+                // Pipe is handled by the compiler rewriting to Call
+                return Err(IonError::runtime(
+                    "pipe opcode should not be executed directly",
+                    line,
+                    col,
+                ));
+            }
+
+            // --- Pattern matching ---
+            Op::MatchBegin => {
+                // u8: kind (1=Some, 2=Ok, 3=Err, 4=Tuple, 5=List)
+                let kind = chunk.read_u8(self.ip);
+                self.ip += 1;
+                let val = self.pop(line, col)?;
+                let result = match kind {
+                    1 => matches!(val, Value::Option(Some(_))),
+                    2 => matches!(val, Value::Result(Ok(_))),
+                    3 => matches!(val, Value::Result(Err(_))),
+                    4 => {
+                        let expected_len = chunk.read_u8(self.ip) as usize;
+                        self.ip += 1;
+                        match &val {
+                            Value::Tuple(items) => items.len() == expected_len,
+                            _ => false,
+                        }
+                    }
+                    5 => {
+                        let min_len = chunk.read_u8(self.ip) as usize;
+                        self.ip += 1;
+                        let has_rest = chunk.read_u8(self.ip) != 0;
+                        self.ip += 1;
+                        match &val {
+                            Value::List(items) => {
+                                if has_rest {
+                                    items.len() >= min_len
+                                } else {
+                                    items.len() == min_len
                                 }
                             }
-                            if !found {
-                                return Err(IonError::runtime(
-                                    "DictMerge: no dict on stack",
-                                    line,
-                                    col,
-                                ));
+                            _ => false,
+                        }
+                    }
+                    _ => false,
+                };
+                // Push value back (needed for unwrap) and then bool
+                self.stack.push(val);
+                self.stack.push(Value::Bool(result));
+            }
+            Op::MatchArm => {
+                // u8: kind (1=unwrap Some, 2=unwrap Ok, 3=unwrap Err, 4=get tuple element, 5=get list element)
+                let kind = chunk.read_u8(self.ip);
+                self.ip += 1;
+                match kind {
+                    1 => {
+                        // Unwrap Some: pop Option(Some(v)), push v
+                        let val = self.pop(line, col)?;
+                        match val {
+                            Value::Option(Some(v)) => self.stack.push(*v),
+                            other => self.stack.push(other),
+                        }
+                    }
+                    2 => {
+                        let val = self.pop(line, col)?;
+                        match val {
+                            Value::Result(Ok(v)) => self.stack.push(*v),
+                            other => self.stack.push(other),
+                        }
+                    }
+                    3 => {
+                        let val = self.pop(line, col)?;
+                        match val {
+                            Value::Result(Err(v)) => self.stack.push(*v),
+                            other => self.stack.push(other),
+                        }
+                    }
+                    4 | 5 => {
+                        // Get tuple/list element: u8 index follows
+                        let idx = chunk.read_u8(self.ip) as usize;
+                        self.ip += 1;
+                        let val = self.peek(line, col)?;
+                        match val {
+                            Value::Tuple(items) | Value::List(items) => {
+                                self.stack
+                                    .push(items.get(idx).cloned().unwrap_or(Value::Unit));
+                            }
+                            _ => self.stack.push(Value::Unit),
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Op::MatchEnd => {
+                // Currently unused — match uses Jump/JumpIfFalse directly
+            }
+
+            // --- Range ---
+            Op::BuildRange => {
+                let inclusive = chunk.read_u8(self.ip) != 0;
+                self.ip += 1;
+                let end = self.pop(line, col)?;
+                let start = self.pop(line, col)?;
+                let s = start
+                    .as_int()
+                    .ok_or_else(|| IonError::type_err("range start must be int", line, col))?;
+                let e = end
+                    .as_int()
+                    .ok_or_else(|| IonError::type_err("range end must be int", line, col))?;
+                let items: Vec<Value> = if inclusive {
+                    (s..=e).map(Value::Int).collect()
+                } else {
+                    (s..e).map(Value::Int).collect()
+                };
+                self.stack.push(Value::List(items));
+            }
+
+            // --- Host types ---
+            Op::ConstructStruct => {
+                let type_name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let raw_count = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let type_name = match &chunk.constants[type_name_idx] {
+                    Value::Str(s) => s.clone(),
+                    _ => return Err(IonError::runtime("invalid type name", line, col)),
+                };
+                let has_spread = raw_count & 0x8000 != 0;
+                let field_count = raw_count & 0x7FFF;
+                let mut fields = IndexMap::new();
+                if has_spread {
+                    // Stack: [..., spread_struct, field_name, field_value, ...]
+                    // Pop override fields first
+                    let override_start = self.stack.len() - field_count * 2;
+                    let overrides: Vec<Value> = self.stack.drain(override_start..).collect();
+                    // Pop spread struct
+                    let spread_val = self.pop(line, col)?;
+                    match spread_val {
+                        Value::HostStruct { fields: sf, .. } => {
+                            for (k, v) in sf {
+                                fields.insert(k, v);
                             }
                         }
                         _ => {
                             return Err(IonError::type_err(
-                                ion_str!("spread requires a dict").to_string(),
+                                "spread in struct constructor requires a struct",
                                 line,
                                 col,
                             ))
                         }
                     }
-                }
-
-                // --- Slice ---
-                Op::Slice => {
-                    let flags = chunk.read_u8(self.ip);
-                    self.ip += 1;
-                    let has_start = flags & 1 != 0;
-                    let has_end = flags & 2 != 0;
-                    let inclusive = flags & 4 != 0;
-                    let end_val = if has_end {
-                        Some(self.pop(line, col)?)
-                    } else {
-                        None
-                    };
-                    let start_val = if has_start {
-                        Some(self.pop(line, col)?)
-                    } else {
-                        None
-                    };
-                    let obj = self.pop(line, col)?;
-                    let result =
-                        self.slice_access(obj, start_val, end_val, inclusive, line, col)?;
-                    self.stack.push(result);
-                }
-
-                // --- Print ---
-                Op::Print => {
-                    let newline = chunk.read_u8(self.ip) != 0;
-                    self.ip += 1;
-                    let val = self.pop(line, col)?;
-                    if newline {
-                        println!("{}", val);
-                    } else {
-                        print!("{}", val);
+                    // Apply overrides
+                    for pair in overrides.chunks(2) {
+                        let fname = match &pair[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(IonError::runtime("invalid field name", line, col)),
+                        };
+                        fields.insert(fname, pair[1].clone());
                     }
-                    self.stack.push(Value::Unit);
+                } else {
+                    // No spread: fields are pushed as name, value pairs
+                    let start = self.stack.len() - field_count * 2;
+                    let items: Vec<Value> = self.stack.drain(start..).collect();
+                    for pair in items.chunks(2) {
+                        let fname = match &pair[0] {
+                            Value::Str(s) => s.clone(),
+                            _ => return Err(IonError::runtime("invalid field name", line, col)),
+                        };
+                        fields.insert(fname, pair[1].clone());
+                    }
+                }
+                match self.types.construct_struct(&type_name, fields) {
+                    Ok(val) => self.stack.push(val),
+                    Err(msg) => return Err(IonError::runtime(msg, line, col)),
                 }
             }
-        }
+            Op::ConstructEnum => {
+                let enum_name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let variant_name_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let arg_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                let enum_name = match &chunk.constants[enum_name_idx] {
+                    Value::Str(s) => s.clone(),
+                    _ => return Err(IonError::runtime("invalid enum name", line, col)),
+                };
+                let variant_name = match &chunk.constants[variant_name_idx] {
+                    Value::Str(s) => s.clone(),
+                    _ => return Err(IonError::runtime("invalid variant name", line, col)),
+                };
+                let start = self.stack.len() - arg_count;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                match self.types.construct_enum(&enum_name, &variant_name, args) {
+                    Ok(val) => self.stack.push(val),
+                    Err(msg) => return Err(IonError::runtime(msg, line, col)),
+                }
+            }
 
-        // If we reach the end without Return, return the top of stack or Unit
-        Ok(self.stack.pop().unwrap_or(Value::Unit))
+            // --- Comprehensions ---
+            Op::IterInit => {
+                let val = self.pop(line, col)?;
+                let iter: Box<dyn Iterator<Item = Value>> = match val {
+                    Value::List(items) => Box::new(items.into_iter()),
+                    Value::Tuple(items) => Box::new(items.into_iter()),
+                    Value::Dict(map) => Box::new(
+                        map.into_iter()
+                            .map(|(k, v)| Value::Tuple(vec![Value::Str(k), v])),
+                    ),
+                    Value::Str(s) => {
+                        let chars: Vec<Value> =
+                            s.chars().map(|c| Value::Str(c.to_string())).collect();
+                        Box::new(chars.into_iter())
+                    }
+                    Value::Bytes(bytes) => {
+                        let vals: Vec<Value> =
+                            bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                        Box::new(vals.into_iter())
+                    }
+                    other => {
+                        return Err(IonError::type_err(
+                            format!("cannot iterate over {}", other.type_name()),
+                            line,
+                            col,
+                        ));
+                    }
+                };
+                self.iterators.push(iter);
+                // Push a placeholder on stack so IterNext has something
+                self.stack.push(Value::Unit);
+            }
+            Op::IterNext => {
+                let offset = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                // Pop the previous iteration value/placeholder
+                self.pop(line, col)?;
+                let iter = self
+                    .iterators
+                    .last_mut()
+                    .ok_or_else(|| IonError::runtime("no active iterator", line, col))?;
+                match iter.next() {
+                    Some(val) => {
+                        self.stack.push(val);
+                    }
+                    None => {
+                        self.iterators.pop();
+                        self.stack.push(Value::Unit); // placeholder for the pop after loop
+                        self.ip += offset;
+                    }
+                }
+            }
+            Op::IterDrop => {
+                self.iterators.pop();
+            }
+            Op::ListAppend => {
+                // Stack: [..., list, iter_placeholder, ..., item]
+                // Pop item, find the list deeper in the stack, append to it
+                let item = self.pop(line, col)?;
+                // Find the list — it's below the iterator placeholder
+                // The list is at position: stack.len() - 1 (after popping item) minus
+                // however many scope vars are between. Actually, the list is always
+                // 2 below the current top: [..., list, iter_placeholder, ...]
+                // But with scopes, it's simpler to find the last List on the stack.
+                // Actually: stack layout is [..., list, Unit(iter_placeholder), ...]
+                // Let's find the list by scanning backwards
+                let mut found = false;
+                for i in (0..self.stack.len()).rev() {
+                    if let Value::List(_) = &self.stack[i] {
+                        if let Value::List(ref mut items) = self.stack[i] {
+                            items.push(item.clone());
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return Err(IonError::runtime("ListAppend: no list on stack", line, col));
+                }
+            }
+            Op::DictInsert => {
+                // Stack: [..., dict, iter_placeholder, ..., key, value]
+                let value = self.pop(line, col)?;
+                let key = self.pop(line, col)?;
+                let key_str = match key {
+                    Value::Str(s) => s,
+                    other => other.to_string(),
+                };
+                let mut found = false;
+                for i in (0..self.stack.len()).rev() {
+                    if let Value::Dict(_) = &self.stack[i] {
+                        if let Value::Dict(ref mut map) = self.stack[i] {
+                            map.insert(key_str.clone(), value.clone());
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return Err(IonError::runtime("DictInsert: no dict on stack", line, col));
+                }
+            }
+            Op::DictMerge => {
+                // Stack: [..., target_dict, source_dict]
+                let source = self.pop(line, col)?;
+                match source {
+                    Value::Dict(other) => {
+                        // Find the target dict on stack
+                        let mut found = false;
+                        for i in (0..self.stack.len()).rev() {
+                            if let Value::Dict(ref mut map) = self.stack[i] {
+                                for (k, v) in other {
+                                    map.insert(k, v);
+                                }
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            return Err(IonError::runtime(
+                                "DictMerge: no dict on stack",
+                                line,
+                                col,
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(IonError::type_err(
+                            ion_str!("spread requires a dict").to_string(),
+                            line,
+                            col,
+                        ))
+                    }
+                }
+            }
+
+            // --- Slice ---
+            Op::Slice => {
+                let flags = chunk.read_u8(self.ip);
+                self.ip += 1;
+                let has_start = flags & 1 != 0;
+                let has_end = flags & 2 != 0;
+                let inclusive = flags & 4 != 0;
+                let end_val = if has_end {
+                    Some(self.pop(line, col)?)
+                } else {
+                    None
+                };
+                let start_val = if has_start {
+                    Some(self.pop(line, col)?)
+                } else {
+                    None
+                };
+                let obj = self.pop(line, col)?;
+                let result = self.slice_access(obj, start_val, end_val, inclusive, line, col)?;
+                self.stack.push(result);
+            }
+
+            // --- Print ---
+            Op::Print => {
+                let newline = chunk.read_u8(self.ip) != 0;
+                self.ip += 1;
+                let val = self.pop(line, col)?;
+                if newline {
+                    println!("{}", val);
+                } else {
+                    print!("{}", val);
+                }
+                self.stack.push(Value::Unit);
+            }
+
+            Op::TryBegin | Op::TryEnd => {
+                // Handled in run_chunk before dispatch
+                unreachable!()
+            }
+        }
+        Ok(None)
     }
 
     // ---- Helpers ----
@@ -1865,6 +1966,40 @@ impl Vm {
                 }
                 Ok(Value::Option(Some(Box::new(max.clone()))))
             }
+            "sum" => {
+                let mut int_sum: i64 = 0;
+                let mut float_sum: f64 = 0.0;
+                let mut has_float = false;
+                for item in items {
+                    match item {
+                        Value::Int(n) => int_sum += n,
+                        Value::Float(f) => {
+                            has_float = true;
+                            float_sum += f;
+                        }
+                        _ => {
+                            return Err(IonError::type_err(
+                                "sum() requires numeric elements".to_string(),
+                                line,
+                                col,
+                            ))
+                        }
+                    }
+                }
+                if has_float {
+                    Ok(Value::Float(float_sum + int_sum as f64))
+                } else {
+                    Ok(Value::Int(int_sum))
+                }
+            }
+            "window" => {
+                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("window requires int argument".to_string(), line, col)
+                })? as usize;
+                let result: Vec<Value> =
+                    items.windows(n).map(|w| Value::List(w.to_vec())).collect();
+                Ok(Value::List(result))
+            }
             _ => Err(IonError::type_err(
                 format!("list has no method '{}'", method),
                 line,
@@ -1979,6 +2114,14 @@ impl Vm {
             "bytes" => {
                 let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
                 Ok(Value::List(bytes))
+            }
+            "strip_prefix" => {
+                let pre = args.first().and_then(|a| a.as_str()).unwrap_or("");
+                Ok(Value::Str(s.strip_prefix(pre).unwrap_or(s).to_string()))
+            }
+            "strip_suffix" => {
+                let suf = args.first().and_then(|a| a.as_str()).unwrap_or("");
+                Ok(Value::Str(s.strip_suffix(suf).unwrap_or(s).to_string()))
             }
             "pad_start" => {
                 let width = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
@@ -2188,6 +2331,17 @@ impl Vm {
                     ))
                 }
             }
+            "keys_of" => {
+                let target = args.first().ok_or_else(|| {
+                    IonError::type_err("keys_of requires an argument".to_string(), line, col)
+                })?;
+                let keys: Vec<Value> = map
+                    .iter()
+                    .filter(|(_, v)| *v == target)
+                    .map(|(k, _)| Value::Str(k.clone()))
+                    .collect();
+                Ok(Value::List(keys))
+            }
             "zip" => {
                 if let Some(Value::Dict(other)) = args.first() {
                     let mut result = indexmap::IndexMap::new();
@@ -2228,6 +2382,14 @@ impl Vm {
         match method {
             "is_some" => Ok(Value::Bool(opt.is_some())),
             "is_none" => Ok(Value::Bool(opt.is_none())),
+            "unwrap" => match opt {
+                Some(v) => Ok(*v.clone()),
+                None => Err(IonError::runtime(
+                    "called unwrap on None".to_string(),
+                    line,
+                    col,
+                )),
+            },
             "unwrap_or" => Ok(opt
                 .as_ref()
                 .map(|v| *v.clone())
@@ -2265,6 +2427,14 @@ impl Vm {
         match method {
             "is_ok" => Ok(Value::Bool(res.is_ok())),
             "is_err" => Ok(Value::Bool(res.is_err())),
+            "unwrap" => match res {
+                Ok(v) => Ok(*v.clone()),
+                Err(e) => Err(IonError::runtime(
+                    format!("called unwrap on Err: {}", e),
+                    line,
+                    col,
+                )),
+            },
             "unwrap_or" => Ok(match res {
                 Ok(v) => *v.clone(),
                 Err(_) => args.first().cloned().unwrap_or(Value::Unit),
@@ -2426,6 +2596,93 @@ impl Vm {
                     ));
                 }
             }
+        }
+    }
+
+    fn call_function_named(
+        &mut self,
+        arg_count: usize,
+        named_map: &[(usize, String)],
+        line: usize,
+        col: usize,
+    ) -> Result<(), IonError> {
+        // Stack: [..., func, arg0, arg1, ..., argN-1]
+        let args_start = self.stack.len() - arg_count;
+        let func_idx = args_start - 1;
+        let func = self.stack[func_idx].clone();
+        let raw_args: Vec<Value> = self.stack[args_start..].to_vec();
+        self.stack.truncate(func_idx);
+
+        match &func {
+            Value::Fn(ion_fn) => {
+                // Reorder args based on named_map
+                let mut ordered = vec![None; ion_fn.params.len()];
+                let mut pos_idx = 0;
+                for (i, val) in raw_args.into_iter().enumerate() {
+                    if let Some((_, ref name)) = named_map.iter().find(|(pos, _)| *pos == i) {
+                        // Named arg: find param by name
+                        let param_idx = ion_fn
+                            .params
+                            .iter()
+                            .position(|p| &p.name == name)
+                            .ok_or_else(|| {
+                                IonError::runtime(
+                                    format!(
+                                        "unknown parameter '{}' for function '{}'",
+                                        name, ion_fn.name
+                                    ),
+                                    line,
+                                    col,
+                                )
+                            })?;
+                        ordered[param_idx] = Some(val);
+                    } else {
+                        // Positional arg: fill next available slot
+                        while pos_idx < ordered.len() && ordered[pos_idx].is_some() {
+                            pos_idx += 1;
+                        }
+                        if pos_idx < ordered.len() {
+                            ordered[pos_idx] = Some(val);
+                            pos_idx += 1;
+                        }
+                    }
+                }
+                // Fill defaults and push reordered args
+                let reordered: Vec<Value> = ordered
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        v.unwrap_or_else(|| {
+                            ion_fn
+                                .params
+                                .get(i)
+                                .and_then(|p| p.default.as_ref())
+                                .map(|d| {
+                                    let mut interp = crate::interpreter::Interpreter::new();
+                                    interp.eval_single_expr(d).unwrap_or(Value::Unit)
+                                })
+                                .unwrap_or(Value::Unit)
+                        })
+                    })
+                    .collect();
+                // Push func + reordered args, then call normally
+                self.stack.push(func.clone());
+                for arg in &reordered {
+                    self.stack.push(arg.clone());
+                }
+                self.call_function(reordered.len(), line, col)
+            }
+            Value::BuiltinFn(_, f) => {
+                // Builtins don't support named args, just pass positionally
+                let result = f(&raw_args).map_err(|e| IonError::runtime(e, line, col))?;
+                self.stack.push(result);
+                Ok(())
+            }
+            _ => Err(IonError::type_err(
+                format!("cannot call {}", func.type_name()),
+                line,
+                col,
+            )),
         }
     }
 }

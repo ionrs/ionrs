@@ -641,24 +641,38 @@ impl Compiler {
             }
 
             ExprKind::Call { func, args } => {
-                // Named arguments require interpreter fallback
-                if args.iter().any(|a| a.name.is_some()) {
-                    return Err(IonError::runtime(
-                        "named arguments not supported in VM".to_string(),
-                        line,
-                        col,
-                    ));
-                }
+                let has_named = args.iter().any(|a| a.name.is_some());
                 // Sub-expressions are not in tail position (already cleared above)
                 self.compile_expr(func)?;
                 for arg in args {
                     self.compile_expr(&arg.value)?;
                 }
-                #[cfg(feature = "optimize")]
-                let op = if was_tail { Op::TailCall } else { Op::Call };
-                #[cfg(not(feature = "optimize"))]
-                let op = Op::Call;
-                self.chunk.emit_op_u8_span(op, args.len() as u8, line, col);
+                if has_named {
+                    // Emit CallNamed: total_args, named_count, then (position, name_idx) pairs
+                    let named: Vec<(u8, u16)> = args
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, a)| {
+                            a.name
+                                .as_ref()
+                                .map(|n| (i as u8, self.chunk.add_constant(Value::Str(n.clone()))))
+                        })
+                        .collect();
+                    self.chunk.emit_op(Op::CallNamed, line);
+                    self.chunk.emit(args.len() as u8, line);
+                    self.chunk.emit(named.len() as u8, line);
+                    for (pos, name_idx) in named {
+                        self.chunk.emit(pos, line);
+                        self.chunk.emit((name_idx >> 8) as u8, line);
+                        self.chunk.emit(name_idx as u8, line);
+                    }
+                } else {
+                    #[cfg(feature = "optimize")]
+                    let op = if was_tail { Op::TailCall } else { Op::Call };
+                    #[cfg(not(feature = "optimize"))]
+                    let op = Op::Call;
+                    self.chunk.emit_op_u8_span(op, args.len() as u8, line, col);
+                }
             }
 
             ExprKind::List(items) => {
@@ -1019,13 +1033,60 @@ impl Compiler {
                 ));
             }
 
-            ExprKind::TryCatch { .. } => {
-                // Fall back to tree-walk for try/catch
-                return Err(IonError::runtime(
-                    "try/catch not supported in bytecode VM".to_string(),
-                    line,
-                    col,
-                ));
+            ExprKind::TryCatch { body, var, handler } => {
+                // TryBegin catch_offset  (jump to catch block on error)
+                let try_begin_patch = self.chunk.emit_jump(Op::TryBegin, line);
+
+                // Compile try body
+                self.begin_scope(line);
+                let old_tail = self.in_tail_position;
+                self.in_tail_position = false;
+                for (i, stmt) in body.iter().enumerate() {
+                    if i == body.len() - 1 {
+                        if let crate::ast::StmtKind::ExprStmt { expr, .. } = &stmt.kind {
+                            self.compile_expr(expr)?;
+                        } else {
+                            self.compile_stmt(stmt)?;
+                            self.chunk.emit_op(Op::Unit, line);
+                        }
+                    } else {
+                        self.compile_stmt(stmt)?;
+                    }
+                }
+                if body.is_empty() {
+                    self.chunk.emit_op(Op::Unit, line);
+                }
+                self.in_tail_position = old_tail;
+                self.end_scope(line);
+
+                // TryEnd jump_offset  (no error: pop handler, jump over catch)
+                let try_end_patch = self.chunk.emit_jump(Op::TryEnd, line);
+
+                // Patch TryBegin to point here (catch block start)
+                self.chunk.patch_jump(try_begin_patch);
+
+                // Catch block: error message string is on stack
+                self.begin_scope(line);
+                self.emit_define_local(var, false, line);
+                for (i, stmt) in handler.iter().enumerate() {
+                    if i == handler.len() - 1 {
+                        if let crate::ast::StmtKind::ExprStmt { expr, .. } = &stmt.kind {
+                            self.compile_expr(expr)?;
+                        } else {
+                            self.compile_stmt(stmt)?;
+                            self.chunk.emit_op(Op::Unit, line);
+                        }
+                    } else {
+                        self.compile_stmt(stmt)?;
+                    }
+                }
+                if handler.is_empty() {
+                    self.chunk.emit_op(Op::Unit, line);
+                }
+                self.end_scope(line);
+
+                // Patch TryEnd jump to skip catch block
+                self.chunk.patch_jump(try_end_patch);
             }
         }
         self.in_tail_position = was_tail;
