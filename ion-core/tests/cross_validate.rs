@@ -1142,3 +1142,49 @@ fn cross_result_methods() {
     assert_both_eq("Ok(42).unwrap()", Value::Int(42));
     assert_both_eq(r#"Err("bad").unwrap_or(0)"#, Value::Int(0));
 }
+
+// ============================================================
+// MessagePack
+// ============================================================
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn cross_msgpack_int() {
+    assert_both_eq("msgpack_decode(msgpack_encode(42))", Value::Int(42));
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn cross_msgpack_string() {
+    assert_both_eq(
+        r#"msgpack_decode(msgpack_encode("hello"))"#,
+        Value::Str("hello".to_string()),
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn cross_msgpack_bytes() {
+    assert_both_eq(
+        r#"msgpack_decode(msgpack_encode(b"\xde\xad"))"#,
+        Value::Bytes(vec![0xde, 0xad]),
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn cross_msgpack_list() {
+    assert_both_eq(
+        "msgpack_decode(msgpack_encode([1, 2, 3]))",
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn cross_msgpack_dict() {
+    assert_both_eq(
+        r#"let d = #{a: 1}; msgpack_decode(msgpack_encode(d))"#,
+        Value::Dict(indexmap::indexmap! { "a".to_string() => Value::Int(1) }),
+    );
+}

@@ -3496,3 +3496,98 @@ fn test_dict_keys_of() {
     );
     assert_eq!(eval(r#"#{a: 1}.keys_of(99)"#), Value::List(vec![]));
 }
+
+// ============================================================
+// MessagePack
+// ============================================================
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_int() {
+    assert_eq!(eval("msgpack_decode(msgpack_encode(42))"), Value::Int(42));
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_string() {
+    assert_eq!(
+        eval(r#"msgpack_decode(msgpack_encode("hello"))"#),
+        Value::Str("hello".to_string())
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_bytes() {
+    assert_eq!(
+        eval(r#"msgpack_decode(msgpack_encode(b"\xde\xad"))"#),
+        Value::Bytes(vec![0xde, 0xad])
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_list() {
+    assert_eq!(
+        eval("msgpack_decode(msgpack_encode([1, 2, 3]))"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_dict() {
+    assert_eq!(
+        eval(r#"msgpack_decode(msgpack_encode(#{a: 1, b: 2}))"#),
+        Value::Dict(indexmap::indexmap! {
+            "a".to_string() => Value::Int(1),
+            "b".to_string() => Value::Int(2),
+        })
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_nested() {
+    assert_eq!(
+        eval(
+            r#"let data = #{name: "ion", items: [1, 2], raw: b"\xff"}; msgpack_decode(msgpack_encode(data))"#
+        ),
+        Value::Dict(indexmap::indexmap! {
+            "name".to_string() => Value::Str("ion".to_string()),
+            "items".to_string() => Value::List(vec![Value::Int(1), Value::Int(2)]),
+            "raw".to_string() => Value::Bytes(vec![0xff]),
+        })
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_encode_returns_bytes() {
+    assert_eq!(
+        eval(r#"type_of(msgpack_encode(42))"#),
+        Value::Str("bytes".to_string())
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_bool_none() {
+    assert_eq!(
+        eval("msgpack_decode(msgpack_encode(true))"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval("msgpack_decode(msgpack_encode(None))"),
+        Value::Option(None)
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
+fn test_msgpack_round_trip_float() {
+    assert_eq!(
+        eval("msgpack_decode(msgpack_encode(3.14))"),
+        Value::Float(3.14)
+    );
+}

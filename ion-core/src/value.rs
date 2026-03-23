@@ -369,6 +369,121 @@ impl Value {
         }
     }
 
+    /// Encode an Ion Value to MessagePack bytes.
+    #[cfg(feature = "msgpack")]
+    pub fn to_msgpack(&self) -> Result<Vec<u8>, String> {
+        let mp = self.to_msgpack_value();
+        let mut buf = Vec::new();
+        rmpv::encode::write_value(&mut buf, &mp)
+            .map_err(|e| format!("{}{}", ion_str!("msgpack_encode error: "), e))?;
+        Ok(buf)
+    }
+
+    /// Decode MessagePack bytes to an Ion Value.
+    #[cfg(feature = "msgpack")]
+    pub fn from_msgpack(data: &[u8]) -> Result<Value, String> {
+        let mut cursor = std::io::Cursor::new(data);
+        let mp = rmpv::decode::read_value(&mut cursor)
+            .map_err(|e| format!("{}{}", ion_str!("msgpack_decode error: "), e))?;
+        Ok(Self::from_msgpack_value(mp))
+    }
+
+    #[cfg(feature = "msgpack")]
+    fn to_msgpack_value(&self) -> rmpv::Value {
+        match self {
+            Value::Int(n) => rmpv::Value::Integer((*n).into()),
+            Value::Float(n) => rmpv::Value::F64(*n),
+            Value::Bool(b) => rmpv::Value::Boolean(*b),
+            Value::Str(s) => rmpv::Value::String(s.clone().into()),
+            Value::Bytes(b) => rmpv::Value::Binary(b.clone()),
+            Value::List(items) => {
+                rmpv::Value::Array(items.iter().map(|v| v.to_msgpack_value()).collect())
+            }
+            Value::Dict(map) => {
+                let pairs: Vec<(rmpv::Value, rmpv::Value)> = map
+                    .iter()
+                    .map(|(k, v)| (rmpv::Value::String(k.clone().into()), v.to_msgpack_value()))
+                    .collect();
+                rmpv::Value::Map(pairs)
+            }
+            Value::Tuple(items) => {
+                rmpv::Value::Array(items.iter().map(|v| v.to_msgpack_value()).collect())
+            }
+            Value::Option(Some(v)) => v.to_msgpack_value(),
+            Value::Option(None) | Value::Unit => rmpv::Value::Nil,
+            Value::Result(Ok(v)) => v.to_msgpack_value(),
+            Value::Result(Err(v)) => {
+                let pairs = vec![(rmpv::Value::String("error".into()), v.to_msgpack_value())];
+                rmpv::Value::Map(pairs)
+            }
+            Value::HostStruct { fields, .. } => {
+                let pairs: Vec<(rmpv::Value, rmpv::Value)> = fields
+                    .iter()
+                    .map(|(k, v)| (rmpv::Value::String(k.clone().into()), v.to_msgpack_value()))
+                    .collect();
+                rmpv::Value::Map(pairs)
+            }
+            Value::HostEnum {
+                enum_name,
+                variant,
+                data,
+            } => {
+                let mut pairs = vec![(
+                    rmpv::Value::String("_type".into()),
+                    rmpv::Value::String(format!("{}::{}", enum_name, variant).into()),
+                )];
+                if !data.is_empty() {
+                    pairs.push((
+                        rmpv::Value::String("data".into()),
+                        rmpv::Value::Array(data.iter().map(|v| v.to_msgpack_value()).collect()),
+                    ));
+                }
+                rmpv::Value::Map(pairs)
+            }
+            #[cfg(feature = "concurrency")]
+            Value::Task(_) | Value::Channel(_) => rmpv::Value::Nil,
+            Value::Fn(_) | Value::BuiltinFn(_, _) => rmpv::Value::Nil,
+        }
+    }
+
+    #[cfg(feature = "msgpack")]
+    fn from_msgpack_value(mp: rmpv::Value) -> Value {
+        match mp {
+            rmpv::Value::Nil => Value::Option(None),
+            rmpv::Value::Boolean(b) => Value::Bool(b),
+            rmpv::Value::Integer(n) => {
+                if let Some(i) = n.as_i64() {
+                    Value::Int(i)
+                } else if let Some(u) = n.as_u64() {
+                    Value::Int(u as i64)
+                } else {
+                    Value::Int(0)
+                }
+            }
+            rmpv::Value::F32(f) => Value::Float(f as f64),
+            rmpv::Value::F64(f) => Value::Float(f),
+            rmpv::Value::String(s) => Value::Str(s.into_str().unwrap_or_default().to_string()),
+            rmpv::Value::Binary(b) => Value::Bytes(b),
+            rmpv::Value::Array(arr) => {
+                Value::List(arr.into_iter().map(Self::from_msgpack_value).collect())
+            }
+            rmpv::Value::Map(pairs) => {
+                let dict: IndexMap<String, Value> = pairs
+                    .into_iter()
+                    .filter_map(|(k, v)| {
+                        let key = match k {
+                            rmpv::Value::String(s) => s.into_str().map(|s| s.to_string()),
+                            _ => None,
+                        };
+                        key.map(|k| (k, Self::from_msgpack_value(v)))
+                    })
+                    .collect();
+                Value::Dict(dict)
+            }
+            rmpv::Value::Ext(_, data) => Value::Bytes(data),
+        }
+    }
+
     /// Convert a serde_json::Value to an Ion Value.
     pub fn from_json(json: serde_json::Value) -> Value {
         match json {

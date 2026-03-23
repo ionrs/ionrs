@@ -3522,6 +3522,32 @@ pub fn register_builtins(env: &mut Env) {
         }),
         false,
     );
+    #[cfg(feature = "msgpack")]
+    env.define(
+        ion_str!("msgpack_encode"),
+        Value::BuiltinFn(ion_str!("msgpack_encode"), |args| {
+            if args.len() != 1 {
+                return Err(ion_str!("msgpack_encode takes 1 argument"));
+            }
+            args[0].to_msgpack().map(Value::Bytes)
+        }),
+        false,
+    );
+    #[cfg(feature = "msgpack")]
+    env.define(
+        ion_str!("msgpack_decode"),
+        Value::BuiltinFn(ion_str!("msgpack_decode"), |args| {
+            if args.len() != 1 {
+                return Err(ion_str!("msgpack_decode takes 1 argument"));
+            }
+            let data = match &args[0] {
+                Value::Bytes(b) => b,
+                _ => return Err(ion_str!("msgpack_decode requires bytes")),
+            };
+            Value::from_msgpack(data)
+        }),
+        false,
+    );
     env.define(
         ion_str!("enumerate").to_string(),
         Value::BuiltinFn(ion_str!("enumerate").to_string(), |args| {
