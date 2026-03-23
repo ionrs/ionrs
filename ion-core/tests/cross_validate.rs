@@ -1385,3 +1385,443 @@ fn cross_cell_type_of() {
 fn cross_cell_update_returns_value() {
     assert_both_eq("let c = cell(10); c.update(|x| x * 2)", Value::Int(20));
 }
+
+// ============================================================
+// Set methods (expanded)
+// ============================================================
+
+#[test]
+fn cross_set_intersection() {
+    assert_both_eq(
+        "set([1, 2, 3]).intersection(set([2, 3, 4])).len()",
+        Value::Int(2),
+    );
+}
+
+#[test]
+fn cross_set_difference() {
+    assert_both_eq(
+        "set([1, 2, 3]).difference(set([2, 3, 4])).len()",
+        Value::Int(1),
+    );
+}
+
+#[test]
+fn cross_set_contains() {
+    assert_both_eq("set([1, 2, 3]).contains(2)", Value::Bool(true));
+    assert_both_eq("set([1, 2, 3]).contains(5)", Value::Bool(false));
+}
+
+#[test]
+fn cross_set_add_remove() {
+    // set.add/remove mutate in-place; both engines should agree
+    assert_both("let mut s = set([1, 2]); s.add(3); s.len()");
+    assert_both("let mut s = set([1, 2, 3]); s.remove(2); s.len()");
+}
+
+#[test]
+fn cross_set_add_duplicate() {
+    assert_both("let mut s = set([1, 2]); s.add(2); s.len()");
+}
+
+#[test]
+fn cross_set_to_list() {
+    assert_both_eq("set([3, 1, 2]).to_list().len()", Value::Int(3));
+}
+
+#[test]
+fn cross_set_is_empty() {
+    assert_both_eq("set([]).is_empty()", Value::Bool(true));
+    assert_both_eq("set([1]).is_empty()", Value::Bool(false));
+}
+
+// ============================================================
+// Spread (expanded)
+// ============================================================
+
+#[test]
+fn cross_spread_multiple() {
+    assert_both_eq(
+        "let a = [1, 2]; let b = [3, 4]; [...a, ...b]",
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(4),
+        ]),
+    );
+}
+
+#[test]
+fn cross_spread_with_elements() {
+    assert_both_eq(
+        "let a = [2, 3]; [1, ...a, 4]",
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(4),
+        ]),
+    );
+}
+
+#[test]
+fn cross_spread_empty() {
+    assert_both_eq(
+        "let a = []; [1, ...a, 2]",
+        Value::List(vec![Value::Int(1), Value::Int(2)]),
+    );
+}
+
+// ============================================================
+// Pipe operator (expanded)
+// ============================================================
+
+#[test]
+fn cross_pipe_chain() {
+    assert_both_eq(
+        "fn double(x) { x * 2 } fn inc(x) { x + 1 } 5 |> double |> inc",
+        Value::Int(11),
+    );
+}
+
+
+// ============================================================
+// Range (expanded)
+// ============================================================
+
+#[test]
+fn cross_range_in_list() {
+    assert_both_eq(
+        "let mut r = []; for i in 0..3 { r = r.push(i); } r",
+        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2)]),
+    );
+}
+
+#[test]
+fn cross_range_inclusive_boundary() {
+    assert_both_eq(
+        "let mut r = []; for i in 1..=1 { r = r.push(i); } r",
+        Value::List(vec![Value::Int(1)]),
+    );
+}
+
+// ============================================================
+// Match (expanded)
+// ============================================================
+
+#[test]
+fn cross_match_nested_option() {
+    assert_both_eq(
+        "match Some(Some(42)) { Some(Some(v)) => v, _ => 0 }",
+        Value::Int(42),
+    );
+}
+
+#[test]
+fn cross_match_string() {
+    assert_both_eq(
+        r#"match "hello" { "hello" => 1, "world" => 2, _ => 0 }"#,
+        Value::Int(1),
+    );
+}
+
+#[test]
+fn cross_match_bool() {
+    assert_both_eq("match true { true => 1, false => 0 }", Value::Int(1));
+}
+
+#[test]
+fn cross_match_in_function() {
+    assert_both_eq(
+        r#"
+        fn describe(opt) {
+            match opt {
+                Some(v) => f"has {v}",
+                None => "empty",
+            }
+        }
+        describe(Some(42))
+    "#,
+        Value::Str("has 42".to_string()),
+    );
+}
+
+// ============================================================
+// List methods (expanded)
+// ============================================================
+
+#[test]
+fn cross_list_push() {
+    assert_both_eq(
+        "let a = [1, 2].push(3); a",
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+}
+
+#[test]
+fn cross_list_pop() {
+    // pop returns Option(Some(last))
+    assert_both("let a = [1, 2, 3].pop(); a");
+}
+
+#[test]
+fn cross_list_negative_index() {
+    assert_both_eq("[10, 20, 30][-1]", Value::Int(30));
+    assert_both_eq("[10, 20, 30][-2]", Value::Int(20));
+}
+
+#[test]
+fn cross_list_find() {
+    assert_both("[1, 2, 3, 4].find(|x| x > 2)");
+    assert_both("[1, 2, 3].find(|x| x > 5)");
+}
+
+// ============================================================
+// String methods (expanded)
+// ============================================================
+
+#[test]
+fn cross_string_to_int() {
+    // to_int returns Result
+    assert_both(r#""42".to_int()"#);
+}
+
+#[test]
+fn cross_string_to_float() {
+    // to_float returns Result
+    assert_both(r#""3.14".to_float()"#);
+}
+
+// ============================================================
+// Option/Result methods (expanded)
+// ============================================================
+
+#[test]
+fn cross_option_map() {
+    assert_both_eq(
+        "Some(5).map(|x| x * 2)",
+        Value::Option(Some(Box::new(Value::Int(10)))),
+    );
+    assert_both_eq("None.map(|x| x * 2)", Value::Option(None));
+}
+
+#[test]
+fn cross_option_is_some_none() {
+    assert_both_eq("Some(1).is_some()", Value::Bool(true));
+    assert_both_eq("Some(1).is_none()", Value::Bool(false));
+    assert_both_eq("None.is_some()", Value::Bool(false));
+    assert_both_eq("None.is_none()", Value::Bool(true));
+}
+
+#[test]
+fn cross_result_is_ok_err() {
+    assert_both_eq("Ok(1).is_ok()", Value::Bool(true));
+    assert_both_eq("Ok(1).is_err()", Value::Bool(false));
+    assert_both_eq(r#"Err("x").is_ok()"#, Value::Bool(false));
+    assert_both_eq(r#"Err("x").is_err()"#, Value::Bool(true));
+}
+
+#[test]
+fn cross_result_map() {
+    assert_both_eq(
+        "Ok(5).map(|x| x + 1)",
+        Value::Result(Ok(Box::new(Value::Int(6)))),
+    );
+    assert_both_eq(
+        r#"Err("bad").map(|x| x + 1)"#,
+        Value::Result(Err(Box::new(Value::Str("bad".to_string())))),
+    );
+}
+
+// ============================================================
+// For-in destructuring
+// ============================================================
+
+#[test]
+fn cross_for_in_tuple_destructure() {
+    assert_both_eq(
+        "let mut sum = 0; for (i, v) in [(0, 10), (1, 20)] { sum += v; } sum",
+        Value::Int(30),
+    );
+}
+
+#[test]
+fn cross_for_in_enumerate_destructure() {
+    assert_both_eq(
+        r#"let mut s = ""; for (i, c) in "ab".chars().enumerate() { s = s + c; } s"#,
+        Value::Str("ab".to_string()),
+    );
+}
+
+// ============================================================
+// While-let
+// ============================================================
+
+#[test]
+fn cross_while_let() {
+    assert_both_eq(
+        r#"
+        let mut items = [Some(1), Some(2), None];
+        let mut sum = 0;
+        let mut i = 0;
+        while i < items.len() {
+            if let Some(v) = items[i] { sum += v; }
+            i += 1;
+        }
+        sum
+    "#,
+        Value::Int(3),
+    );
+}
+
+// ============================================================
+// Nested data structures
+// ============================================================
+
+#[test]
+fn cross_nested_dict_access() {
+    assert_both_eq(
+        r#"let d = #{a: #{b: 42}}; d.a.b"#,
+        Value::Int(42),
+    );
+}
+
+#[test]
+fn cross_nested_list_index() {
+    assert_both_eq("[[1, 2], [3, 4]][1][0]", Value::Int(3));
+}
+
+// ============================================================
+// Closure edge cases
+// ============================================================
+
+#[test]
+fn cross_closure_captures_loop_var() {
+    assert_both_eq(
+        r#"
+        let mut fns = [];
+        for i in [1, 2, 3] {
+            fns = fns.push(|x| x + i);
+        }
+        fns[0](10)
+    "#,
+        Value::Int(11),
+    );
+}
+
+#[test]
+fn cross_closure_returning_closure() {
+    assert_both_eq(
+        "fn make(x) { |y| |z| x + y + z } make(1)(2)(3)",
+        Value::Int(6),
+    );
+}
+
+// ============================================================
+// Compound assignment operators
+// ============================================================
+
+#[test]
+fn cross_compound_assign() {
+    assert_both("let mut x = 10; x -= 3; x");
+    assert_both("let mut x = 4; x *= 5; x");
+    assert_both("let mut x = 20; x /= 4; x");
+    assert_both("let mut x = 17; x %= 5; x");
+}
+
+// ============================================================
+// Type conversions
+// ============================================================
+
+#[test]
+fn cross_int_to_float() {
+    assert_both_eq("int(3.7)", Value::Int(3));
+    assert_both_eq("float(42)", Value::Float(42.0));
+}
+
+#[test]
+fn cross_string_to_int_builtin() {
+    assert_both_eq(r#"int("123")"#, Value::Int(123));
+    assert_both_eq(r#"float("3.14")"#, Value::Float(3.14));
+}
+
+// ============================================================
+// Complex programs (expanded)
+// ============================================================
+
+#[test]
+fn cross_accumulator_pattern() {
+    assert_both_eq(
+        r#"
+        let mut result = [];
+        for i in 0..5 {
+            if i % 2 == 0 {
+                result = result.push(i * i);
+            }
+        }
+        result
+    "#,
+        Value::List(vec![Value::Int(0), Value::Int(4), Value::Int(16)]),
+    );
+}
+
+#[test]
+fn cross_nested_match_in_loop() {
+    assert_both(
+        r#"
+        let items = [Some(1), None, Some(3)];
+        let mut sum = 0;
+        for item in items {
+            match item {
+                Some(v) => { sum += v; }
+                None => {}
+            }
+        }
+        sum
+    "#,
+    );
+}
+
+#[test]
+fn cross_functional_pipeline() {
+    assert_both_eq(
+        "[1, 2, 3, 4, 5].filter(|x| x % 2 == 1).map(|x| x * x).reduce(|a, b| a + b)",
+        Value::Int(35),
+    );
+}
+
+#[test]
+fn cross_dict_comprehension() {
+    assert_both(r#"#{x: x * x for x in [1, 2, 3]}"#);
+}
+
+#[test]
+fn cross_early_return() {
+    assert_both_eq(
+        r#"
+        fn find_first_even(lst) {
+            for x in lst {
+                if x % 2 == 0 { return x; }
+            }
+            -1
+        }
+        find_first_even([1, 3, 4, 6])
+    "#,
+        Value::Int(4),
+    );
+}
+
+#[test]
+fn cross_recursive_sum() {
+    assert_both_eq(
+        r#"
+        fn sum(lst) {
+            if lst.len() == 0 { 0 }
+            else { lst[0] + sum(lst.slice(1, lst.len())) }
+        }
+        sum([1, 2, 3, 4, 5])
+    "#,
+        Value::Int(15),
+    );
+}
