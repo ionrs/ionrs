@@ -1786,6 +1786,26 @@ impl Vm {
                     items.iter().filter(|v| *v == target).count() as i64
                 ))
             }
+            "slice" => {
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
+                let end = args
+                    .get(1)
+                    .and_then(|a| a.as_int())
+                    .map(|n| n as usize)
+                    .unwrap_or(items.len());
+                let start = start.min(items.len());
+                let end = end.min(items.len());
+                Ok(Value::List(items[start..end].to_vec()))
+            }
+            "dedup" => {
+                let mut result: Vec<Value> = Vec::new();
+                for item in items {
+                    if result.last() != Some(item) {
+                        result.push(item.clone());
+                    }
+                }
+                Ok(Value::List(result))
+            }
             _ => Err(IonError::type_err(
                 format!("list has no method '{}'", method),
                 line,
@@ -1899,6 +1919,40 @@ impl Vm {
             "bytes" => {
                 let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
                 Ok(Value::List(bytes))
+            }
+            "pad_start" => {
+                let width = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("pad_start requires int argument".to_string(), line, col)
+                })? as usize;
+                let ch = args
+                    .get(1)
+                    .and_then(|a| a.as_str())
+                    .and_then(|s| s.chars().next())
+                    .unwrap_or(' ');
+                let char_len = s.chars().count();
+                if char_len >= width {
+                    Ok(Value::Str(s.to_string()))
+                } else {
+                    let pad: String = std::iter::repeat_n(ch, width - char_len).collect();
+                    Ok(Value::Str(format!("{}{}", pad, s)))
+                }
+            }
+            "pad_end" => {
+                let width = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("pad_end requires int argument".to_string(), line, col)
+                })? as usize;
+                let ch = args
+                    .get(1)
+                    .and_then(|a| a.as_str())
+                    .and_then(|s| s.chars().next())
+                    .unwrap_or(' ');
+                let char_len = s.chars().count();
+                if char_len >= width {
+                    Ok(Value::Str(s.to_string()))
+                } else {
+                    let pad: String = std::iter::repeat_n(ch, width - char_len).collect();
+                    Ok(Value::Str(format!("{}{}", s, pad)))
+                }
             }
             "reverse" => Ok(Value::Str(s.chars().rev().collect())),
             "slice" => {

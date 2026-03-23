@@ -635,6 +635,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.split(delim)` | List | Split by delimiter |
 | `.replace(from, to)` | String | Replace all occurrences |
 | `.chars()` | List | List of single-char strings |
+| `.pad_start(n, ch?)` | String | Left-pad to width n (default space) |
+| `.pad_end(n, ch?)` | String | Right-pad to width n (default space) |
 | `.reverse()` | String | Reversed string |
 | `.repeat(n)` | String | Repeat n times |
 | `.slice(start, end)` | String | Substring by char index |
@@ -667,6 +669,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.all(fn)` | Bool | True if fn returns true for all elements |
 | `.index(val)` | Option(Int) | Index of first occurrence |
 | `.count(val)` | Int | Number of occurrences |
+| `.slice(start, end?)` | List | Sublist by index |
+| `.dedup()` | List | Remove consecutive duplicates |
 | `.sort_by(fn)` | List | Sort with custom comparator (fn returns int: neg/0/pos) |
 
 ### Tuple Methods

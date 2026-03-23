@@ -3317,3 +3317,77 @@ fn test_list_count_method() {
     assert_eq!(eval(r#"[1, 2, 1, 3, 1].count(1)"#), Value::Int(3));
     assert_eq!(eval(r#"[1, 2, 3].count(99)"#), Value::Int(0));
 }
+
+#[test]
+fn test_list_slice_method() {
+    assert_eq!(
+        eval(r#"[1, 2, 3, 4, 5].slice(1, 3)"#),
+        Value::List(vec![Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        eval(r#"[1, 2, 3].slice(0, 2)"#),
+        Value::List(vec![Value::Int(1), Value::Int(2)])
+    );
+    assert_eq!(
+        eval(r#"[1, 2, 3].slice(1)"#),
+        Value::List(vec![Value::Int(2), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_list_dedup_method() {
+    assert_eq!(
+        eval(r#"[1, 1, 2, 2, 3, 1].dedup()"#),
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(1)
+        ])
+    );
+    assert_eq!(
+        eval(r#"[1, 1, 1].dedup()"#),
+        Value::List(vec![Value::Int(1)])
+    );
+    assert_eq!(eval(r#"[].dedup()"#), Value::List(vec![]));
+}
+
+#[test]
+fn test_string_pad_start() {
+    assert_eq!(
+        eval(r#""42".pad_start(5, "0")"#),
+        Value::Str("00042".to_string())
+    );
+    assert_eq!(
+        eval(r#""hi".pad_start(5)"#),
+        Value::Str("   hi".to_string())
+    );
+    assert_eq!(
+        eval(r#""hello".pad_start(3, "x")"#),
+        Value::Str("hello".to_string())
+    );
+}
+
+#[test]
+fn test_string_pad_end() {
+    assert_eq!(
+        eval(r#""42".pad_end(5, "0")"#),
+        Value::Str("42000".to_string())
+    );
+    assert_eq!(eval(r#""hi".pad_end(5)"#), Value::Str("hi   ".to_string()));
+}
+
+#[test]
+fn test_let_destructure_tuple() {
+    assert_eq!(eval(r#"let (a, b) = (10, 20); a + b"#), Value::Int(30));
+    assert_eq!(eval(r#"let (x, _, z) = (1, 2, 3); x + z"#), Value::Int(4));
+}
+
+#[test]
+fn test_let_destructure_list() {
+    assert_eq!(eval(r#"let [a, b] = [10, 20]; a + b"#), Value::Int(30));
+    assert_eq!(
+        eval(r#"let [h, ...rest] = [1, 2, 3]; rest"#),
+        Value::List(vec![Value::Int(2), Value::Int(3)])
+    );
+}

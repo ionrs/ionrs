@@ -925,3 +925,39 @@ fn cross_list_index() {
 fn cross_list_count() {
     assert_both_eq(r#"[1, 2, 1, 3, 1].count(1)"#, Value::Int(3));
 }
+
+#[test]
+fn cross_list_slice() {
+    assert_both_eq(
+        r#"[1, 2, 3, 4, 5].slice(1, 3)"#,
+        Value::List(vec![Value::Int(2), Value::Int(3)]),
+    );
+}
+
+#[test]
+fn cross_list_dedup() {
+    assert_both_eq(
+        r#"[1, 1, 2, 2, 3].dedup()"#,
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+}
+
+#[test]
+fn cross_string_pad_start() {
+    assert_both_eq(r#""42".pad_start(5, "0")"#, Value::Str("00042".to_string()));
+}
+
+#[test]
+fn cross_string_pad_end() {
+    assert_both_eq(r#""42".pad_end(5, "0")"#, Value::Str("42000".to_string()));
+}
+
+#[test]
+fn cross_let_destructure_tuple() {
+    assert_both_eq(r#"let (a, b) = (10, 20); a + b"#, Value::Int(30));
+}
+
+#[test]
+fn cross_let_destructure_list() {
+    assert_both_eq(r#"let [a, b] = [10, 20]; a + b"#, Value::Int(30));
+}
