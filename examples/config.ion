@@ -22,7 +22,7 @@ println(f"Server config:");
 println(f"  Host: {config.host}");
 println(f"  Port: {config.port}");
 println(f"  Debug: {config.debug}");
-println(f"  Features: {config.features.join(\", \")}");
+println(f"  Features: {config.features.join(", ")}");
 
 // Validate config
 fn validate(config) {

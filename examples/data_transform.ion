@@ -14,32 +14,40 @@ let admin_names = users
     .map(|u| u.name);
 println(f"Admins: {admin_names}");
 
-// Average age
-let total_age = users.fold(0, |acc, u| acc + u.age);
+// Average age using reduce
+let total_age = users.map(|u| u.age).reduce(|a, b| a + b);
 let avg_age = total_age / users.len();
 println(f"Average age: {avg_age}");
 
-// Group by role
-let roles = users.map(|u| u.role);
-let unique_roles = [];
-for role in roles {
-    if !unique_roles.contains(role) {
-        let mut unique_roles = unique_roles.push(role);
-    }
+// Unique roles using set
+let unique_roles = set(users.map(|u| u.role));
+println(f"Roles: {unique_roles}");
+
+// Age statistics using min/max/sum
+let ages = users.map(|u| u.age);
+println(f"Youngest: {ages.min()}");
+println(f"Oldest: {ages.max()}");
+println(f"Total age: {ages.sum()}");
+
+// Chunk users into groups of 2
+let groups = users.chunk(2);
+for (i, group) in enumerate(groups) {
+    let names = group.map(|u| u.name).join(", ");
+    println(f"Group {i + 1}: {names}");
 }
 
-// Age statistics
-let ages = users.map(|u| u.age);
-let youngest = ages.fold(999, |a, b| if b < a { b } else { a });
-let oldest = ages.fold(0, |a, b| if b > a { b } else { a });
-println(f"Age range: {youngest} to {oldest}");
+// Sort by age
+let by_age = users
+    .sort_by(|a, b| a.age - b.age)
+    .map(|u| f"{u.name} ({u.age})");
+println(f"By age: {by_age.join(", ")}");
 
 // Create summary report
 let report = #{
     total_users: users.len(),
     admin_count: users.filter(|u| u.role == "admin").len(),
     average_age: avg_age,
-    oldest: oldest,
-    youngest: youngest,
+    oldest: ages.max(),
+    youngest: ages.min(),
 };
 println(f"Report: {json_encode_pretty(report)}");

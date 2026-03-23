@@ -1,0 +1,71 @@
+// Collections: lists, dicts, sets, tuples
+
+// ---- Lists ----
+let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+println(f"Sum: {nums.sum()}");
+println(f"Min: {nums.min()}, Max: {nums.max()}");
+println(f"Unique: {[1, 2, 2, 3, 3, 3].unique()}");
+println(f"Dedup: {[1, 1, 2, 2, 1, 1].dedup()}");
+println(f"Window(3): {[1, 2, 3, 4, 5].window(3)}");
+println(f"Chunk(3): {nums.chunk(3)}");
+println(f"Slice [2..5]: {nums.slice(2, 5)}");
+
+// List spread
+let first = [1, 2, 3];
+let second = [4, 5, 6];
+let combined = [...first, 0, ...second];
+println(f"Spread: {combined}");  // [1, 2, 3, 0, 4, 5, 6]
+
+// Enumerate
+for (i, val) in enumerate([10, 20, 30]) {
+    println(f"  [{i}] = {val}");
+}
+
+// ---- Dicts ----
+let config = #{host: "localhost", port: 8080};
+let extra = #{debug: true, port: 3000};
+
+// Merge and update
+let merged = config.merge(extra);
+println(f"\nMerged: {merged}");
+
+// Keys, values, entries
+println(f"Keys: {merged.keys()}");
+println(f"Values: {merged.values()}");
+
+// Dict comprehension
+let squares = #{str(n): n * n for n in 1..=5};
+println(f"Squares: {squares}");
+
+// Map/filter on dicts
+let prices = #{apple: 1, banana: 3, cherry: 5, date: 2};
+let expensive = prices.filter(|k, v| v >= 3);
+println(f"Expensive: {expensive}");
+
+// ---- Sets ----
+let a = set([1, 2, 3, 4]);
+let b = set([3, 4, 5, 6]);
+
+println(f"\nSet A: {a}");
+println(f"Set B: {b}");
+println(f"Union: {a.union(b)}");
+println(f"Intersection: {a.intersection(b)}");
+println(f"Difference A-B: {a.difference(b)}");
+println(f"Contains 3: {a.contains(3)}");
+
+let mut s = set([1, 2]);
+s = s.add(3);
+s = s.remove(1);
+println(f"Modified set: {s}");
+
+// ---- Tuples ----
+let point = (10, 20, 30);
+let (x, y, z) = point;
+println(f"\nPoint: ({x}, {y}, {z})");
+
+// Tuples in iteration
+let pairs = [(1, "one"), (2, "two"), (3, "three")];
+for (num, name) in pairs {
+    println(f"  {num} = {name}");
+}
