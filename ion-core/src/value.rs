@@ -47,6 +47,12 @@ pub enum Value {
     Channel(crate::async_rt::ChannelEnd),
     /// Shared mutable reference cell for closure state
     Cell(Arc<Mutex<Value>>),
+    /// Lazy integer range (start..end or start..=end)
+    Range {
+        start: i64,
+        end: i64,
+        inclusive: bool,
+    },
     Unit,
 }
 
@@ -108,6 +114,7 @@ impl Value {
             #[cfg(feature = "concurrency")]
             Value::Channel(_) => ion_static_str!("Channel"),
             Value::Cell(_) => ion_static_str!("cell"),
+            Value::Range { .. } => ion_static_str!("range"),
             Value::Unit => ion_static_str!("()"),
         }
     }
@@ -149,6 +156,24 @@ impl Value {
         match self {
             Value::Bool(b) => Some(*b),
             _ => None,
+        }
+    }
+
+    /// Materialize a range into a list of ints.
+    pub fn range_to_list(start: i64, end: i64, inclusive: bool) -> Vec<Value> {
+        if inclusive {
+            (start..=end).map(Value::Int).collect()
+        } else {
+            (start..end).map(Value::Int).collect()
+        }
+    }
+
+    /// Length of a range without materializing.
+    pub fn range_len(start: i64, end: i64, inclusive: bool) -> i64 {
+        if inclusive {
+            (end - start + 1).max(0)
+        } else {
+            (end - start).max(0)
         }
     }
 }
@@ -273,6 +298,17 @@ impl fmt::Display for Value {
                 let inner = cell.lock().unwrap();
                 write!(f, "cell({})", *inner)
             }
+            Value::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                if *inclusive {
+                    write!(f, "{}..={}", start, end)
+                } else {
+                    write!(f, "{}..{}", start, end)
+                }
+            }
             Value::Unit => write!(f, "()"),
         }
     }
@@ -318,6 +354,18 @@ impl PartialEq for Value {
                 },
             ) => a_en == b_en && a_v == b_v && a_d == b_d,
             (Value::Cell(a), Value::Cell(b)) => Arc::ptr_eq(a, b),
+            (
+                Value::Range {
+                    start: s1,
+                    end: e1,
+                    inclusive: i1,
+                },
+                Value::Range {
+                    start: s2,
+                    end: e2,
+                    inclusive: i2,
+                },
+            ) => s1 == s2 && e1 == e2 && i1 == i2,
             (Value::Unit, Value::Unit) => true,
             (Value::Option(None), Value::Unit) => false,
             // Task and Channel are not comparable
@@ -392,6 +440,16 @@ impl Value {
                 let hex: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
                 serde_json::Value::String(hex)
             }
+            Value::Range {
+                start,
+                end,
+                inclusive,
+            } => serde_json::Value::Array(
+                Value::range_to_list(*start, *end, *inclusive)
+                    .iter()
+                    .map(|v| v.to_json())
+                    .collect(),
+            ),
             Value::Fn(_) | Value::BuiltinFn(_, _) => serde_json::Value::Null,
         }
     }
@@ -473,6 +531,16 @@ impl Value {
             #[cfg(feature = "concurrency")]
             Value::Task(_) | Value::Channel(_) => rmpv::Value::Nil,
             Value::Cell(cell) => cell.lock().unwrap().to_msgpack_value(),
+            Value::Range {
+                start,
+                end,
+                inclusive,
+            } => rmpv::Value::Array(
+                Value::range_to_list(*start, *end, *inclusive)
+                    .iter()
+                    .map(|v| v.to_msgpack_value())
+                    .collect(),
+            ),
             Value::Fn(_) | Value::BuiltinFn(_, _) => rmpv::Value::Nil,
         }
     }

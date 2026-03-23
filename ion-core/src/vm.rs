@@ -819,12 +819,11 @@ impl Vm {
                 let e = end
                     .as_int()
                     .ok_or_else(|| IonError::type_err("range end must be int", line, col))?;
-                let items: Vec<Value> = if inclusive {
-                    (s..=e).map(Value::Int).collect()
-                } else {
-                    (s..e).map(Value::Int).collect()
-                };
-                self.stack.push(Value::List(items));
+                self.stack.push(Value::Range {
+                    start: s,
+                    end: e,
+                    inclusive,
+                });
             }
 
             // --- Host types ---
@@ -929,6 +928,22 @@ impl Vm {
                         let vals: Vec<Value> =
                             bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
                         Box::new(vals.into_iter())
+                    }
+                    Value::Range {
+                        start,
+                        end,
+                        inclusive,
+                    } => {
+                        if inclusive {
+                            Box::new((start..=end).map(Value::Int))
+                        } else {
+                            // Use RangeInclusive with adjusted end to avoid two different types
+                            if end > start {
+                                Box::new((start..=(end - 1)).map(Value::Int))
+                            } else {
+                                Box::new(std::iter::empty())
+                            }
+                        }
                     }
                     other => {
                         return Err(IonError::type_err(
@@ -1722,6 +1737,13 @@ impl Vm {
                 return Ok(Value::List(result));
             }
 
+            // Range closure methods — materialize then delegate to list logic
+            (Value::Range { start, end, inclusive }, "map") | (Value::Range { start, end, inclusive }, "filter") | (Value::Range { start, end, inclusive }, "fold") | (Value::Range { start, end, inclusive }, "reduce") | (Value::Range { start, end, inclusive }, "flat_map") | (Value::Range { start, end, inclusive }, "any") | (Value::Range { start, end, inclusive }, "all") | (Value::Range { start, end, inclusive }, "sort_by") => {
+                let items = Value::range_to_list(*start, *end, *inclusive);
+                let list_receiver = Value::List(items);
+                return self.call_method(list_receiver, method, args, line, col);
+            }
+
             // Dict closure methods
             (Value::Dict(map), "map") => {
                 let func = args.first().ok_or_else(|| {
@@ -1869,6 +1891,31 @@ impl Vm {
             Value::Set(items) => self.set_method(items, method, args, line, col),
             Value::Option(_) => self.option_method(&receiver, method, args, line, col),
             Value::Result(_) => self.result_method(&receiver, method, args, line, col),
+            Value::Range {
+                start,
+                end,
+                inclusive,
+            } => match method {
+                "len" => Ok(Value::Int(Value::range_len(*start, *end, *inclusive))),
+                "contains" => {
+                    let val = args[0]
+                        .as_int()
+                        .ok_or_else(|| {
+                            IonError::type_err("range.contains requires int", line, col)
+                        })?;
+                    let in_range = if *inclusive {
+                        val >= *start && val <= *end
+                    } else {
+                        val >= *start && val < *end
+                    };
+                    Ok(Value::Bool(in_range))
+                }
+                "to_list" => Ok(Value::List(Value::range_to_list(*start, *end, *inclusive))),
+                _ => {
+                    let items = Value::range_to_list(*start, *end, *inclusive);
+                    self.list_method(&items, method, args, line, col)
+                }
+            },
             Value::Cell(cell) => match method {
                 "get" => Ok(cell.lock().unwrap().clone()),
                 "set" => {

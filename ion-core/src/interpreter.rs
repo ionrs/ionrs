@@ -1013,14 +1013,11 @@ impl Interpreter {
                 let s = self.eval_expr(start)?;
                 let e = self.eval_expr(end)?;
                 match (&s, &e) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        let range: Vec<Value> = if *inclusive {
-                            (*a..=*b).map(Value::Int).collect()
-                        } else {
-                            (*a..*b).map(Value::Int).collect()
-                        };
-                        Ok(Value::List(range))
-                    }
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Range {
+                        start: *a,
+                        end: *b,
+                        inclusive: *inclusive,
+                    }),
                     _ => Err(IonError::type_err(
                         ion_str!("range requires integer bounds").to_string(),
                         span.line,
@@ -1484,6 +1481,33 @@ impl Interpreter {
             Value::Set(items) => self.set_method(items, method, args, span),
             Value::Option(opt) => self.option_method(opt.clone(), method, args, span),
             Value::Result(res) => self.result_method(res.clone(), method, args, span),
+            Value::Range {
+                start,
+                end,
+                inclusive,
+            } => match method {
+                "len" => Ok(Value::Int(Value::range_len(*start, *end, *inclusive))),
+                "contains" => {
+                    let val = args[0]
+                        .as_int()
+                        .ok_or_else(|| {
+                            IonError::type_err("range.contains requires int", span.line, span.col)
+                        })
+                        .map_err(SignalOrError::from)?;
+                    let in_range = if *inclusive {
+                        val >= *start && val <= *end
+                    } else {
+                        val >= *start && val < *end
+                    };
+                    Ok(Value::Bool(in_range))
+                }
+                "to_list" => Ok(Value::List(Value::range_to_list(*start, *end, *inclusive))),
+                // For other list-like methods, materialize and delegate
+                _ => {
+                    let items = Value::range_to_list(*start, *end, *inclusive);
+                    self.list_method(&items, method, args, span)
+                }
+            },
             Value::Cell(cell) => self.cell_method(cell, method, args, span),
             #[cfg(feature = "concurrency")]
             Value::Task(handle) => self.task_method(handle, method, args, span),
@@ -3012,6 +3036,11 @@ impl Interpreter {
                 .collect()),
             Value::Str(s) => Ok(s.chars().map(|c| Value::Str(c.to_string())).collect()),
             Value::Bytes(bytes) => Ok(bytes.iter().map(|&b| Value::Int(b as i64)).collect()),
+            Value::Range {
+                start,
+                end,
+                inclusive,
+            } => Ok(Value::range_to_list(*start, *end, *inclusive)),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot iterate over "), val.type_name()),
                 span.line,
@@ -3474,12 +3503,20 @@ pub fn register_builtins(env: &mut Env) {
         Value::BuiltinFn(ion_str!("range").to_string(), |args| match args.len() {
             1 => {
                 let n = args[0].as_int().ok_or(ion_str!("range requires int"))?;
-                Ok(Value::List((0..n).map(Value::Int).collect()))
+                Ok(Value::Range {
+                    start: 0,
+                    end: n,
+                    inclusive: false,
+                })
             }
             2 => {
                 let start = args[0].as_int().ok_or(ion_str!("range requires int"))?;
                 let end = args[1].as_int().ok_or(ion_str!("range requires int"))?;
-                Ok(Value::List((start..end).map(Value::Int).collect()))
+                Ok(Value::Range {
+                    start,
+                    end,
+                    inclusive: false,
+                })
             }
             _ => Err(ion_str!("range takes 1 or 2 arguments").to_string()),
         }),

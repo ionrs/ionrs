@@ -1036,7 +1036,11 @@ fn test_regular_string_no_interp() {
 fn test_range_exclusive() {
     assert_eq!(
         eval("0..3"),
-        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2)])
+        Value::Range {
+            start: 0,
+            end: 3,
+            inclusive: false,
+        }
     );
 }
 
@@ -1044,12 +1048,11 @@ fn test_range_exclusive() {
 fn test_range_inclusive() {
     assert_eq!(
         eval("0..=3"),
-        Value::List(vec![
-            Value::Int(0),
-            Value::Int(1),
-            Value::Int(2),
-            Value::Int(3)
-        ])
+        Value::Range {
+            start: 0,
+            end: 3,
+            inclusive: true,
+        }
     );
 }
 
@@ -1111,11 +1114,19 @@ fn test_len() {
 fn test_range_fn() {
     assert_eq!(
         eval("range(3)"),
-        Value::List(vec![Value::Int(0), Value::Int(1), Value::Int(2)])
+        Value::Range {
+            start: 0,
+            end: 3,
+            inclusive: false,
+        }
     );
     assert_eq!(
         eval("range(2, 5)"),
-        Value::List(vec![Value::Int(2), Value::Int(3), Value::Int(4)])
+        Value::Range {
+            start: 2,
+            end: 5,
+            inclusive: false,
+        }
     );
 }
 
