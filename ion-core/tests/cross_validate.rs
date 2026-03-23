@@ -869,3 +869,26 @@ fn cross_unicode_escape() {
     assert_both_eq(r#""\u{48}\u{49}""#, Value::Str("HI".to_string()));
     assert_both_eq(r#""\u{E9}""#, Value::Str("é".to_string()));
 }
+
+#[test]
+fn cross_string_contains_int() {
+    assert_both_eq(r#""hello".contains(104)"#, Value::Bool(true));
+    assert_both_eq(r#""hello".contains(122)"#, Value::Bool(false));
+}
+
+#[test]
+fn cross_to_string() {
+    assert_both_eq(r#"let x = 42; x.to_string()"#, Value::Str("42".to_string()));
+    assert_both_eq(r#"true.to_string()"#, Value::Str("true".to_string()));
+    assert_both_eq(r#"None.to_string()"#, Value::Str("None".to_string()));
+}
+
+#[test]
+fn cross_dict_zip() {
+    assert_both(r#"#{a: 1, b: 2}.zip(#{a: 10, b: 20})"#);
+}
+
+#[test]
+fn cross_join_builtin() {
+    assert_both_eq(r#"join(["a", "b"], ",")"#, Value::Str("a,b".to_string()));
+}

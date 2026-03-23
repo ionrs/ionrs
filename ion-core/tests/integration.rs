@@ -3215,3 +3215,59 @@ fn test_dict_filter() {
         })
     );
 }
+
+#[test]
+fn test_string_contains_int() {
+    assert_eq!(eval(r#""hello".contains(104)"#), Value::Bool(true)); // 'h'
+    assert_eq!(eval(r#""hello".contains(122)"#), Value::Bool(false)); // 'z'
+    assert_eq!(eval(r#""hello".contains("ell")"#), Value::Bool(true));
+}
+
+#[test]
+fn test_to_string_method() {
+    assert_eq!(
+        eval(r#"let x = 42; x.to_string()"#),
+        Value::Str("42".to_string()),
+    );
+    assert_eq!(eval(r#"true.to_string()"#), Value::Str("true".to_string()));
+    assert_eq!(
+        eval(r#"let x = 3.14; x.to_string()"#),
+        Value::Str("3.14".to_string()),
+    );
+    assert_eq!(
+        eval(r#"[1, 2].to_string()"#),
+        Value::Str("[1, 2]".to_string())
+    );
+    assert_eq!(eval(r#"None.to_string()"#), Value::Str("None".to_string()));
+}
+
+#[test]
+fn test_dict_zip() {
+    assert_eq!(
+        eval(r#"#{a: 1, b: 2}.zip(#{a: 10, b: 20})"#),
+        Value::Dict(indexmap::indexmap! {
+            "a".to_string() => Value::Tuple(vec![Value::Int(1), Value::Int(10)]),
+            "b".to_string() => Value::Tuple(vec![Value::Int(2), Value::Int(20)]),
+        })
+    );
+    // Only matching keys
+    assert_eq!(
+        eval(r#"#{a: 1, b: 2}.zip(#{b: 20, c: 30})"#),
+        Value::Dict(indexmap::indexmap! {
+            "b".to_string() => Value::Tuple(vec![Value::Int(2), Value::Int(20)]),
+        })
+    );
+}
+
+#[test]
+fn test_join_builtin() {
+    assert_eq!(
+        eval(r#"join(["a", "b", "c"], ",")"#),
+        Value::Str("a,b,c".to_string())
+    );
+    assert_eq!(
+        eval(r#"join([1, 2, 3], " ")"#),
+        Value::Str("1 2 3".to_string())
+    );
+    assert_eq!(eval(r#"join(["x"], "-")"#), Value::Str("x".to_string()));
+}

@@ -1396,6 +1396,10 @@ impl Vm {
         line: usize,
         col: usize,
     ) -> Result<Value, IonError> {
+        // Universal methods available on all types
+        if method == "to_string" {
+            return Ok(Value::Str(format!("{}", receiver)));
+        }
         // Handle closure-based methods that need &mut self for invoke_value
         match (&receiver, method) {
             // List closure methods
@@ -1808,10 +1812,20 @@ impl Vm {
             "to_upper" => Ok(Value::Str(s.to_uppercase())),
             "to_lower" => Ok(Value::Str(s.to_lowercase())),
             "trim" => Ok(Value::Str(s.trim().to_string())),
-            "contains" => {
-                let sub = args.first().and_then(|a| a.as_str()).unwrap_or("");
-                Ok(Value::Bool(s.contains(sub)))
-            }
+            "contains" => match args.first() {
+                Some(Value::Str(sub)) => Ok(Value::Bool(s.contains(sub.as_str()))),
+                Some(Value::Int(code)) => {
+                    let ch = char::from_u32(*code as u32).ok_or_else(|| {
+                        IonError::type_err("invalid char code".to_string(), line, col)
+                    })?;
+                    Ok(Value::Bool(s.contains(ch)))
+                }
+                _ => Err(IonError::type_err(
+                    "contains requires string or int argument".to_string(),
+                    line,
+                    col,
+                )),
+            },
             "starts_with" => {
                 let prefix = args.first().and_then(|a| a.as_str()).unwrap_or("");
                 Ok(Value::Bool(s.starts_with(prefix)))
@@ -2019,6 +2033,23 @@ impl Vm {
                 } else {
                     Err(IonError::type_err(
                         "merge requires a dict argument".to_string(),
+                        line,
+                        col,
+                    ))
+                }
+            }
+            "zip" => {
+                if let Some(Value::Dict(other)) = args.first() {
+                    let mut result = indexmap::IndexMap::new();
+                    for (k, v) in map {
+                        if let Some(ov) = other.get(k) {
+                            result.insert(k.clone(), Value::Tuple(vec![v.clone(), ov.clone()]));
+                        }
+                    }
+                    Ok(Value::Dict(result))
+                } else {
+                    Err(IonError::type_err(
+                        "zip requires a dict argument".to_string(),
                         line,
                         col,
                     ))

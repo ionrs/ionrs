@@ -242,6 +242,11 @@ const BUILTINS: &[BuiltinInfo] = &[
         description: "Clamp value to range [min, max]",
     },
     BuiltinInfo {
+        name: "join",
+        signature: "join(list, separator)",
+        description: "Join list elements into a string with separator",
+    },
+    BuiltinInfo {
         name: "json_encode",
         signature: "json_encode(value)",
         description: "Value to JSON string",

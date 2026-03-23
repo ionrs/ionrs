@@ -38,7 +38,7 @@ Ion is an embeddable scripting language for Rust applications. It has Rust-flavo
 | Bytes | `b"hello"`, `b"\x00\xff"` | `let data = b"\x48\x49";` |
 | Function | `fn`, `\|x\| x` | `let f = \|x\| x * 2;` |
 
-Use `type_of(value)` to inspect types at runtime:
+All values support `.to_string()` for conversion to string. Use `type_of(value)` to inspect types at runtime:
 
 ```
 type_of(42)       // "int"
@@ -574,6 +574,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `range(n)` | `[0, 1, ..., n-1]` |
 | `range(start, end)` | `[start, start+1, ..., end-1]` |
 | `enumerate(list)` | `[(0, a), (1, b), ...]` |
+| `join(list, sep)` | Join list elements with separator |
 
 ### Math
 | Function | Description |
@@ -622,7 +623,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 |--------|---------|-------------|
 | `.len()` | Int | Byte length |
 | `.is_empty()` | Bool | True if empty |
-| `.contains(sub)` | Bool | Contains substring |
+| `.contains(sub)` | Bool | Contains substring (string or char code int) |
 | `.starts_with(pre)` | Bool | Starts with prefix |
 | `.ends_with(suf)` | Bool | Ends with suffix |
 | `.find(sub)` | Option(Int) | Char index of first occurrence |
@@ -689,6 +690,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.merge(other)` | Dict | New dict merging two dicts |
 | `.map(fn)` | Dict | Apply fn(key, value) to each entry, keep keys |
 | `.filter(fn)` | Dict | Keep entries where fn(key, value) is truthy |
+| `.zip(other)` | Dict | Merge matching keys into tuples |
 
 ### Option Methods
 

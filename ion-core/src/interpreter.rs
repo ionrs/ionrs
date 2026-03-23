@@ -1426,6 +1426,10 @@ impl Interpreter {
         args: &[Value],
         span: Span,
     ) -> SignalResult {
+        // Universal methods available on all types
+        if method == "to_string" {
+            return Ok(Value::Str(format!("{}", receiver)));
+        }
         match receiver {
             Value::List(items) => self.list_method(items, method, args, span),
             Value::Tuple(items) => self.tuple_method(items, method, args, span),
@@ -1745,16 +1749,25 @@ impl Interpreter {
     fn string_method(&self, s: &str, method: &str, args: &[Value], span: Span) -> SignalResult {
         match method {
             "len" => Ok(Value::Int(s.len() as i64)),
-            "contains" => {
-                let sub = args[0].as_str().ok_or_else(|| {
-                    IonError::type_err(
-                        ion_str!("contains requires string argument").to_string(),
-                        span.line,
-                        span.col,
-                    )
-                })?;
-                Ok(Value::Bool(s.contains(sub)))
-            }
+            "contains" => match &args[0] {
+                Value::Str(sub) => Ok(Value::Bool(s.contains(sub.as_str()))),
+                Value::Int(code) => {
+                    let ch = char::from_u32(*code as u32).ok_or_else(|| {
+                        IonError::type_err(
+                            ion_str!("invalid char code").to_string(),
+                            span.line,
+                            span.col,
+                        )
+                    })?;
+                    Ok(Value::Bool(s.contains(ch)))
+                }
+                _ => Err(IonError::type_err(
+                    ion_str!("contains requires string or int argument").to_string(),
+                    span.line,
+                    span.col,
+                )
+                .into()),
+            },
             "starts_with" => {
                 let sub = args[0].as_str().ok_or_else(|| {
                     IonError::type_err(
@@ -2047,6 +2060,24 @@ impl Interpreter {
                 }
             }
             "is_empty" => Ok(Value::Bool(map.is_empty())),
+            "zip" => {
+                if let Value::Dict(other) = &args[0] {
+                    let mut result = indexmap::IndexMap::new();
+                    for (k, v) in map {
+                        if let Some(ov) = other.get(k) {
+                            result.insert(k.clone(), Value::Tuple(vec![v.clone(), ov.clone()]));
+                        }
+                    }
+                    Ok(Value::Dict(result))
+                } else {
+                    Err(IonError::type_err(
+                        ion_str!("zip requires a dict argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into())
+                }
+            }
             _ => Err(IonError::type_err(
                 format!(
                     "{}{}{}",
@@ -3192,6 +3223,26 @@ pub fn register_builtins(env: &mut Env) {
                     Ok(Value::Float(v.max(lo).min(hi)))
                 }
             }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("join").to_string(),
+        Value::BuiltinFn(ion_str!("join").to_string(), |args| {
+            if args.is_empty() || args.len() > 2 {
+                return Err(ion_str!("join requires 1-2 arguments: list, [separator]"));
+            }
+            let items = match &args[0] {
+                Value::List(items) => items,
+                _ => return Err(ion_str!("join requires a list as first argument")),
+            };
+            let sep = if args.len() > 1 {
+                args[1].as_str().unwrap_or("").to_string()
+            } else {
+                String::new()
+            };
+            let parts: Vec<String> = items.iter().map(|v| format!("{}", v)).collect();
+            Ok(Value::Str(parts.join(&sep)))
         }),
         false,
     );
