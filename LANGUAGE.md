@@ -541,8 +541,10 @@ try {
 Both `Option` and `Result` support functional chaining:
 
 ```
+Some(5).unwrap()                  // 5
 Some(5).map(|x| x * 2)           // Some(10)
 None.unwrap_or(0)                 // 0
+Ok(5).unwrap()                    // 5
 Ok(5).map(|x| x + 1)             // Ok(6)
 Err("fail").unwrap_or(0)          // 0
 ```
@@ -715,6 +717,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 |--------|---------|-------------|
 | `.is_some()` | Bool | True if Some |
 | `.is_none()` | Bool | True if None |
+| `.unwrap()` | Value | Extract value, error if None |
 | `.unwrap_or(default)` | Value | Unwrap or return default |
 | `.expect(msg)` | Value | Unwrap or error with message |
 | `.map(fn)` | Option | Apply fn to inner value |
@@ -728,6 +731,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 |--------|---------|-------------|
 | `.is_ok()` | Bool | True if Ok |
 | `.is_err()` | Bool | True if Err |
+| `.unwrap()` | Value | Extract value, error if Err |
 | `.unwrap_or(default)` | Value | Unwrap or return default |
 | `.expect(msg)` | Value | Unwrap or error with message |
 | `.map(fn)` | Result | Apply fn to Ok value |

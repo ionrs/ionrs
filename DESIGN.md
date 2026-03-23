@@ -8,7 +8,7 @@ A small, strongly-typed, embeddable scripting language inspired by Starlark, imp
 
 1. **Explicit over implicit** — No implicit type coercions, no implicit returns from ambiguous syntax, no hidden side effects.
 2. **One syntax, one meaning** — `.field` is always a host struct access. `["key"]` is always a dict lookup. `#{ }` is always a dict. `{ }` is always a block.
-3. **No hidden panics** — No `unwrap()`. Every value extraction is visible: `?`, `unwrap_or`, `expect`, `match`, `if let`.
+3. **No hidden panics** — Every value extraction is visible: `unwrap`, `unwrap_or`, `expect`, `?`, `match`, `if let`.
 4. **Immutable by default** — `let` bindings and all collection methods return new values. Mutation requires explicit `let mut` and reassignment.
 5. **Errors are values** — No exceptions. `Result` and `Option` are the only error paths. `?` is the only propagation mechanism.
 6. **What you see is what runs** — No operator overloading, no implicit conversions, no magic methods, no inheritance. The behavior of code is determined by reading it top-to-bottom.
@@ -242,17 +242,18 @@ let result = parse(input)
     .map_err(|e| f"parse failed: {e}");
 ```
 
-### No `unwrap()` — Explicit Handling Only
+### Value Extraction — Explicit Handling
 
-There is no `unwrap()` method. Extracting a value from `Result`/`Option` requires explicit handling:
+Extracting a value from `Result`/`Option` requires explicit handling:
 
-- `?` — propagate the error/None to caller
+- `unwrap()` — extract the value, runtime error if None/Err
 - `unwrap_or(default)` — provide a fallback value
 - `unwrap_or_else(|| compute())` — provide a fallback computation
+- `expect("reason")` — extract the value, runtime error with message if None/Err
+- `?` — propagate the error/None to caller
 - `match` / `if let` — handle each case explicitly
-- `expect("reason")` — crash with a documented reason (for truly impossible cases)
 
-This prevents hidden panics. Every value extraction is visible and intentional.
+Every value extraction is visible and intentional.
 
 ---
 
@@ -662,8 +663,8 @@ Minimal, focused on embedding use cases.
 | `json`   | `encode`, `decode`, `encode_pretty` |
 | `math`   | `abs`, `min`, `max`, `floor`, `ceil`, `round`, `pow`, `sqrt` |
 | `io`     | `print`, `println`, `eprint` (host can override/redirect) |
-| `option` | `Some`, `None`, `is_some`, `is_none`, `unwrap_or`, `unwrap_or_else`, `expect`, `map`, `and_then`, `or_else` |
-| `result` | `Ok`, `Err`, `is_ok`, `is_err`, `unwrap_or`, `unwrap_or_else`, `expect`, `map`, `map_err`, `and_then`, `or_else` |
+| `option` | `Some`, `None`, `is_some`, `is_none`, `unwrap`, `unwrap_or`, `unwrap_or_else`, `expect`, `map`, `and_then`, `or_else` |
+| `result` | `Ok`, `Err`, `is_ok`, `is_err`, `unwrap`, `unwrap_or`, `unwrap_or_else`, `expect`, `map`, `map_err`, `and_then`, `or_else` |
 
 All modules are host-configurable — the embedder chooses what to expose.
 
