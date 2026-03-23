@@ -387,8 +387,7 @@ impl Vm {
             Op::And => {
                 let offset = chunk.read_u16(self.ip) as usize;
                 self.ip += 2;
-                let top = self.peek(line, col)?;
-                if !top.is_truthy() {
+                if !self.is_top_truthy(line, col)? {
                     self.ip += offset; // short-circuit: keep falsy value
                 }
                 // If truthy, fall through — Pop will remove it, then eval right
@@ -396,8 +395,7 @@ impl Vm {
             Op::Or => {
                 let offset = chunk.read_u16(self.ip) as usize;
                 self.ip += 2;
-                let top = self.peek(line, col)?;
-                if top.is_truthy() {
+                if self.is_top_truthy(line, col)? {
                     self.ip += offset; // short-circuit: keep truthy value
                 }
             }
@@ -493,8 +491,7 @@ impl Vm {
             Op::JumpIfFalse => {
                 let offset = chunk.read_u16(self.ip) as usize;
                 self.ip += 2;
-                let val = self.peek(line, col)?;
-                if !val.is_truthy() {
+                if !self.is_top_truthy(line, col)? {
                     self.ip += offset;
                 }
             }
@@ -703,7 +700,11 @@ impl Vm {
                 self.ip += 2;
                 let start = self.stack.len() - count;
                 let parts: Vec<Value> = self.stack.drain(start..).collect();
-                let s: String = parts.iter().map(|v| v.to_string()).collect();
+                let mut s = String::with_capacity(count * 8);
+                for part in &parts {
+                    use std::fmt::Write;
+                    let _ = write!(s, "{}", part);
+                }
                 self.stack.push(Value::Str(s));
             }
 
@@ -1251,6 +1252,14 @@ impl Vm {
             .ok_or_else(|| IonError::runtime("stack underflow (peek)", line, col))
     }
 
+    /// Check if the top of stack is truthy without cloning.
+    fn is_top_truthy(&self, line: usize, col: usize) -> Result<bool, IonError> {
+        self.stack
+            .last()
+            .map(|v| v.is_truthy())
+            .ok_or_else(|| IonError::runtime("stack underflow (peek)", line, col))
+    }
+
     fn const_as_str(&self, val: &Value, line: usize, col: usize) -> Result<String, IonError> {
         match val {
             Value::Str(s) => Ok(s.clone()),
@@ -1279,7 +1288,12 @@ impl Vm {
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x + y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 + y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x + *y as f64)),
-            (Value::Str(x), Value::Str(y)) => Ok(Value::Str(format!("{}{}", x, y))),
+            (Value::Str(x), Value::Str(y)) => {
+                let mut s = String::with_capacity(x.len() + y.len());
+                s.push_str(x);
+                s.push_str(y);
+                Ok(Value::Str(s))
+            }
             (Value::List(x), Value::List(y)) => {
                 let mut r = x.clone();
                 r.extend(y.clone());

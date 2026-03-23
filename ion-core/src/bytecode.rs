@@ -252,16 +252,18 @@ impl Chunk {
     }
 
     /// Add a constant to the pool, returning its index.
-    /// Deduplicates string constants (used for variable names).
+    /// Deduplicates string, int, float, and bool constants.
     pub fn add_constant(&mut self, value: Value) -> u16 {
-        // Deduplicate string constants for variable name lookups
-        if let Value::Str(ref s) = value {
-            for (i, c) in self.constants.iter().enumerate() {
-                if let Value::Str(ref cs) = c {
-                    if cs == s {
-                        return i as u16;
-                    }
-                }
+        for (i, c) in self.constants.iter().enumerate() {
+            let is_dup = match (&value, c) {
+                (Value::Str(a), Value::Str(b)) => a == b,
+                (Value::Int(a), Value::Int(b)) => a == b,
+                (Value::Float(a), Value::Float(b)) => a.to_bits() == b.to_bits(),
+                (Value::Bool(a), Value::Bool(b)) => a == b,
+                _ => false,
+            };
+            if is_dup {
+                return i as u16;
             }
         }
         self.constants.push(value);
