@@ -14,6 +14,7 @@
 - `Closure` — captures env values
 - `ConstructStruct` / `ConstructEnum` — host type construction
 - `IterInit` / `IterNext` / `IterDrop` — for-loop protocol
+- `CheckType` (2 bytes: u16 constant index) — peek TOS, check type matches string from constant pool
 
 ## Exception Handling
 - `ExceptionHandler` struct: catch_ip, stack_depth, local_frames_depth, locals_depth

@@ -152,6 +152,16 @@
         {
           "name": "support.type.ion",
           "match": "\\b(Some|None|Ok|Err)\\b"
+        },
+        {
+          "match": ":\\s*(int|float|bool|string|bytes|list|dict|tuple|set|fn|any|Option|Result)\\b",
+          "captures": {
+            "1": { "name": "support.type.annotation.ion" }
+          }
+        },
+        {
+          "name": "support.type.annotation.ion",
+          "match": "(?<=<)(int|float|bool|string|bytes|list|dict|tuple|set|fn|any|Option|Result)(?=[>,])"
         }
       ]
     },

@@ -561,16 +561,45 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
     let mut items = Vec::new();
 
     // Check if we're after a dot (method completion)
-    let is_dot_completion = source
-        .lines()
-        .nth(pos.line as usize)
-        .map(|line| {
-            let col = pos.character as usize;
-            col > 0 && line.as_bytes().get(col - 1) == Some(&b'.')
-        })
-        .unwrap_or(false);
+    let line_text = source.lines().nth(pos.line as usize).unwrap_or("");
+    let col = pos.character as usize;
 
-    if is_dot_completion {
+    let is_dot_completion = col > 0 && line_text.as_bytes().get(col - 1) == Some(&b'.');
+
+    // Check if we're in a type annotation position (after `:` in a let binding)
+    let is_type_position = {
+        let before_cursor = &line_text[..col.min(line_text.len())];
+        let trimmed = before_cursor.trim_start();
+        (trimmed.starts_with("let ") || trimmed.starts_with("let mut "))
+            && before_cursor.contains(':')
+            && !before_cursor.contains('=')
+    };
+
+    if is_type_position {
+        let type_names = [
+            ("int", "Integer type"),
+            ("float", "Floating-point type"),
+            ("bool", "Boolean type"),
+            ("string", "String type"),
+            ("bytes", "Byte string type"),
+            ("list", "List type (e.g. list<int>)"),
+            ("dict", "Dictionary type (e.g. dict<string, int>)"),
+            ("tuple", "Tuple type"),
+            ("set", "Set type"),
+            ("fn", "Function type"),
+            ("any", "Any type (accepts all values)"),
+            ("Option", "Option type (e.g. Option<int>)"),
+            ("Result", "Result type (e.g. Result<int, string>)"),
+        ];
+        for (name, doc) in type_names {
+            items.push(CompletionItem {
+                label: name.to_string(),
+                kind: Some(CompletionItemKind::TYPE_PARAMETER),
+                documentation: Some(lsp_types::Documentation::String(doc.to_string())),
+                ..Default::default()
+            });
+        }
+    } else if is_dot_completion {
         // Provide method completions
         let methods = [
             // String methods

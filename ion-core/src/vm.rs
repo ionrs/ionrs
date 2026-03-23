@@ -1102,6 +1102,8 @@ impl Vm {
                     "any" => true,
                     s if s.starts_with("Option") => matches!(val, Value::Option(_)),
                     s if s.starts_with("Result") => matches!(val, Value::Result(_)),
+                    s if s.starts_with("list<") => matches!(val, Value::List(_)),
+                    s if s.starts_with("dict<") => matches!(val, Value::Dict(_)),
                     _ => true,
                 };
                 if !ok {

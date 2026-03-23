@@ -1248,3 +1248,51 @@ fn cross_type_ann() {
 fn cross_type_ann_list() {
     assert_both_eq("let xs: list = [1, 2]; xs.len()", Value::Int(2));
 }
+
+#[test]
+fn cross_type_ann_float() {
+    assert_both_eq("let x: float = 3.14; x", Value::Float(3.14));
+}
+
+#[test]
+fn cross_type_ann_option() {
+    assert_both_eq(
+        "let x: Option<int> = Some(42); x",
+        Value::Option(Some(Box::new(Value::Int(42)))),
+    );
+}
+
+#[test]
+fn cross_type_ann_result() {
+    assert_both_eq(
+        "let x: Result<int, string> = Ok(1); x",
+        Value::Result(Ok(Box::new(Value::Int(1)))),
+    );
+}
+
+#[test]
+fn cross_type_ann_generic_list() {
+    // Inner type is documentation-only; only outer type checked
+    assert_both_eq(r#"let xs: list<int> = ["a"]; xs.len()"#, Value::Int(1));
+}
+
+#[test]
+fn cross_type_ann_dict() {
+    assert_both_eq(r#"let d: dict = #{"a": 1}; d["a"]"#, Value::Int(1));
+}
+
+#[test]
+fn cross_type_ann_fn() {
+    assert_both_eq("let f: fn = |x| x + 1; f(2)", Value::Int(3));
+}
+
+#[test]
+fn cross_type_ann_any() {
+    assert_both_eq("let x: any = 42; x", Value::Int(42));
+}
+
+#[test]
+fn cross_type_ann_mismatch() {
+    // Both engines should error on type mismatch
+    assert_both("let x: int = true;");
+}

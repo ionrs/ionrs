@@ -1230,14 +1230,6 @@ impl Compiler {
                 Self::type_ann_to_string(k),
                 Self::type_ann_to_string(v)
             ),
-            TypeAnn::Tuple(fields) => {
-                let inner: Vec<String> = fields.iter().map(Self::type_ann_to_string).collect();
-                format!("({})", inner.join(", "))
-            }
-            TypeAnn::Fn(params, ret) => {
-                let p: Vec<String> = params.iter().map(Self::type_ann_to_string).collect();
-                format!("fn({}) -> {}", p.join(", "), Self::type_ann_to_string(ret))
-            }
         }
     }
 

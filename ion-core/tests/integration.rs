@@ -3750,3 +3750,82 @@ fn test_type_ann_any() {
         Value::Str("hi".to_string())
     );
 }
+
+#[test]
+fn test_type_ann_float() {
+    assert_eq!(eval("let x: float = 3.14; x"), Value::Float(3.14));
+    assert!(eval_err("let x: float = 42;").contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_bytes() {
+    assert_eq!(
+        eval(r#"let x: bytes = b"hello"; type_of(x)"#),
+        Value::Str("bytes".to_string())
+    );
+    assert!(eval_err(r#"let x: bytes = "hello";"#).contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_dict() {
+    assert_eq!(eval(r#"let d: dict = #{"a": 1}; d["a"]"#), Value::Int(1));
+    assert!(eval_err("let d: dict = [1, 2];").contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_set() {
+    assert_eq!(eval("let s: set = set([1, 2, 3]); s.len()"), Value::Int(3));
+    assert!(eval_err("let s: set = [1, 2];").contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_fn() {
+    assert_eq!(eval("let f: fn = |x| x + 1; f(2)"), Value::Int(3));
+    assert!(eval_err("let f: fn = 42;").contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_option() {
+    assert_eq!(
+        eval("let x: Option<int> = Some(42); x"),
+        Value::Option(Some(Box::new(Value::Int(42))))
+    );
+    assert!(eval_err("let x: Option<int> = 42;").contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_result() {
+    assert_eq!(
+        eval("let x: Result<int, string> = Ok(1); x"),
+        Value::Result(Ok(Box::new(Value::Int(1))))
+    );
+    assert!(eval_err(r#"let x: Result<int, string> = "hello";"#).contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_generic_list() {
+    // Generic parameter is documentation-only; only outer type is checked
+    assert_eq!(
+        eval(r#"let xs: list<int> = ["a", "b"]; xs.len()"#),
+        Value::Int(2)
+    );
+    assert!(eval_err("let xs: list<int> = 42;").contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_generic_dict() {
+    assert_eq!(
+        eval(r#"let d: dict<string, int> = #{"a": 1}; d["a"]"#),
+        Value::Int(1)
+    );
+    assert!(eval_err(r#"let d: dict<string, int> = [1];"#).contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_tuple() {
+    assert_eq!(
+        eval("let t: tuple = (1, 2, 3); t"),
+        Value::Tuple(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert!(eval_err("let t: tuple = [1, 2];").contains("type mismatch"));
+}

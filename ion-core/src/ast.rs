@@ -364,6 +364,8 @@ pub enum BinOp {
 }
 
 /// Optional type annotation for `let` bindings.
+/// Inner/generic types are parsed but only the outer type is checked at runtime
+/// (e.g. `list<int>` checks that the value is a list, not that elements are ints).
 #[derive(Debug, Clone)]
 pub enum TypeAnn {
     Simple(String),                     // int, float, bool, string, list, dict, set, etc.
@@ -371,8 +373,6 @@ pub enum TypeAnn {
     Result(Box<TypeAnn>, Box<TypeAnn>), // Result<T, E>
     List(Box<TypeAnn>),                 // list<T>
     Dict(Box<TypeAnn>, Box<TypeAnn>),   // dict<K, V>
-    Tuple(Vec<TypeAnn>),                // (T, U, ...)
-    Fn(Vec<TypeAnn>, Box<TypeAnn>),     // fn(T, U) -> V
 }
 
 #[derive(Debug, Clone, Copy)]

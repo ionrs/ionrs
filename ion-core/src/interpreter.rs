@@ -2858,14 +2858,6 @@ impl Interpreter {
             TypeAnn::Result(_, _) => matches!(val, Value::Result(_)),
             TypeAnn::List(_) => matches!(val, Value::List(_)),
             TypeAnn::Dict(_, _) => matches!(val, Value::Dict(_)),
-            TypeAnn::Tuple(fields) => {
-                if let Value::Tuple(items) = val {
-                    items.len() == fields.len()
-                } else {
-                    false
-                }
-            }
-            TypeAnn::Fn(_, _) => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
         };
         if !matches {
             return Err(IonError::type_err(
@@ -2902,14 +2894,6 @@ impl Interpreter {
                     Self::type_ann_name(k),
                     Self::type_ann_name(v)
                 )
-            }
-            TypeAnn::Tuple(fields) => {
-                let inner: Vec<String> = fields.iter().map(Self::type_ann_name).collect();
-                format!("({})", inner.join(", "))
-            }
-            TypeAnn::Fn(params, ret) => {
-                let p: Vec<String> = params.iter().map(Self::type_ann_name).collect();
-                format!("fn({}) -> {}", p.join(", "), Self::type_ann_name(ret))
             }
         }
     }

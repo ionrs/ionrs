@@ -1,7 +1,7 @@
 # Ion Language — Design Decisions
 
 ## Core Decisions
-1. Strong typing, interpreter-inferred (no explicit annotations)
+1. Strong typing, interpreter-inferred, with optional type annotations on `let` bindings
 2. Semicolons required
 3. Explicit string interpolation `f"..."`
 4. Structured concurrency (feature-gated)
@@ -28,6 +28,11 @@
 - Scripts use dicts (`#{}`) for ad-hoc data
 - Typed structs/enums come from Rust host via `#[derive(IonType)]` or `register_type`
 - Scripts can construct, access fields, pattern match on host types — but never declare them
+- Optional type annotations on `let` bindings: `let x: int = 42;`
+  - Supported types: `int`, `float`, `bool`, `string`, `bytes`, `list`, `dict`, `tuple`, `set`, `fn`, `any`
+  - Generic forms: `Option<T>`, `Result<T, E>`, `list<T>`, `dict<K, V>`
+  - Only the outer type is checked at runtime; inner/generic types are documentation-only hints
+  - `any` accepts all types; unknown type names also pass (forward compatibility)
 
 ## Security Feature
 - `obfstr` crate integration: cargo feature `obfuscate`

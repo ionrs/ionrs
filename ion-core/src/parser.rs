@@ -199,6 +199,11 @@ impl Parser {
     }
 
     fn parse_type_ann(&mut self) -> Result<TypeAnn, IonError> {
+        // `fn` is a keyword token, so eat it specially
+        if self.check(&Token::Fn) {
+            self.advance();
+            return Ok(TypeAnn::Simple("fn".to_string()));
+        }
         let name = self.eat_ident()?;
         match name.as_str() {
             "Option" => {
