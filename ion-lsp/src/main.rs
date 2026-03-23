@@ -96,8 +96,46 @@ fn collect_defs_from_stmts(stmts: &[ion_core::ast::Stmt], defs: &mut Vec<Definit
             StmtKind::While { body, .. } => collect_defs_from_stmts(body, defs),
             StmtKind::WhileLet { body, .. } => collect_defs_from_stmts(body, defs),
             StmtKind::Loop { body } => collect_defs_from_stmts(body, defs),
+            StmtKind::ExprStmt { expr, .. } => collect_defs_from_expr(expr, defs),
             _ => {}
         }
+    }
+}
+
+fn collect_defs_from_expr(expr: &ion_core::ast::Expr, defs: &mut Vec<Definition>) {
+    use ion_core::ast::ExprKind;
+    match &expr.kind {
+        ExprKind::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            collect_defs_from_stmts(then_body, defs);
+            if let Some(eb) = else_body {
+                collect_defs_from_stmts(eb, defs);
+            }
+        }
+        ExprKind::IfLet {
+            then_body,
+            else_body,
+            ..
+        } => {
+            collect_defs_from_stmts(then_body, defs);
+            if let Some(eb) = else_body {
+                collect_defs_from_stmts(eb, defs);
+            }
+        }
+        ExprKind::Match { arms, .. } => {
+            for arm in arms {
+                collect_defs_from_expr(&arm.body, defs);
+            }
+        }
+        ExprKind::Block(stmts) => collect_defs_from_stmts(stmts, defs),
+        ExprKind::TryCatch { body, handler, .. } => {
+            collect_defs_from_stmts(body, defs);
+            collect_defs_from_stmts(handler, defs);
+        }
+        _ => {}
     }
 }
 
@@ -290,6 +328,21 @@ const BUILTINS: &[BuiltinInfo] = &[
         name: "channel",
         signature: "channel(buffer_size)",
         description: "Create a buffered channel (tx, rx)",
+    },
+    BuiltinInfo {
+        name: "set",
+        signature: "set() / set(list)",
+        description: "Create a set from a list (deduplicates elements)",
+    },
+    BuiltinInfo {
+        name: "msgpack_encode",
+        signature: "msgpack_encode(value)",
+        description: "Encode value to MessagePack bytes (requires msgpack feature)",
+    },
+    BuiltinInfo {
+        name: "msgpack_decode",
+        signature: "msgpack_decode(bytes)",
+        description: "Decode MessagePack bytes to value (requires msgpack feature)",
     },
 ];
 
@@ -968,6 +1021,75 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
                 "close",
                 "close()",
                 "Close channel",
+                CompletionItemKind::METHOD,
+            ),
+            // List methods: chunk, reduce, min, max
+            (
+                "chunk",
+                "chunk(n)",
+                "Split into chunks of size n",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "reduce",
+                "reduce(fn)",
+                "Reduce list with fn (no initial value)",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "min",
+                "min()",
+                "Minimum element",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "max",
+                "max()",
+                "Maximum element",
+                CompletionItemKind::METHOD,
+            ),
+            // String methods: trim_start, trim_end
+            (
+                "trim_start",
+                "trim_start()",
+                "Trim leading whitespace",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "trim_end",
+                "trim_end()",
+                "Trim trailing whitespace",
+                CompletionItemKind::METHOD,
+            ),
+            // Set methods
+            (
+                "add",
+                "add(val)",
+                "Add element to set",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "remove",
+                "remove(val)",
+                "Remove element from set",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "union",
+                "union(other)",
+                "Union of two sets",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "intersection",
+                "intersection(other)",
+                "Intersection of two sets",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "difference",
+                "difference(other)",
+                "Difference of two sets",
                 CompletionItemKind::METHOD,
             ),
         ];

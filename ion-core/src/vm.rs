@@ -1866,9 +1866,16 @@ impl Vm {
                 Ok(Value::List(new))
             }
             "pop" => {
-                let mut new = items.to_vec();
-                let val = new.pop().unwrap_or(Value::Unit);
-                Ok(val)
+                if items.is_empty() {
+                    Ok(Value::Tuple(vec![Value::List(vec![]), Value::Option(None)]))
+                } else {
+                    let mut new = items.to_vec();
+                    let popped = new.pop().unwrap();
+                    Ok(Value::Tuple(vec![
+                        Value::List(new),
+                        Value::Option(Some(Box::new(popped))),
+                    ]))
+                }
             }
             "contains" => Ok(Value::Bool(
                 args.first().map(|a| items.contains(a)).unwrap_or(false),
@@ -2695,7 +2702,16 @@ impl Vm {
                             args[i].clone()
                         } else if let Some(default) = &param.default {
                             let mut interp = crate::interpreter::Interpreter::new();
-                            interp.eval_single_expr(default).unwrap_or(Value::Unit)
+                            interp.eval_single_expr(default).map_err(|e| {
+                                IonError::runtime(
+                                    format!(
+                                        "error evaluating default for '{}': {}",
+                                        param.name, e.message
+                                    ),
+                                    line,
+                                    col,
+                                )
+                            })?
                         } else {
                             Value::Unit
                         };
@@ -2832,23 +2848,30 @@ impl Vm {
                     }
                 }
                 // Fill defaults and push reordered args
-                let reordered: Vec<Value> = ordered
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, v)| {
-                        v.unwrap_or_else(|| {
-                            ion_fn
-                                .params
-                                .get(i)
-                                .and_then(|p| p.default.as_ref())
-                                .map(|d| {
-                                    let mut interp = crate::interpreter::Interpreter::new();
-                                    interp.eval_single_expr(d).unwrap_or(Value::Unit)
-                                })
-                                .unwrap_or(Value::Unit)
-                        })
-                    })
-                    .collect();
+                let mut reordered = Vec::with_capacity(ordered.len());
+                for (i, v) in ordered.into_iter().enumerate() {
+                    let val = match v {
+                        Some(val) => val,
+                        None => {
+                            if let Some(d) = ion_fn.params.get(i).and_then(|p| p.default.as_ref()) {
+                                let mut interp = crate::interpreter::Interpreter::new();
+                                interp.eval_single_expr(d).map_err(|e| {
+                                    IonError::runtime(
+                                        format!(
+                                            "error evaluating default for '{}': {}",
+                                            ion_fn.params[i].name, e.message
+                                        ),
+                                        line,
+                                        col,
+                                    )
+                                })?
+                            } else {
+                                Value::Unit
+                            }
+                        }
+                    };
+                    reordered.push(val);
+                }
                 // Push func + reordered args, then call normally
                 self.stack.push(func.clone());
                 for arg in &reordered {

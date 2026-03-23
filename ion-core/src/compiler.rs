@@ -168,6 +168,54 @@ impl Compiler {
                         .as_ref()
                         .is_some_and(|b| Self::stmts_have_closures(b))
             }
+            ExprKind::TryCatch { body, handler, .. } => {
+                Self::stmts_have_closures(body) || Self::stmts_have_closures(handler)
+            }
+            ExprKind::LoopExpr(stmts) => Self::stmts_have_closures(stmts),
+            ExprKind::Range { start, end, .. } => {
+                Self::expr_has_closures(start) || Self::expr_has_closures(end)
+            }
+            ExprKind::Dict(entries) => entries.iter().any(|e| match e {
+                DictEntry::KeyValue(k, v) => {
+                    Self::expr_has_closures(k) || Self::expr_has_closures(v)
+                }
+                DictEntry::Spread(expr) => Self::expr_has_closures(expr),
+            }),
+            ExprKind::DictComp {
+                key,
+                value,
+                iter,
+                cond,
+                ..
+            } => {
+                Self::expr_has_closures(key)
+                    || Self::expr_has_closures(value)
+                    || Self::expr_has_closures(iter)
+                    || cond.as_ref().is_some_and(|c| Self::expr_has_closures(c))
+            }
+            ExprKind::FieldAccess { expr, .. }
+            | ExprKind::Try(expr)
+            | ExprKind::SomeExpr(expr)
+            | ExprKind::OkExpr(expr)
+            | ExprKind::ErrExpr(expr) => Self::expr_has_closures(expr),
+            ExprKind::Index { expr, index } => {
+                Self::expr_has_closures(expr) || Self::expr_has_closures(index)
+            }
+            ExprKind::Slice {
+                expr, start, end, ..
+            } => {
+                Self::expr_has_closures(expr)
+                    || start.as_ref().is_some_and(|s| Self::expr_has_closures(s))
+                    || end.as_ref().is_some_and(|e| Self::expr_has_closures(e))
+            }
+            ExprKind::FStr(parts) => parts.iter().any(|p| match p {
+                FStrPart::Expr(e) => Self::expr_has_closures(e),
+                _ => false,
+            }),
+            ExprKind::StructConstruct { fields, spread, .. } => {
+                fields.iter().any(|(_, e)| Self::expr_has_closures(e))
+                    || spread.as_ref().is_some_and(|s| Self::expr_has_closures(s))
+            }
             _ => false,
         }
     }
