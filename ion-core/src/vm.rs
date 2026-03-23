@@ -1769,6 +1769,23 @@ impl Vm {
                     ))
                 }
             }
+            "index" => {
+                let target = args.first().ok_or_else(|| {
+                    IonError::type_err("index requires an argument".to_string(), line, col)
+                })?;
+                Ok(match items.iter().position(|v| v == target) {
+                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
+                    None => Value::Option(None),
+                })
+            }
+            "count" => {
+                let target = args.first().ok_or_else(|| {
+                    IonError::type_err("count requires an argument".to_string(), line, col)
+                })?;
+                Ok(Value::Int(
+                    items.iter().filter(|v| *v == target).count() as i64
+                ))
+            }
             _ => Err(IonError::type_err(
                 format!("list has no method '{}'", method),
                 line,
@@ -1879,6 +1896,10 @@ impl Vm {
                     Value::Result(Err(Box::new(Value::Str(e.to_string()))))
                 }
             }),
+            "bytes" => {
+                let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
+                Ok(Value::List(bytes))
+            }
             "reverse" => Ok(Value::Str(s.chars().rev().collect())),
             "slice" => {
                 let chars: Vec<char> = s.chars().collect();

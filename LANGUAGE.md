@@ -573,7 +573,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `len(x)` | Length of list, string, dict, or bytes |
 | `range(n)` | `[0, 1, ..., n-1]` |
 | `range(start, end)` | `[start, start+1, ..., end-1]` |
-| `enumerate(list)` | `[(0, a), (1, b), ...]` |
+| `enumerate(val)` | `[(0, a), (1, b), ...]` (list, string, or dict) |
 | `join(list, sep)` | Join list elements with separator |
 
 ### Math
@@ -638,6 +638,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.reverse()` | String | Reversed string |
 | `.repeat(n)` | String | Repeat n times |
 | `.slice(start, end)` | String | Substring by char index |
+| `.bytes()` | List | List of byte values (ints) |
 | `.to_int()` | Result | Parse as integer |
 | `.to_float()` | Result | Parse as float |
 
@@ -664,6 +665,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.flat_map(fn)` | List | Map then flatten results |
 | `.any(fn)` | Bool | True if fn returns true for any element |
 | `.all(fn)` | Bool | True if fn returns true for all elements |
+| `.index(val)` | Option(Int) | Index of first occurrence |
+| `.count(val)` | Int | Number of occurrences |
 | `.sort_by(fn)` | List | Sort with custom comparator (fn returns int: neg/0/pos) |
 
 ### Tuple Methods

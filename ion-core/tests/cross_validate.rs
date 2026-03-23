@@ -892,3 +892,36 @@ fn cross_dict_zip() {
 fn cross_join_builtin() {
     assert_both_eq(r#"join(["a", "b"], ",")"#, Value::Str("a,b".to_string()));
 }
+
+#[test]
+fn cross_string_bytes() {
+    assert_both_eq(
+        r#""AB".bytes()"#,
+        Value::List(vec![Value::Int(65), Value::Int(66)]),
+    );
+}
+
+#[test]
+fn cross_enumerate_string() {
+    assert_both_eq(
+        r#"enumerate("ab")"#,
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(0), Value::Str("a".to_string())]),
+            Value::Tuple(vec![Value::Int(1), Value::Str("b".to_string())]),
+        ]),
+    );
+}
+
+#[test]
+fn cross_list_index() {
+    assert_both_eq(
+        r#"[10, 20, 30].index(20)"#,
+        Value::Option(Some(Box::new(Value::Int(1)))),
+    );
+    assert_both_eq(r#"[10, 20, 30].index(99)"#, Value::Option(None));
+}
+
+#[test]
+fn cross_list_count() {
+    assert_both_eq(r#"[1, 2, 1, 3, 1].count(1)"#, Value::Int(3));
+}

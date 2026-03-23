@@ -1704,6 +1704,19 @@ impl Interpreter {
                     .collect(),
             )),
             "is_empty" => Ok(Value::Bool(items.is_empty())),
+            "index" => {
+                let target = &args[0];
+                Ok(match items.iter().position(|v| v == target) {
+                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
+                    None => Value::Option(None),
+                })
+            }
+            "count" => {
+                let target = &args[0];
+                Ok(Value::Int(
+                    items.iter().filter(|v| *v == target).count() as i64
+                ))
+            }
             _ => Err(IonError::type_err(
                 format!(
                     "{}{}{}",
@@ -1864,6 +1877,10 @@ impl Interpreter {
                     Value::Result(Err(Box::new(Value::Str(e.to_string()))))
                 }
             }),
+            "bytes" => {
+                let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
+                Ok(Value::List(bytes))
+            }
             "reverse" => Ok(Value::Str(s.chars().rev().collect())),
             "slice" => {
                 let chars: Vec<char> = s.chars().collect();
@@ -3271,6 +3288,25 @@ pub fn register_builtins(env: &mut Env) {
                         .iter()
                         .enumerate()
                         .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
+                        .collect(),
+                )),
+                Value::Str(s) => Ok(Value::List(
+                    s.chars()
+                        .enumerate()
+                        .map(|(i, c)| {
+                            Value::Tuple(vec![Value::Int(i as i64), Value::Str(c.to_string())])
+                        })
+                        .collect(),
+                )),
+                Value::Dict(map) => Ok(Value::List(
+                    map.iter()
+                        .enumerate()
+                        .map(|(i, (k, v))| {
+                            Value::Tuple(vec![
+                                Value::Int(i as i64),
+                                Value::Tuple(vec![Value::Str(k.clone()), v.clone()]),
+                            ])
+                        })
                         .collect(),
                 )),
                 _ => Err(format!(

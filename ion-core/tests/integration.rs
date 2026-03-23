@@ -3271,3 +3271,49 @@ fn test_join_builtin() {
     );
     assert_eq!(eval(r#"join(["x"], "-")"#), Value::Str("x".to_string()));
 }
+
+#[test]
+fn test_string_bytes_method() {
+    assert_eq!(
+        eval(r#""ABC".bytes()"#),
+        Value::List(vec![Value::Int(65), Value::Int(66), Value::Int(67)])
+    );
+    assert_eq!(eval(r#""".bytes()"#), Value::List(vec![]));
+}
+
+#[test]
+fn test_enumerate_string() {
+    assert_eq!(
+        eval(r#"enumerate("ab")"#),
+        Value::List(vec![
+            Value::Tuple(vec![Value::Int(0), Value::Str("a".to_string())]),
+            Value::Tuple(vec![Value::Int(1), Value::Str("b".to_string())]),
+        ])
+    );
+}
+
+#[test]
+fn test_enumerate_dict() {
+    assert_eq!(
+        eval(r#"enumerate(#{a: 1})"#),
+        Value::List(vec![Value::Tuple(vec![
+            Value::Int(0),
+            Value::Tuple(vec![Value::Str("a".to_string()), Value::Int(1)]),
+        ])])
+    );
+}
+
+#[test]
+fn test_list_index_method() {
+    assert_eq!(
+        eval(r#"[10, 20, 30].index(20)"#),
+        Value::Option(Some(Box::new(Value::Int(1))))
+    );
+    assert_eq!(eval(r#"[10, 20, 30].index(99)"#), Value::Option(None));
+}
+
+#[test]
+fn test_list_count_method() {
+    assert_eq!(eval(r#"[1, 2, 1, 3, 1].count(1)"#), Value::Int(3));
+    assert_eq!(eval(r#"[1, 2, 3].count(99)"#), Value::Int(0));
+}
