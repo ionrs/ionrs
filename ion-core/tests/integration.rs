@@ -3391,3 +3391,52 @@ fn test_let_destructure_list() {
         Value::List(vec![Value::Int(2), Value::Int(3)])
     );
 }
+
+#[test]
+fn test_list_unique() {
+    assert_eq!(
+        eval(r#"[1, 2, 1, 3, 2, 1].unique()"#),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(eval(r#"[].unique()"#), Value::List(vec![]));
+}
+
+#[test]
+fn test_list_min() {
+    assert_eq!(
+        eval(r#"[3, 1, 2].min()"#),
+        Value::Option(Some(Box::new(Value::Int(1))))
+    );
+    assert_eq!(eval(r#"[].min()"#), Value::Option(None));
+    assert_eq!(
+        eval(r#"["c", "a", "b"].min()"#),
+        Value::Option(Some(Box::new(Value::Str("a".to_string()))))
+    );
+}
+
+#[test]
+fn test_list_max() {
+    assert_eq!(
+        eval(r#"[3, 1, 2].max()"#),
+        Value::Option(Some(Box::new(Value::Int(3))))
+    );
+    assert_eq!(eval(r#"[].max()"#), Value::Option(None));
+}
+
+#[test]
+fn test_dict_update() {
+    assert_eq!(
+        eval(r#"#{a: 1, b: 2}.update(#{b: 20, c: 30})"#),
+        Value::Dict(indexmap::indexmap! {
+            "a".to_string() => Value::Int(1),
+            "b".to_string() => Value::Int(20),
+            "c".to_string() => Value::Int(30),
+        })
+    );
+}
+
+#[test]
+fn test_string_char_len() {
+    assert_eq!(eval(r#""héllo".char_len()"#), Value::Int(5));
+    assert_eq!(eval(r#""héllo".len()"#), Value::Int(6));
+}

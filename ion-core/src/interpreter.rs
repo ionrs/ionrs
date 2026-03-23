@@ -1737,6 +1737,87 @@ impl Interpreter {
                 }
                 Ok(Value::List(result))
             }
+            "unique" => {
+                let mut seen = Vec::new();
+                let mut result = Vec::new();
+                for item in items {
+                    if !seen.contains(item) {
+                        seen.push(item.clone());
+                        result.push(item.clone());
+                    }
+                }
+                Ok(Value::List(result))
+            }
+            "min" => {
+                if items.is_empty() {
+                    return Ok(Value::Option(None));
+                }
+                let mut min = &items[0];
+                for item in items.iter().skip(1) {
+                    match (min, item) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if b < a {
+                                min = item;
+                            }
+                        }
+                        (Value::Float(a), Value::Float(b)) => {
+                            if b < a {
+                                min = item;
+                            }
+                        }
+                        (Value::Str(a), Value::Str(b)) => {
+                            if b < a {
+                                min = item;
+                            }
+                        }
+                        _ => {
+                            return Err(IonError::type_err(
+                                ion_str!("min() requires homogeneous comparable elements")
+                                    .to_string(),
+                                span.line,
+                                span.col,
+                            )
+                            .into())
+                        }
+                    }
+                }
+                Ok(Value::Option(Some(Box::new(min.clone()))))
+            }
+            "max" => {
+                if items.is_empty() {
+                    return Ok(Value::Option(None));
+                }
+                let mut max = &items[0];
+                for item in items.iter().skip(1) {
+                    match (max, item) {
+                        (Value::Int(a), Value::Int(b)) => {
+                            if b > a {
+                                max = item;
+                            }
+                        }
+                        (Value::Float(a), Value::Float(b)) => {
+                            if b > a {
+                                max = item;
+                            }
+                        }
+                        (Value::Str(a), Value::Str(b)) => {
+                            if b > a {
+                                max = item;
+                            }
+                        }
+                        _ => {
+                            return Err(IonError::type_err(
+                                ion_str!("max() requires homogeneous comparable elements")
+                                    .to_string(),
+                                span.line,
+                                span.col,
+                            )
+                            .into())
+                        }
+                    }
+                }
+                Ok(Value::Option(Some(Box::new(max.clone()))))
+            }
             _ => Err(IonError::type_err(
                 format!(
                     "{}{}{}",
@@ -1856,6 +1937,7 @@ impl Interpreter {
                 let chars: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
                 Ok(Value::List(chars))
             }
+            "char_len" => Ok(Value::Int(s.chars().count() as i64)),
             "is_empty" => Ok(Value::Bool(s.is_empty())),
             "trim_start" => Ok(Value::Str(s.trim_start().to_string())),
             "trim_end" => Ok(Value::Str(s.trim_end().to_string())),
@@ -2139,6 +2221,22 @@ impl Interpreter {
                 }
             }
             "is_empty" => Ok(Value::Bool(map.is_empty())),
+            "update" => {
+                if let Value::Dict(other) = &args[0] {
+                    let mut new_map = map.clone();
+                    for (k, v) in other {
+                        new_map.insert(k.clone(), v.clone());
+                    }
+                    Ok(Value::Dict(new_map))
+                } else {
+                    Err(IonError::type_err(
+                        ion_str!("update requires a dict argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into())
+                }
+            }
             "zip" => {
                 if let Value::Dict(other) = &args[0] {
                     let mut result = indexmap::IndexMap::new();

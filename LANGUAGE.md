@@ -622,6 +622,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `.len()` | Int | Byte length |
+| `.char_len()` | Int | Character count (for Unicode) |
 | `.is_empty()` | Bool | True if empty |
 | `.contains(sub)` | Bool | Contains substring (string or char code int) |
 | `.starts_with(pre)` | Bool | Starts with prefix |
@@ -671,6 +672,9 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.count(val)` | Int | Number of occurrences |
 | `.slice(start, end?)` | List | Sublist by index |
 | `.dedup()` | List | Remove consecutive duplicates |
+| `.unique()` | List | Remove all duplicates (preserves order) |
+| `.min()` | Option | Minimum element |
+| `.max()` | Option | Maximum element |
 | `.sort_by(fn)` | List | Sort with custom comparator (fn returns int: neg/0/pos) |
 
 ### Tuple Methods
@@ -692,6 +696,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.entries()` | List | List of (key, value) tuples |
 | `.contains_key(key)` | Bool | Key exists |
 | `.get(key)` | Option | Get value by key |
+| `.update(other)` | Dict | Merge other dict (overwrites existing keys) |
 | `.insert(key, val)` | Dict | New dict with entry added |
 | `.remove(key)` | Dict | New dict with entry removed |
 | `.merge(other)` | Dict | New dict merging two dicts |

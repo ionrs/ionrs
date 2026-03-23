@@ -961,3 +961,38 @@ fn cross_let_destructure_tuple() {
 fn cross_let_destructure_list() {
     assert_both_eq(r#"let [a, b] = [10, 20]; a + b"#, Value::Int(30));
 }
+
+#[test]
+fn cross_list_unique() {
+    assert_both_eq(
+        r#"[1, 2, 1, 3, 2].unique()"#,
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+}
+
+#[test]
+fn cross_list_min() {
+    assert_both_eq(
+        r#"[3, 1, 2].min()"#,
+        Value::Option(Some(Box::new(Value::Int(1)))),
+    );
+    assert_both_eq(r#"[].min()"#, Value::Option(None));
+}
+
+#[test]
+fn cross_list_max() {
+    assert_both_eq(
+        r#"[3, 1, 2].max()"#,
+        Value::Option(Some(Box::new(Value::Int(3)))),
+    );
+}
+
+#[test]
+fn cross_dict_update() {
+    assert_both(r#"#{a: 1, b: 2}.update(#{b: 20, c: 30})"#);
+}
+
+#[test]
+fn cross_string_char_len() {
+    assert_both_eq(r#""héllo".char_len()"#, Value::Int(5));
+}
