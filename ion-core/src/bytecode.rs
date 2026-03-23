@@ -139,11 +139,15 @@ pub enum Op {
     IterInit,
     IterNext, // u16 jump offset when exhausted
     ListAppend,
+    /// Pop a list from TOS, extend the list below TOS with its items (for spread).
+    ListExtend,
     DictInsert,
     /// Merge a dict into the dict below it on the stack (for spread).
     DictMerge,
     /// Drop the current iterator (for break in for-loops).
     IterDrop,
+    /// Runtime type check: peek TOS, compare type against constant at u16 index.
+    CheckType, // u16: constant index (string type name)
 
     /// Slice access: pop end (or sentinel), pop start (or sentinel), pop object, push slice.
     Slice, // u8: flags (bit 0 = has_start, bit 1 = has_end, bit 2 = inclusive)
@@ -362,6 +366,7 @@ impl Chunk {
                 || x == Op::Return as u8
                 || x == Op::IterInit as u8
                 || x == Op::ListAppend as u8
+                || x == Op::ListExtend as u8
                 || x == Op::DictInsert as u8
                 || x == Op::DictMerge as u8
                 || x == Op::IterDrop as u8 =>
@@ -401,7 +406,8 @@ impl Chunk {
                 || x == Op::GetLocalSlot as u8
                 || x == Op::SetLocalSlot as u8
                 || x == Op::TryBegin as u8
-                || x == Op::TryEnd as u8 =>
+                || x == Op::TryEnd as u8
+                || x == Op::CheckType as u8 =>
             {
                 3
             }

@@ -913,6 +913,7 @@ impl Vm {
                 let val = self.pop(line, col)?;
                 let iter: Box<dyn Iterator<Item = Value>> = match val {
                     Value::List(items) => Box::new(items.into_iter()),
+                    Value::Set(items) => Box::new(items.into_iter()),
                     Value::Tuple(items) => Box::new(items.into_iter()),
                     Value::Dict(map) => Box::new(
                         map.into_iter()
@@ -988,6 +989,36 @@ impl Vm {
                     return Err(IonError::runtime("ListAppend: no list on stack", line, col));
                 }
             }
+            Op::ListExtend => {
+                // Stack: [..., target_list, source_list]
+                let source = self.pop(line, col)?;
+                match source {
+                    Value::List(other) => {
+                        let mut found = false;
+                        for i in (0..self.stack.len()).rev() {
+                            if let Value::List(ref mut items) = self.stack[i] {
+                                items.extend(other);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            return Err(IonError::runtime(
+                                "ListExtend: no list on stack",
+                                line,
+                                col,
+                            ));
+                        }
+                    }
+                    other => {
+                        return Err(IonError::type_err(
+                            format!("spread requires a list, got {}", other.type_name()),
+                            line,
+                            col,
+                        ));
+                    }
+                }
+            }
             Op::DictInsert => {
                 // Stack: [..., dict, iter_placeholder, ..., key, value]
                 let value = self.pop(line, col)?;
@@ -1045,6 +1076,46 @@ impl Vm {
             }
 
             // --- Slice ---
+            Op::CheckType => {
+                let idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let type_name = match &chunk.constants[idx] {
+                    Value::Str(s) => s.clone(),
+                    _ => unreachable!(),
+                };
+                // Peek at TOS without popping
+                let val = self
+                    .stack
+                    .last()
+                    .ok_or_else(|| IonError::runtime("CheckType: empty stack", line, col))?;
+                let ok = match type_name.as_str() {
+                    "int" => matches!(val, Value::Int(_)),
+                    "float" => matches!(val, Value::Float(_)),
+                    "bool" => matches!(val, Value::Bool(_)),
+                    "string" => matches!(val, Value::Str(_)),
+                    "bytes" => matches!(val, Value::Bytes(_)),
+                    "list" => matches!(val, Value::List(_)),
+                    "dict" => matches!(val, Value::Dict(_)),
+                    "tuple" => matches!(val, Value::Tuple(_)),
+                    "set" => matches!(val, Value::Set(_)),
+                    "fn" => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
+                    "any" => true,
+                    s if s.starts_with("Option") => matches!(val, Value::Option(_)),
+                    s if s.starts_with("Result") => matches!(val, Value::Result(_)),
+                    _ => true,
+                };
+                if !ok {
+                    return Err(IonError::type_err(
+                        format!(
+                            "type mismatch: expected {}, got {}",
+                            type_name,
+                            val.type_name()
+                        ),
+                        line,
+                        col,
+                    ));
+                }
+            }
             Op::Slice => {
                 let flags = chunk.read_u8(self.ip);
                 self.ip += 1;
@@ -1538,6 +1609,19 @@ impl Vm {
                 }
                 return Ok(acc);
             }
+            (Value::List(items), "reduce") => {
+                if items.is_empty() {
+                    return Err(IonError::runtime("reduce on empty list", line, col));
+                }
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("reduce requires a function argument", line, col)
+                })?;
+                let mut acc = items[0].clone();
+                for item in items.iter().skip(1) {
+                    acc = self.invoke_value(func, &[acc, item.clone()], line, col)?;
+                }
+                return Ok(acc);
+            }
             (Value::List(items), "flat_map") => {
                 let func = args.first().ok_or_else(|| {
                     IonError::runtime("flat_map requires a function argument", line, col)
@@ -1753,6 +1837,7 @@ impl Vm {
             Value::Str(s) => self.str_method(s, method, args, line, col),
             Value::Dict(map) => self.dict_method(map, method, args, line, col),
             Value::Bytes(b) => self.bytes_method(b, method, args, line, col),
+            Value::Set(items) => self.set_method(items, method, args, line, col),
             Value::Option(_) => self.option_method(&receiver, method, args, line, col),
             Value::Result(_) => self.result_method(&receiver, method, args, line, col),
             _ => Err(IonError::type_err(
@@ -2000,8 +2085,107 @@ impl Vm {
                     items.windows(n).map(|w| Value::List(w.to_vec())).collect();
                 Ok(Value::List(result))
             }
+            "chunk" => {
+                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err("chunk requires int argument".to_string(), line, col)
+                })? as usize;
+                if n == 0 {
+                    return Err(IonError::type_err(
+                        "chunk size must be > 0".to_string(),
+                        line,
+                        col,
+                    ));
+                }
+                let result: Vec<Value> = items.chunks(n).map(|c| Value::List(c.to_vec())).collect();
+                Ok(Value::List(result))
+            }
             _ => Err(IonError::type_err(
                 format!("list has no method '{}'", method),
+                line,
+                col,
+            )),
+        }
+    }
+
+    fn set_method(
+        &self,
+        items: &[Value],
+        method: &str,
+        args: &[Value],
+        line: usize,
+        col: usize,
+    ) -> Result<Value, IonError> {
+        match method {
+            "len" => Ok(Value::Int(items.len() as i64)),
+            "contains" => Ok(Value::Bool(
+                args.first().map(|a| items.contains(a)).unwrap_or(false),
+            )),
+            "is_empty" => Ok(Value::Bool(items.is_empty())),
+            "add" => {
+                let val = &args[0];
+                let mut new = items.to_vec();
+                if !new.iter().any(|v| v == val) {
+                    new.push(val.clone());
+                }
+                Ok(Value::Set(new))
+            }
+            "remove" => {
+                let val = &args[0];
+                let new: Vec<Value> = items.iter().filter(|v| *v != val).cloned().collect();
+                Ok(Value::Set(new))
+            }
+            "union" => {
+                if let Some(Value::Set(other)) = args.first() {
+                    let mut new = items.to_vec();
+                    for v in other {
+                        if !new.iter().any(|x| x == v) {
+                            new.push(v.clone());
+                        }
+                    }
+                    Ok(Value::Set(new))
+                } else {
+                    Err(IonError::type_err(
+                        "union requires a set argument".to_string(),
+                        line,
+                        col,
+                    ))
+                }
+            }
+            "intersection" => {
+                if let Some(Value::Set(other)) = args.first() {
+                    let new: Vec<Value> = items
+                        .iter()
+                        .filter(|v| other.iter().any(|x| x == *v))
+                        .cloned()
+                        .collect();
+                    Ok(Value::Set(new))
+                } else {
+                    Err(IonError::type_err(
+                        "intersection requires a set argument".to_string(),
+                        line,
+                        col,
+                    ))
+                }
+            }
+            "difference" => {
+                if let Some(Value::Set(other)) = args.first() {
+                    let new: Vec<Value> = items
+                        .iter()
+                        .filter(|v| !other.iter().any(|x| x == *v))
+                        .cloned()
+                        .collect();
+                    Ok(Value::Set(new))
+                } else {
+                    Err(IonError::type_err(
+                        "difference requires a set argument".to_string(),
+                        line,
+                        col,
+                    ))
+                }
+            }
+            "to_list" => Ok(Value::List(items.to_vec())),
+            _ => Err(IonError::type_err(
+                format!("set has no method '{}'", method),
                 line,
                 col,
             )),

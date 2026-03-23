@@ -145,7 +145,9 @@ impl Compiler {
                 Self::expr_has_closures(expr)
                     || arms.iter().any(|a| Self::expr_has_closures(&a.body))
             }
-            ExprKind::List(items) => items.iter().any(Self::expr_has_closures),
+            ExprKind::List(items) => items.iter().any(|e| match e {
+                ListEntry::Elem(expr) | ListEntry::Spread(expr) => Self::expr_has_closures(expr),
+            }),
             ExprKind::Tuple(items) => items.iter().any(Self::expr_has_closures),
             ExprKind::ListComp {
                 expr, iter, cond, ..
@@ -359,9 +361,15 @@ impl Compiler {
             StmtKind::Let {
                 mutable,
                 pattern,
+                type_ann,
                 value,
             } => {
                 self.compile_expr(value)?;
+                if let Some(ann) = type_ann {
+                    let type_name = Self::type_ann_to_string(ann);
+                    let idx = self.chunk.add_constant(Value::Str(type_name));
+                    self.chunk.emit_op_u16(Op::CheckType, idx, line);
+                }
                 self.compile_let_pattern(pattern, *mutable, line)?;
             }
             StmtKind::ExprStmt { expr, .. } => {
@@ -676,11 +684,32 @@ impl Compiler {
             }
 
             ExprKind::List(items) => {
-                for item in items {
-                    self.compile_expr(item)?;
+                let has_spread = items.iter().any(|e| matches!(e, ListEntry::Spread(_)));
+                if has_spread {
+                    // Build empty list, then append/extend entries one by one
+                    self.chunk.emit_op_u16(Op::BuildList, 0, line);
+                    for entry in items {
+                        match entry {
+                            ListEntry::Elem(expr) => {
+                                self.compile_expr(expr)?;
+                                self.chunk.emit_op(Op::ListAppend, line);
+                            }
+                            ListEntry::Spread(expr) => {
+                                self.compile_expr(expr)?;
+                                self.chunk.emit_op(Op::ListExtend, line);
+                            }
+                        }
+                    }
+                } else {
+                    // Fast path: no spreads, use BuildList directly
+                    for entry in items {
+                        if let ListEntry::Elem(expr) = entry {
+                            self.compile_expr(expr)?;
+                        }
+                    }
+                    self.chunk
+                        .emit_op_u16(Op::BuildList, items.len() as u16, line);
                 }
-                self.chunk
-                    .emit_op_u16(Op::BuildList, items.len() as u16, line);
             }
 
             ExprKind::Tuple(items) => {
@@ -1136,6 +1165,32 @@ impl Compiler {
         }
         self.in_tail_position = saved_tail;
         Ok(())
+    }
+
+    fn type_ann_to_string(ann: &TypeAnn) -> String {
+        match ann {
+            TypeAnn::Simple(name) => name.clone(),
+            TypeAnn::Option(inner) => format!("Option<{}>", Self::type_ann_to_string(inner)),
+            TypeAnn::Result(ok, err) => format!(
+                "Result<{}, {}>",
+                Self::type_ann_to_string(ok),
+                Self::type_ann_to_string(err)
+            ),
+            TypeAnn::List(inner) => format!("list<{}>", Self::type_ann_to_string(inner)),
+            TypeAnn::Dict(k, v) => format!(
+                "dict<{}, {}>",
+                Self::type_ann_to_string(k),
+                Self::type_ann_to_string(v)
+            ),
+            TypeAnn::Tuple(fields) => {
+                let inner: Vec<String> = fields.iter().map(Self::type_ann_to_string).collect();
+                format!("({})", inner.join(", "))
+            }
+            TypeAnn::Fn(params, ret) => {
+                let p: Vec<String> = params.iter().map(Self::type_ann_to_string).collect();
+                format!("fn({}) -> {}", p.join(", "), Self::type_ann_to_string(ret))
+            }
+        }
     }
 
     fn compile_let_pattern(

@@ -19,10 +19,11 @@ pub struct Stmt {
 
 #[derive(Debug, Clone)]
 pub enum StmtKind {
-    /// `let [mut] pattern = expr;`
+    /// `let [mut] pattern [: type] = expr;`
     Let {
         mutable: bool,
         pattern: Pattern,
+        type_ann: Option<TypeAnn>,
         value: Expr,
     },
     /// Expression statement (with trailing semicolon = discards value)
@@ -116,8 +117,8 @@ pub enum ExprKind {
     ErrExpr(Box<Expr>),
 
     // Collections
-    /// `[a, b, c]`
-    List(Vec<Expr>),
+    /// `[a, b, ...c]` with optional spread entries
+    List(Vec<ListEntry>),
     /// `#{ "key": val, ... }` with optional spread entries
     Dict(Vec<DictEntry>),
     /// `(a, b, c)`
@@ -259,6 +260,13 @@ pub enum ExprKind {
     SelectExpr(Vec<SelectBranch>),
 }
 
+/// A list entry: either a single element or a spread `...expr`.
+#[derive(Debug, Clone)]
+pub enum ListEntry {
+    Elem(Expr),
+    Spread(Expr),
+}
+
 /// A dict entry: either a key-value pair or a spread `...expr`.
 #[derive(Debug, Clone)]
 pub enum DictEntry {
@@ -353,6 +361,18 @@ pub enum BinOp {
     BitXor,
     Shl,
     Shr,
+}
+
+/// Optional type annotation for `let` bindings.
+#[derive(Debug, Clone)]
+pub enum TypeAnn {
+    Simple(String),                     // int, float, bool, string, list, dict, set, etc.
+    Option(Box<TypeAnn>),               // Option<T>
+    Result(Box<TypeAnn>, Box<TypeAnn>), // Result<T, E>
+    List(Box<TypeAnn>),                 // list<T>
+    Dict(Box<TypeAnn>, Box<TypeAnn>),   // dict<K, V>
+    Tuple(Vec<TypeAnn>),                // (T, U, ...)
+    Fn(Vec<TypeAnn>, Box<TypeAnn>),     // fn(T, U) -> V
 }
 
 #[derive(Debug, Clone, Copy)]

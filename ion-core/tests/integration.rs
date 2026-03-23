@@ -3591,3 +3591,162 @@ fn test_msgpack_round_trip_float() {
         Value::Float(3.14)
     );
 }
+
+// ============================================================
+// List: chunk, reduce
+// ============================================================
+
+#[test]
+fn test_list_chunk() {
+    assert_eq!(
+        eval("[1, 2, 3, 4, 5].chunk(2)"),
+        Value::List(vec![
+            Value::List(vec![Value::Int(1), Value::Int(2)]),
+            Value::List(vec![Value::Int(3), Value::Int(4)]),
+            Value::List(vec![Value::Int(5)]),
+        ])
+    );
+}
+
+#[test]
+fn test_list_reduce() {
+    assert_eq!(eval("[1, 2, 3, 4].reduce(|a, b| a + b)"), Value::Int(10));
+}
+
+// ============================================================
+// Spread operator: [...a, ...b]
+// ============================================================
+
+#[test]
+fn test_list_spread() {
+    assert_eq!(
+        eval("let a = [1, 2]; let b = [3, 4]; [...a, ...b]"),
+        Value::List(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+            Value::Int(4),
+        ])
+    );
+}
+
+#[test]
+fn test_list_spread_mixed() {
+    assert_eq!(
+        eval("let a = [1, 2]; [0, ...a, 3]"),
+        Value::List(vec![
+            Value::Int(0),
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+        ])
+    );
+}
+
+// ============================================================
+// Set type
+// ============================================================
+
+#[test]
+fn test_set_create() {
+    assert_eq!(
+        eval("set([1, 2, 2, 3])"),
+        Value::Set(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_set_contains() {
+    assert_eq!(eval("set([1, 2, 3]).contains(2)"), Value::Bool(true));
+    assert_eq!(eval("set([1, 2, 3]).contains(5)"), Value::Bool(false));
+}
+
+#[test]
+fn test_set_add_remove() {
+    assert_eq!(
+        eval("set([1, 2]).add(3)"),
+        Value::Set(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        eval("set([1, 2, 3]).remove(2)"),
+        Value::Set(vec![Value::Int(1), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_set_union() {
+    assert_eq!(
+        eval("set([1, 2]).union(set([2, 3]))"),
+        Value::Set(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_set_intersection() {
+    assert_eq!(
+        eval("set([1, 2, 3]).intersection(set([2, 3, 4]))"),
+        Value::Set(vec![Value::Int(2), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_set_difference() {
+    assert_eq!(
+        eval("set([1, 2, 3]).difference(set([2, 4]))"),
+        Value::Set(vec![Value::Int(1), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_set_to_list() {
+    assert_eq!(
+        eval("set([3, 1, 2]).to_list()"),
+        Value::List(vec![Value::Int(3), Value::Int(1), Value::Int(2)])
+    );
+}
+
+#[test]
+fn test_set_len() {
+    assert_eq!(eval("set([1, 2, 2, 3]).len()"), Value::Int(3));
+}
+
+#[test]
+fn test_set_iterate() {
+    assert_eq!(
+        eval("let mut s = 0; for x in set([1, 2, 3]) { s = s + x; } s"),
+        Value::Int(6)
+    );
+}
+
+// ============================================================
+// Type annotations
+// ============================================================
+
+#[test]
+fn test_type_ann_valid() {
+    assert_eq!(eval("let x: int = 42; x"), Value::Int(42));
+    assert_eq!(
+        eval(r#"let s: string = "hi"; s"#),
+        Value::Str("hi".to_string())
+    );
+    assert_eq!(eval("let b: bool = true; b"), Value::Bool(true));
+    assert_eq!(
+        eval("let xs: list = [1, 2]; xs"),
+        Value::List(vec![Value::Int(1), Value::Int(2)])
+    );
+}
+
+#[test]
+fn test_type_ann_mismatch() {
+    assert!(eval_err("let x: int = true;").contains("type mismatch"));
+    assert!(eval_err(r#"let x: string = 42;"#).contains("type mismatch"));
+}
+
+#[test]
+fn test_type_ann_any() {
+    assert_eq!(eval("let x: any = 42; x"), Value::Int(42));
+    assert_eq!(
+        eval(r#"let x: any = "hi"; x"#),
+        Value::Str("hi".to_string())
+    );
+}

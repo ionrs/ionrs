@@ -1188,3 +1188,63 @@ fn cross_msgpack_dict() {
         Value::Dict(indexmap::indexmap! { "a".to_string() => Value::Int(1) }),
     );
 }
+
+// ============================================================
+// List chunk/reduce
+// ============================================================
+
+#[test]
+fn cross_list_chunk() {
+    assert_both_eq(
+        "[1, 2, 3, 4].chunk(2)",
+        Value::List(vec![
+            Value::List(vec![Value::Int(1), Value::Int(2)]),
+            Value::List(vec![Value::Int(3), Value::Int(4)]),
+        ]),
+    );
+}
+
+#[test]
+fn cross_list_reduce() {
+    assert_both_eq("[1, 2, 3].reduce(|a, b| a + b)", Value::Int(6));
+}
+
+// ============================================================
+// Spread in lists
+// ============================================================
+
+#[test]
+fn cross_list_spread() {
+    assert_both_eq(
+        "let a = [1, 2]; [...a, 3]",
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+}
+
+// ============================================================
+// Set type
+// ============================================================
+
+#[test]
+fn cross_set_basic() {
+    assert_both_eq("set([1, 2, 2]).len()", Value::Int(2));
+}
+
+#[test]
+fn cross_set_union() {
+    assert_both_eq("set([1, 2]).union(set([2, 3])).len()", Value::Int(3));
+}
+
+// ============================================================
+// Type annotations
+// ============================================================
+
+#[test]
+fn cross_type_ann() {
+    assert_both_eq("let x: int = 42; x", Value::Int(42));
+}
+
+#[test]
+fn cross_type_ann_list() {
+    assert_both_eq("let xs: list = [1, 2]; xs.len()", Value::Int(2));
+}

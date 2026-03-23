@@ -25,6 +25,8 @@ pub enum Value {
     Result(Result<Box<Value>, Box<Value>>),
     Fn(IonFn),
     BuiltinFn(String, BuiltinFn),
+    /// Ordered set of unique values
+    Set(Vec<Value>),
     /// Host-injected struct: `TypeName { field: val, ... }`
     HostStruct {
         type_name: String,
@@ -91,6 +93,7 @@ impl Value {
             Value::List(_) => ion_static_str!("list"),
             Value::Dict(_) => ion_static_str!("dict"),
             Value::Tuple(_) => ion_static_str!("tuple"),
+            Value::Set(_) => ion_static_str!("set"),
             Value::Option(_) => ion_static_str!("Option"),
             Value::Result(_) => ion_static_str!("Result"),
             Value::Fn(_) => ion_static_str!("fn"),
@@ -207,6 +210,16 @@ impl fmt::Display for Value {
                 }
                 write!(f, ")")
             }
+            Value::Set(items) => {
+                write!(f, "set{{")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "}}")
+            }
             Value::Option(opt) => match opt {
                 Some(v) => write!(f, "Some({})", v),
                 None => write!(f, "None"),
@@ -270,6 +283,7 @@ impl PartialEq for Value {
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::Dict(a), Value::Dict(b)) => a == b,
+            (Value::Set(a), Value::Set(b)) => a.len() == b.len() && a.iter().all(|v| b.contains(v)),
             (Value::Option(a), Value::Option(b)) => a == b,
             (Value::Result(Ok(a)), Value::Result(Ok(b))) => a == b,
             (Value::Result(Err(a)), Value::Result(Err(b))) => a == b,
@@ -324,6 +338,9 @@ impl Value {
                 serde_json::Value::Object(obj)
             }
             Value::Tuple(items) => {
+                serde_json::Value::Array(items.iter().map(|v| v.to_json()).collect())
+            }
+            Value::Set(items) => {
                 serde_json::Value::Array(items.iter().map(|v| v.to_json()).collect())
             }
             Value::Option(Some(v)) => v.to_json(),
@@ -407,6 +424,9 @@ impl Value {
                 rmpv::Value::Map(pairs)
             }
             Value::Tuple(items) => {
+                rmpv::Value::Array(items.iter().map(|v| v.to_msgpack_value()).collect())
+            }
+            Value::Set(items) => {
                 rmpv::Value::Array(items.iter().map(|v| v.to_msgpack_value()).collect())
             }
             Value::Option(Some(v)) => v.to_msgpack_value(),

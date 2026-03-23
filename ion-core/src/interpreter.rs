@@ -182,9 +182,13 @@ impl Interpreter {
             StmtKind::Let {
                 mutable,
                 pattern,
+                type_ann,
                 value,
             } => {
                 let val = self.eval_expr(value)?;
+                if let Some(ann) = type_ann {
+                    Self::check_type_ann(&val, ann, stmt.span)?;
+                }
                 self.bind_pattern(pattern, &val, *mutable, stmt.span)?;
                 Ok(Value::Unit)
             }
@@ -566,8 +570,25 @@ impl Interpreter {
 
             ExprKind::List(items) => {
                 let mut vals = Vec::new();
-                for item in items {
-                    vals.push(self.eval_expr(item)?);
+                for entry in items {
+                    match entry {
+                        ListEntry::Elem(expr) => vals.push(self.eval_expr(expr)?),
+                        ListEntry::Spread(expr) => match self.eval_expr(expr)? {
+                            Value::List(sub) => vals.extend(sub),
+                            other => {
+                                return Err(IonError::type_err(
+                                    format!(
+                                        "{}{}",
+                                        ion_str!("spread requires a list, got "),
+                                        other.type_name()
+                                    ),
+                                    span.line,
+                                    span.col,
+                                )
+                                .into())
+                            }
+                        },
+                    }
                 }
                 Ok(Value::List(vals))
             }
@@ -1460,6 +1481,7 @@ impl Interpreter {
                 }
                 _ => self.dict_method(map, method, args, span),
             },
+            Value::Set(items) => self.set_method(items, method, args, span),
             Value::Option(opt) => self.option_method(opt.clone(), method, args, span),
             Value::Result(res) => self.result_method(res.clone(), method, args, span),
             #[cfg(feature = "concurrency")]
@@ -1857,12 +1879,141 @@ impl Interpreter {
                     items.windows(n).map(|w| Value::List(w.to_vec())).collect();
                 Ok(Value::List(result))
             }
+            "chunk" => {
+                let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
+                    IonError::type_err(
+                        ion_str!("chunk requires int argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                })? as usize;
+                if n == 0 {
+                    return Err(IonError::type_err(
+                        ion_str!("chunk size must be > 0").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
+                let result: Vec<Value> = items.chunks(n).map(|c| Value::List(c.to_vec())).collect();
+                Ok(Value::List(result))
+            }
+            "reduce" => {
+                if items.is_empty() {
+                    return Err(IonError::type_err(
+                        ion_str!("reduce on empty list").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
+                let func = &args[0];
+                let mut acc = items[0].clone();
+                for item in items.iter().skip(1) {
+                    acc = self.call_value(func, &[acc, item.clone()], span)?;
+                }
+                Ok(acc)
+            }
             _ => Err(IonError::type_err(
                 format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
                     ion_str!("' on list")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
+        }
+    }
+
+    fn set_method(
+        &self,
+        items: &[Value],
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
+        match method {
+            "len" => Ok(Value::Int(items.len() as i64)),
+            "contains" => {
+                let target = &args[0];
+                Ok(Value::Bool(items.iter().any(|v| v == target)))
+            }
+            "is_empty" => Ok(Value::Bool(items.is_empty())),
+            "add" => {
+                let val = &args[0];
+                let mut new = items.to_vec();
+                if !new.iter().any(|v| v == val) {
+                    new.push(val.clone());
+                }
+                Ok(Value::Set(new))
+            }
+            "remove" => {
+                let val = &args[0];
+                let new: Vec<Value> = items.iter().filter(|v| *v != val).cloned().collect();
+                Ok(Value::Set(new))
+            }
+            "union" => {
+                if let Value::Set(other) = &args[0] {
+                    let mut new = items.to_vec();
+                    for v in other {
+                        if !new.iter().any(|x| x == v) {
+                            new.push(v.clone());
+                        }
+                    }
+                    Ok(Value::Set(new))
+                } else {
+                    Err(IonError::type_err(
+                        ion_str!("union requires a set argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into())
+                }
+            }
+            "intersection" => {
+                if let Value::Set(other) = &args[0] {
+                    let new: Vec<Value> = items
+                        .iter()
+                        .filter(|v| other.iter().any(|x| x == *v))
+                        .cloned()
+                        .collect();
+                    Ok(Value::Set(new))
+                } else {
+                    Err(IonError::type_err(
+                        ion_str!("intersection requires a set argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into())
+                }
+            }
+            "difference" => {
+                if let Value::Set(other) = &args[0] {
+                    let new: Vec<Value> = items
+                        .iter()
+                        .filter(|v| !other.iter().any(|x| x == *v))
+                        .cloned()
+                        .collect();
+                    Ok(Value::Set(new))
+                } else {
+                    Err(IonError::type_err(
+                        ion_str!("difference requires a set argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into())
+                }
+            }
+            "to_list" => Ok(Value::List(items.to_vec())),
+            _ => Err(IonError::type_err(
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on set")
                 ),
                 span.line,
                 span.col,
@@ -2687,9 +2838,86 @@ impl Interpreter {
         }
     }
 
+    fn check_type_ann(val: &Value, ann: &TypeAnn, span: Span) -> Result<(), SignalOrError> {
+        let matches = match ann {
+            TypeAnn::Simple(name) => match name.as_str() {
+                "int" => matches!(val, Value::Int(_)),
+                "float" => matches!(val, Value::Float(_)),
+                "bool" => matches!(val, Value::Bool(_)),
+                "string" => matches!(val, Value::Str(_)),
+                "bytes" => matches!(val, Value::Bytes(_)),
+                "list" => matches!(val, Value::List(_)),
+                "dict" => matches!(val, Value::Dict(_)),
+                "tuple" => matches!(val, Value::Tuple(_)),
+                "set" => matches!(val, Value::Set(_)),
+                "fn" => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
+                "any" => true,
+                _ => true, // unknown types pass (forward compatibility)
+            },
+            TypeAnn::Option(_) => matches!(val, Value::Option(_)),
+            TypeAnn::Result(_, _) => matches!(val, Value::Result(_)),
+            TypeAnn::List(_) => matches!(val, Value::List(_)),
+            TypeAnn::Dict(_, _) => matches!(val, Value::Dict(_)),
+            TypeAnn::Tuple(fields) => {
+                if let Value::Tuple(items) = val {
+                    items.len() == fields.len()
+                } else {
+                    false
+                }
+            }
+            TypeAnn::Fn(_, _) => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
+        };
+        if !matches {
+            return Err(IonError::type_err(
+                format!(
+                    "{}{}{}{}",
+                    ion_str!("type mismatch: expected "),
+                    Self::type_ann_name(ann),
+                    ion_str!(", got "),
+                    val.type_name()
+                ),
+                span.line,
+                span.col,
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    fn type_ann_name(ann: &TypeAnn) -> String {
+        match ann {
+            TypeAnn::Simple(name) => name.clone(),
+            TypeAnn::Option(inner) => format!("Option<{}>", Self::type_ann_name(inner)),
+            TypeAnn::Result(ok, err) => {
+                format!(
+                    "Result<{}, {}>",
+                    Self::type_ann_name(ok),
+                    Self::type_ann_name(err)
+                )
+            }
+            TypeAnn::List(inner) => format!("list<{}>", Self::type_ann_name(inner)),
+            TypeAnn::Dict(k, v) => {
+                format!(
+                    "dict<{}, {}>",
+                    Self::type_ann_name(k),
+                    Self::type_ann_name(v)
+                )
+            }
+            TypeAnn::Tuple(fields) => {
+                let inner: Vec<String> = fields.iter().map(Self::type_ann_name).collect();
+                format!("({})", inner.join(", "))
+            }
+            TypeAnn::Fn(params, ret) => {
+                let p: Vec<String> = params.iter().map(Self::type_ann_name).collect();
+                format!("fn({}) -> {}", p.join(", "), Self::type_ann_name(ret))
+            }
+        }
+    }
+
     fn value_to_iter(&self, val: &Value, span: Span) -> Result<Vec<Value>, SignalOrError> {
         match val {
             Value::List(items) => Ok(items.clone()),
+            Value::Set(items) => Ok(items.clone()),
             Value::Tuple(items) => Ok(items.clone()),
             Value::Dict(map) => Ok(map
                 .iter()
@@ -3200,6 +3428,27 @@ pub fn register_builtins(env: &mut Env) {
                 Ok(Value::List((start..end).map(Value::Int).collect()))
             }
             _ => Err(ion_str!("range takes 1 or 2 arguments").to_string()),
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("set"),
+        Value::BuiltinFn(ion_str!("set"), |args| {
+            if args.is_empty() {
+                return Ok(Value::Set(vec![]));
+            }
+            match &args[0] {
+                Value::List(items) => {
+                    let mut unique = Vec::new();
+                    for v in items {
+                        if !unique.iter().any(|x| x == v) {
+                            unique.push(v.clone());
+                        }
+                    }
+                    Ok(Value::Set(unique))
+                }
+                _ => Err(ion_str!("set() requires a list argument")),
+            }
         }),
         false,
     );

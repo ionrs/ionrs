@@ -178,6 +178,12 @@ impl Parser {
             false
         };
         let pattern = self.parse_pattern()?;
+        let type_ann = if self.check(&Token::Colon) {
+            self.advance();
+            Some(self.parse_type_ann()?)
+        } else {
+            None
+        };
         self.eat(&Token::Eq)?;
         let value = self.parse_expr()?;
         self.eat(&Token::Semicolon)?;
@@ -185,10 +191,54 @@ impl Parser {
             kind: StmtKind::Let {
                 mutable,
                 pattern,
+                type_ann,
                 value,
             },
             span,
         })
+    }
+
+    fn parse_type_ann(&mut self) -> Result<TypeAnn, IonError> {
+        let name = self.eat_ident()?;
+        match name.as_str() {
+            "Option" => {
+                self.eat(&Token::Lt)?;
+                let inner = self.parse_type_ann()?;
+                self.eat(&Token::Gt)?;
+                Ok(TypeAnn::Option(Box::new(inner)))
+            }
+            "Result" => {
+                self.eat(&Token::Lt)?;
+                let ok = self.parse_type_ann()?;
+                self.eat(&Token::Comma)?;
+                let err = self.parse_type_ann()?;
+                self.eat(&Token::Gt)?;
+                Ok(TypeAnn::Result(Box::new(ok), Box::new(err)))
+            }
+            "list" => {
+                if self.check(&Token::Lt) {
+                    self.advance();
+                    let inner = self.parse_type_ann()?;
+                    self.eat(&Token::Gt)?;
+                    Ok(TypeAnn::List(Box::new(inner)))
+                } else {
+                    Ok(TypeAnn::Simple(name))
+                }
+            }
+            "dict" => {
+                if self.check(&Token::Lt) {
+                    self.advance();
+                    let key = self.parse_type_ann()?;
+                    self.eat(&Token::Comma)?;
+                    let val = self.parse_type_ann()?;
+                    self.eat(&Token::Gt)?;
+                    Ok(TypeAnn::Dict(Box::new(key), Box::new(val)))
+                } else {
+                    Ok(TypeAnn::Simple(name))
+                }
+            }
+            _ => Ok(TypeAnn::Simple(name)),
+        }
     }
 
     fn parse_fn_decl(&mut self) -> Result<Stmt, IonError> {
@@ -956,37 +1006,50 @@ impl Parser {
                         span,
                     });
                 }
-                let first = self.parse_expr()?;
-                // Check for list comprehension: [expr for pattern in iter]
-                if self.check(&Token::For) {
+                // Check for spread as first entry
+                let first_entry = if self.check(&Token::DotDotDot) {
                     self.advance();
-                    let pattern = self.parse_pattern()?;
-                    self.eat(&Token::In)?;
-                    let iter = self.parse_expr()?;
-                    let cond = if self.check(&Token::If) {
+                    ListEntry::Spread(self.parse_expr()?)
+                } else {
+                    ListEntry::Elem(self.parse_expr()?)
+                };
+                // Check for list comprehension: [expr for pattern in iter]
+                if let ListEntry::Elem(ref first) = first_entry {
+                    if self.check(&Token::For) {
                         self.advance();
-                        Some(Box::new(self.parse_expr()?))
-                    } else {
-                        None
-                    };
-                    self.eat(&Token::RBracket)?;
-                    return Ok(Expr {
-                        kind: ExprKind::ListComp {
-                            expr: Box::new(first),
-                            pattern,
-                            iter: Box::new(iter),
-                            cond,
-                        },
-                        span,
-                    });
+                        let pattern = self.parse_pattern()?;
+                        self.eat(&Token::In)?;
+                        let iter = self.parse_expr()?;
+                        let cond = if self.check(&Token::If) {
+                            self.advance();
+                            Some(Box::new(self.parse_expr()?))
+                        } else {
+                            None
+                        };
+                        self.eat(&Token::RBracket)?;
+                        return Ok(Expr {
+                            kind: ExprKind::ListComp {
+                                expr: Box::new(first.clone()),
+                                pattern,
+                                iter: Box::new(iter),
+                                cond,
+                            },
+                            span,
+                        });
+                    }
                 }
-                let mut items = vec![first];
+                let mut items = vec![first_entry];
                 while self.check(&Token::Comma) {
                     self.advance();
                     if self.check(&Token::RBracket) {
                         break;
                     }
-                    items.push(self.parse_expr()?);
+                    if self.check(&Token::DotDotDot) {
+                        self.advance();
+                        items.push(ListEntry::Spread(self.parse_expr()?));
+                    } else {
+                        items.push(ListEntry::Elem(self.parse_expr()?));
+                    }
                 }
                 self.eat(&Token::RBracket)?;
                 Ok(Expr {
