@@ -2,6 +2,11 @@
 name = "ion-core"
 version = "0.1.0"
 edition = "2021"
+description = "Embeddable scripting language inspired by Starlark, with a bytecode VM"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/ionlang"
+keywords = ["scripting", "embedded", "interpreter", "vm", "language"]
+categories = ["compilers", "game-development"]
 
 [features]
 default = ["derive", "vm", "optimize"]

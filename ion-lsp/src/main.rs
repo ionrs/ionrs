@@ -282,6 +282,11 @@ const BUILTINS: &[BuiltinInfo] = &[
         description: "Error if values are not equal",
     },
     BuiltinInfo {
+        name: "sort_by",
+        signature: "sort_by(list, fn)",
+        description: "Sort list by key function",
+    },
+    BuiltinInfo {
         name: "channel",
         signature: "channel(buffer_size)",
         description: "Create a buffered channel (tx, rx)",
@@ -478,6 +483,13 @@ fn handle_hover(source: &str, pos: Position) -> Option<Hover> {
         "None" => Some("`Option` variant representing no value."),
         "Ok" => Some("`Result` variant representing success.\n\n```ion\nOk(42)\n```"),
         "Err" => Some("`Result` variant representing failure.\n\n```ion\nErr(\"something failed\")\n```"),
+        "try" => Some("Begin a try/catch block.\n\n```ion\nlet result = try { risky() } catch e { fallback(e) };\n```"),
+        "catch" => Some("Handle errors from a try block.\n\n```ion\ntry { risky() } catch e { println(e); }\n```"),
+        "break" => Some("Exit a loop. Optionally return a value.\n\n```ion\nlet x = loop { break 42; };\n```"),
+        "continue" => Some("Skip to the next iteration of a loop."),
+        "return" => Some("Return a value from a function early.\n\n```ion\nfn check(x) { if x < 0 { return Err(\"negative\"); } Ok(x) }\n```"),
+        "mut" => Some("Mark a binding as mutable.\n\n```ion\nlet mut count = 0;\ncount += 1;\n```"),
+        "in" => Some("Used in `for` loops and membership tests.\n\n```ion\nfor x in [1, 2, 3] { println(x); }\n```"),
         _ => None,
     };
 
@@ -730,7 +742,110 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
                 "Merge dicts",
                 CompletionItemKind::METHOD,
             ),
+            // New list/string/dict methods
+            (
+                "index",
+                "index(val)",
+                "Index of first occurrence",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "count",
+                "count(val)",
+                "Count occurrences",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "dedup",
+                "dedup()",
+                "Remove consecutive duplicates",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "unique",
+                "unique()",
+                "Remove all duplicates",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "sum",
+                "sum()",
+                "Sum of elements",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "window",
+                "window(n)",
+                "Sliding windows of size n",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "sort_by",
+                "sort_by(fn)",
+                "Sort by key function",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "to_string",
+                "to_string()",
+                "Convert to string",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "pad_start",
+                "pad_start(width, char)",
+                "Pad start to width",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "pad_end",
+                "pad_end(width, char)",
+                "Pad end to width",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "strip_prefix",
+                "strip_prefix(prefix)",
+                "Remove prefix if present",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "strip_suffix",
+                "strip_suffix(suffix)",
+                "Remove suffix if present",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "char_len",
+                "char_len()",
+                "Character count (Unicode-aware)",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "bytes",
+                "bytes()",
+                "Byte representation",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "update",
+                "update(other)",
+                "Merge dict (mutating)",
+                CompletionItemKind::METHOD,
+            ),
+            (
+                "keys_of",
+                "keys_of(val)",
+                "Keys with matching value",
+                CompletionItemKind::METHOD,
+            ),
             // Option/Result methods
+            (
+                "unwrap",
+                "unwrap()",
+                "Extract value or error",
+                CompletionItemKind::METHOD,
+            ),
             (
                 "unwrap_or",
                 "unwrap_or(default)",

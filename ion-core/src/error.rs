@@ -57,7 +57,57 @@ impl IonError {
                 out.push('\n');
             }
         }
+        // Suggestion hint
+        if let Some(hint) = Self::suggest_hint(&err.kind, &err.message) {
+            out.push_str(&format!(" \x1b[1;36mhelp\x1b[0m: {}\n", hint));
+        }
         out
+    }
+
+    fn suggest_hint(kind: &ErrorKind, msg: &str) -> Option<&'static str> {
+        match kind {
+            ErrorKind::NameError => {
+                if msg.contains(&*ion_str!("undefined variable")) {
+                    Some("check spelling, or ensure the variable is declared with `let` before use")
+                } else {
+                    None
+                }
+            }
+            ErrorKind::TypeError => {
+                if msg.contains(&*ion_str!("cannot assign to immutable")) {
+                    Some("declare with `let mut` to allow reassignment")
+                } else if msg.contains(&*ion_str!("cannot add"))
+                    || msg.contains(&*ion_str!("cannot subtract"))
+                {
+                    Some("Ion has no implicit type coercions \u{2014} convert explicitly with `int()`, `float()`, or `str()`")
+                } else if msg.contains(&*ion_str!("no method")) {
+                    Some("use `.to_string()` to inspect the value's type, or check LANGUAGE.md for available methods")
+                } else {
+                    None
+                }
+            }
+            ErrorKind::ParseError => {
+                if msg.contains(&*ion_str!("expected ';'")) {
+                    Some("Ion requires semicolons after statements")
+                } else if msg.contains(&*ion_str!("expected '}'")) {
+                    Some("check for unmatched `{` braces")
+                } else {
+                    None
+                }
+            }
+            ErrorKind::RuntimeError => {
+                if msg.contains(&*ion_str!("division by zero")) {
+                    Some("check the divisor before dividing, or use a try/catch block")
+                } else if msg.contains(&*ion_str!("stack overflow")) {
+                    Some("check for infinite recursion, or increase the stack depth limit")
+                } else if msg.contains(&*ion_str!("index out of bounds")) {
+                    Some("use `.len()` to check the collection size, or `.get()` for safe access")
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 
     fn kind_str(&self) -> &str {

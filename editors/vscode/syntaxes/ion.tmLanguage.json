@@ -96,6 +96,10 @@
         {
           "name": "constant.character.escape.hex.ion",
           "match": "\\\\x[0-9a-fA-F]{2}"
+        },
+        {
+          "name": "constant.character.escape.unicode.ion",
+          "match": "\\\\u\\{[0-9a-fA-F]+\\}"
         }
       ]
     },
@@ -156,7 +160,7 @@
       "patterns": [
         {
           "name": "support.function.ion",
-          "match": "\\b(print|println|len|range|enumerate|join|type_of|str|int|float|abs|min|max|floor|ceil|round|sqrt|pow|clamp|json_encode|json_decode|json_encode_pretty|bytes|bytes_from_hex|assert|assert_eq|channel)\\b"
+          "match": "\\b(print|println|len|range|enumerate|join|type_of|str|int|float|abs|min|max|floor|ceil|round|sqrt|pow|clamp|json_encode|json_decode|json_encode_pretty|bytes|bytes_from_hex|assert|assert_eq|sort_by|channel)\\b"
         }
       ]
     },

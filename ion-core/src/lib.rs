@@ -1,4 +1,27 @@
 #![allow(clippy::result_large_err)]
+//! Ion — an embeddable scripting language for Rust.
+//!
+//! Ion is a small, strongly-typed scripting language inspired by Starlark,
+//! designed for embedding in Rust applications. It features a tree-walk
+//! interpreter and an optional bytecode VM for better performance.
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use ion_core::engine::Engine;
+//!
+//! let mut engine = Engine::new();
+//! let result = engine.eval("1 + 2").unwrap();
+//! assert_eq!(result, ion_core::value::Value::Int(3));
+//! ```
+//!
+//! # Features
+//!
+//! - **`vm`** — Bytecode compiler and stack-based VM
+//! - **`optimize`** — Peephole optimizer, constant folding, DCE, TCO
+//! - **`derive`** — `#[derive(IonType)]` for host type injection
+//! - **`concurrency`** — Structured concurrency primitives
+//! - **`obfuscate`** — String obfuscation via `obfstr`
 
 /// Macro for string obfuscation. Returns a `String`.
 /// When the `obfuscate` feature is enabled, strings are encrypted at compile

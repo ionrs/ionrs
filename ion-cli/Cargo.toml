@@ -2,6 +2,11 @@
 name = "ion-cli"
 version = "0.1.0"
 edition = "2021"
+description = "CLI runner and REPL for the Ion scripting language"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/ionlang"
+keywords = ["scripting", "repl", "ion"]
+categories = ["command-line-utilities"]
 
 [features]
 default = ["vm"]

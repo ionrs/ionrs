@@ -3,6 +3,10 @@ name = "ion-lsp"
 version = "0.1.0"
 edition = "2021"
 description = "Language server for the Ion scripting language"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/ionlang"
+keywords = ["lsp", "scripting", "ion"]
+categories = ["development-tools"]
 
 [[bin]]
 name = "ion-lsp"
