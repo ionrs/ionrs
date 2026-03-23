@@ -38,4 +38,3 @@ and `tokio::sync::mpsc` instead of `std::sync::mpsc`.
 ## Future Unlocks (tokio backend)
 - Async I/O builtins (HTTP fetch, file read) via tokio's IO
 - True cooperative scheduling for lighter task workloads
-- `select` using `tokio::select!` for efficient branch racing

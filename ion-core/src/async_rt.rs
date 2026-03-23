@@ -119,6 +119,22 @@ pub fn sleep(duration: Duration) {
     }
 }
 
+/// Wait for any of the given tasks to complete.
+/// Returns (index, result) of the first task that finishes.
+/// Uses a channel internally — no polling/busy-wait.
+pub fn wait_any(tasks: &[Arc<dyn TaskHandle>]) -> (usize, Result<Value, IonError>) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    for (i, task) in tasks.iter().enumerate() {
+        let tx = tx.clone();
+        let task = task.clone();
+        std::thread::spawn(move || {
+            let result = task.join();
+            let _ = tx.send((i, result));
+        });
+    }
+    rx.recv().unwrap()
+}
+
 /// Create a bounded channel pair, returning (sender_value, receiver_value).
 pub fn create_channel(buffer: usize) -> (Value, Value) {
     #[cfg(feature = "concurrency-tokio")]

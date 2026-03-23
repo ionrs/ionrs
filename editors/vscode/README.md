@@ -4,10 +4,19 @@ Syntax highlighting and language server support for [Ion](https://github.com/chu
 
 ## Features
 
-- **Syntax highlighting** for `.ion` files (keywords, strings, f-strings, numbers, operators, comments)
-- **Error diagnostics** via the Ion LSP server (parse errors shown inline)
-- **Document symbols** (functions and variables in the outline view)
-- **Bracket matching** and auto-closing pairs
+### Syntax Highlighting
+- Keywords, control flow, operators
+- Strings, f-strings with interpolation, raw strings
+- Numbers (int, float, hex, binary, octal)
+- Comments (`//`)
+- Type annotations (`let x: int = 5`)
+
+### Language Server (optional)
+- **Diagnostics** — parse errors shown inline as you type
+- **Hover** — type info and documentation on hover
+- **Completions** — keywords, builtins, methods, type annotations
+- **Go to Definition** — jump to function/variable definitions
+- **Document Symbols** — functions and variables in the outline/breadcrumb
 
 ## Setup
 
@@ -15,7 +24,7 @@ Syntax highlighting and language server support for [Ion](https://github.com/chu
 
 Install the extension — syntax highlighting works immediately with no additional setup.
 
-### With LSP (diagnostics + symbols)
+### With LSP (full IDE features)
 
 Build and install the LSP server:
 
@@ -24,7 +33,7 @@ cd ion-lang
 cargo install --path ion-lsp
 ```
 
-The extension will automatically connect to `ion-lsp` on the PATH. To use a custom path:
+The extension automatically connects to `ion-lsp` on the PATH. To use a custom path:
 
 ```json
 {
@@ -40,6 +49,12 @@ To disable the LSP (syntax highlighting still works):
 }
 ```
 
+## Install from .vsix
+
+```bash
+code --install-extension ion-lang-0.1.0.vsix
+```
+
 ## Development
 
 ```bash
@@ -48,16 +63,10 @@ npm install
 npm run compile
 ```
 
-To test: press F5 in VS Code to launch an Extension Development Host.
+Press F5 in VS Code to launch an Extension Development Host for testing.
 
-## Packaging
-
-```bash
-npx vsce package
-```
-
-This creates an `ion-lang-0.1.0.vsix` file you can install with:
+### Packaging
 
 ```bash
-code --install-extension ion-lang-0.1.0.vsix
+npx @vscode/vsce package
 ```

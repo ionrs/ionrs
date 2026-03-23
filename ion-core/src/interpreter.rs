@@ -3304,22 +3304,16 @@ impl Interpreter {
             tasks.push((i, handle));
         }
 
-        // Poll until one finishes (simple busy-wait with yield)
-        loop {
-            for (idx, task) in &tasks {
-                if task.is_finished() {
-                    let result = task.join()?;
-                    let branch = &branches[*idx];
-                    // Bind pattern and evaluate body
-                    self.env.push_scope();
-                    self.bind_pattern(&branch.pattern, &result, false, span)?;
-                    let body_result = self.eval_expr(&branch.body);
-                    self.env.pop_scope();
-                    return body_result;
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        // Wait for the first task to complete (channel-based, no polling)
+        let handles: Vec<_> = tasks.iter().map(|(_, h)| h.clone()).collect();
+        let (winner_idx, result) = crate::async_rt::wait_any(&handles);
+        let result = result?;
+        let branch = &branches[tasks[winner_idx].0];
+        self.env.push_scope();
+        self.bind_pattern(&branch.pattern, &result, false, span)?;
+        let body_result = self.eval_expr(&branch.body);
+        self.env.pop_scope();
+        body_result
     }
 
     fn task_method(
