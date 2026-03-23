@@ -40,7 +40,7 @@ pub enum Value {
     },
     /// Async task handle (concurrency feature)
     #[cfg(feature = "concurrency")]
-    Task(std::sync::Arc<crate::async_rt::TaskHandle>),
+    Task(std::sync::Arc<dyn crate::async_rt::TaskHandle>),
     /// Channel sender/receiver pair
     #[cfg(feature = "concurrency")]
     Channel(crate::async_rt::ChannelEnd),

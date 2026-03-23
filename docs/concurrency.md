@@ -1,6 +1,12 @@
 # Ion Concurrency Model
 
-Feature-gated: `concurrency` (std-only, no external deps like tokio)
+## Feature Flags
+- `concurrency` — std::thread backend (zero external deps)
+- `concurrency-tokio` — tokio backend (implies `concurrency`, adds `tokio` dep)
+
+Both backends expose the same Ion script API. The tokio backend uses
+`spawn_blocking` (bounded thread pool) instead of raw `std::thread::spawn`,
+and `tokio::sync::mpsc` instead of `std::sync::mpsc`.
 
 ## Primitives
 - `async {}` — scope boundary, waits for all spawned tasks
@@ -9,10 +15,16 @@ Feature-gated: `concurrency` (std-only, no external deps like tokio)
 - `handle.cancel()` — explicit cancellation (AtomicBool)
 - `handle.is_finished()` / `handle.is_cancelled()` — status checks
 - `select {}` — race multiple branches, losers cancelled
-- `channel(n)` — bounded, backed by `std::sync::mpsc`
+- `channel(n)` — bounded channel
 - `tx.send()` / `rx.recv()` / `rx.try_recv()` — send/recv
 - `tx.close()` — close channel
 - `await_timeout(handle, ms)` / `recv_timeout(rx, ms)` — timeouts
+
+## Architecture
+- `async_rt.rs` — trait interface (`TaskHandle`, `ChannelSender`, `ChannelReceiver`, `Nursery`)
+- `async_rt_std.rs` — std::thread implementation
+- `async_rt_tokio.rs` — tokio implementation with lazy global runtime
+- Backend dispatch via `async_rt::spawn_task()` and `async_rt::create_channel()`
 
 ## Semantics
 - No top-level spawn — `async {}` required
@@ -20,3 +32,10 @@ Feature-gated: `concurrency` (std-only, no external deps like tokio)
 - Fail-fast by default (nursery model)
 - No Mutex/shared mutable state — channels-only
 - 12 concurrency tests in test suite
+
+## Future Unlocks (tokio backend)
+- `sleep(ms)` as a non-blocking async builtin
+- `timeout(ms, expr)` wrapper using `tokio::time::timeout`
+- Async I/O builtins (HTTP fetch, file read) via tokio's IO
+- True cooperative scheduling for lighter task workloads
+- `select` using `tokio::select!` for efficient branch racing (no busy-wait)

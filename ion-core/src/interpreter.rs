@@ -3108,8 +3108,6 @@ impl Interpreter {
     }
 
     fn eval_spawn(&mut self, expr: &Expr, span: Span) -> SignalResult {
-        use crate::async_rt::TaskHandle;
-        use std::sync::atomic::AtomicBool;
         use std::sync::Arc;
 
         // Require being inside an async block
@@ -3127,32 +3125,28 @@ impl Interpreter {
         let expr_clone = expr.clone();
         let limits = self.limits.clone();
         let types = self.types.clone();
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let flag_clone = cancel_flag.clone();
 
-        let handle = std::thread::spawn(move || {
-            let mut child = Interpreter::new();
-            child.limits = limits;
-            child.types = types;
-            child.cancel_flag = Some(flag_clone);
-            // Load captured environment
-            for (name, val) in captured_env {
-                child.env.define(name, val, false);
-            }
-            // Evaluate the expression
-            let program = crate::ast::Program {
-                stmts: vec![crate::ast::Stmt {
-                    kind: crate::ast::StmtKind::ExprStmt {
-                        expr: expr_clone,
-                        has_semi: false,
-                    },
-                    span: crate::ast::Span { line: 0, col: 0 },
-                }],
-            };
-            child.eval_program(&program)
-        });
-
-        let task_handle = Arc::new(TaskHandle::new(handle, cancel_flag));
+        let task_handle: Arc<dyn crate::async_rt::TaskHandle> =
+            crate::async_rt::spawn_task(move || {
+                let mut child = Interpreter::new();
+                child.limits = limits;
+                child.types = types;
+                // Load captured environment
+                for (name, val) in captured_env {
+                    child.env.define(name, val, false);
+                }
+                // Evaluate the expression
+                let program = crate::ast::Program {
+                    stmts: vec![crate::ast::Stmt {
+                        kind: crate::ast::StmtKind::ExprStmt {
+                            expr: expr_clone,
+                            has_semi: false,
+                        },
+                        span: crate::ast::Span { line: 0, col: 0 },
+                    }],
+                };
+                child.eval_program(&program)
+            });
 
         // Register with nursery
         if let Some(nursery) = &mut self.nursery {
@@ -3176,18 +3170,17 @@ impl Interpreter {
     }
 
     fn eval_select(&mut self, branches: &[crate::ast::SelectBranch], span: Span) -> SignalResult {
-        use crate::async_rt::TaskHandle;
         use std::sync::Arc;
 
         // Spawn all branch futures as tasks
-        let mut tasks: Vec<(usize, Arc<TaskHandle>)> = Vec::new();
+        let mut tasks: Vec<(usize, Arc<dyn crate::async_rt::TaskHandle>)> = Vec::new();
         for (i, branch) in branches.iter().enumerate() {
             let captured_env = self.env.capture();
             let expr_clone = branch.future_expr.clone();
             let limits = self.limits.clone();
             let types = self.types.clone();
 
-            let handle = std::thread::spawn(move || {
+            let handle = crate::async_rt::spawn_task(move || {
                 let mut child = Interpreter::new();
                 child.limits = limits;
                 child.types = types;
@@ -3205,8 +3198,7 @@ impl Interpreter {
                 };
                 child.eval_program(&program)
             });
-            let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            tasks.push((i, Arc::new(TaskHandle::new(handle, flag))));
+            tasks.push((i, handle));
         }
 
         // Poll until one finishes (simple busy-wait with yield)
@@ -3229,7 +3221,7 @@ impl Interpreter {
 
     fn task_method(
         &self,
-        handle: &std::sync::Arc<crate::async_rt::TaskHandle>,
+        handle: &std::sync::Arc<dyn crate::async_rt::TaskHandle>,
         method: &str,
         args: &[Value],
         span: Span,
@@ -3289,45 +3281,27 @@ impl Interpreter {
                     )
                     .into());
                 }
-                let guard = tx.lock().unwrap();
-                match guard.as_ref() {
-                    Some(sender) => {
-                        sender.send(args[0].clone()).map_err(|e| {
-                            IonError::runtime(
-                                format!("{}{}", ion_str!("channel send failed: "), e),
-                                span.line,
-                                span.col,
-                            )
-                        })?;
-                        Ok(Value::Unit)
-                    }
-                    None => Err(IonError::runtime(
-                        ion_str!("channel is closed").to_string(),
+                tx.send(args[0].clone()).map_err(|e| {
+                    IonError::runtime(
+                        format!("{}{}", ion_str!("channel send failed: "), e.message),
                         span.line,
                         span.col,
                     )
-                    .into()),
-                }
-            }
-            (ChannelEnd::Sender(tx), "close") => {
-                let mut guard = tx.lock().unwrap();
-                *guard = None; // Drop the sender, closing the channel
+                })?;
                 Ok(Value::Unit)
             }
-            (ChannelEnd::Receiver(rx), "recv") => {
-                let receiver = rx.lock().unwrap();
-                match receiver.recv() {
-                    Ok(v) => Ok(Value::Option(Some(Box::new(v)))),
-                    Err(_) => Ok(Value::Option(None)), // channel closed
-                }
+            (ChannelEnd::Sender(tx), "close") => {
+                tx.close();
+                Ok(Value::Unit)
             }
-            (ChannelEnd::Receiver(rx), "try_recv") => {
-                let receiver = rx.lock().unwrap();
-                match receiver.try_recv() {
-                    Ok(v) => Ok(Value::Option(Some(Box::new(v)))),
-                    Err(_) => Ok(Value::Option(None)),
-                }
-            }
+            (ChannelEnd::Receiver(rx), "recv") => match rx.recv() {
+                Some(v) => Ok(Value::Option(Some(Box::new(v)))),
+                None => Ok(Value::Option(None)),
+            },
+            (ChannelEnd::Receiver(rx), "try_recv") => match rx.try_recv() {
+                Some(v) => Ok(Value::Option(Some(Box::new(v)))),
+                None => Ok(Value::Option(None)),
+            },
             (ChannelEnd::Receiver(rx), "recv_timeout") => {
                 if args.is_empty() {
                     return Err(IonError::runtime(
@@ -3344,10 +3318,9 @@ impl Interpreter {
                         span.col,
                     )
                 })?;
-                let receiver = rx.lock().unwrap();
-                match receiver.recv_timeout(std::time::Duration::from_millis(ms as u64)) {
-                    Ok(v) => Ok(Value::Option(Some(Box::new(v)))),
-                    Err(_) => Ok(Value::Option(None)),
+                match rx.recv_timeout(std::time::Duration::from_millis(ms as u64)) {
+                    Some(v) => Ok(Value::Option(Some(Box::new(v)))),
+                    None => Ok(Value::Option(None)),
                 }
             }
             _ => Err(IonError::type_err(
