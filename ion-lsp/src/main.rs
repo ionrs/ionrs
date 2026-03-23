@@ -335,6 +335,21 @@ const BUILTINS: &[BuiltinInfo] = &[
         description: "Create a set from a list (deduplicates elements)",
     },
     BuiltinInfo {
+        name: "cell",
+        signature: "cell(value)",
+        description: "Create a mutable reference cell for shared closure state",
+    },
+    BuiltinInfo {
+        name: "sleep",
+        signature: "sleep(ms)",
+        description: "Sleep for given milliseconds (requires concurrency feature)",
+    },
+    BuiltinInfo {
+        name: "timeout",
+        signature: "timeout(ms, fn)",
+        description: "Run function with time limit, returns Option (Some or None on timeout)",
+    },
+    BuiltinInfo {
         name: "msgpack_encode",
         signature: "msgpack_encode(value)",
         description: "Encode value to MessagePack bytes (requires msgpack feature)",
@@ -587,6 +602,7 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
             ("tuple", "Tuple type"),
             ("set", "Set type"),
             ("fn", "Function type"),
+            ("cell", "Mutable reference cell type"),
             ("any", "Any type (accepts all values)"),
             ("Option", "Option type (e.g. Option<int>)"),
             ("Result", "Result type (e.g. Result<int, string>)"),
@@ -1119,6 +1135,13 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
                 "difference",
                 "difference(other)",
                 "Difference of two sets",
+                CompletionItemKind::METHOD,
+            ),
+            // Cell methods
+            (
+                "set",
+                "set(val)",
+                "Set cell value",
                 CompletionItemKind::METHOD,
             ),
         ];

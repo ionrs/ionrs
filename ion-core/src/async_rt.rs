@@ -107,6 +107,18 @@ where
     }
 }
 
+/// Sleep for the given duration, blocking the current thread/task.
+pub fn sleep(duration: Duration) {
+    #[cfg(feature = "concurrency-tokio")]
+    {
+        crate::async_rt_tokio::sleep(duration);
+    }
+    #[cfg(not(feature = "concurrency-tokio"))]
+    {
+        std::thread::sleep(duration);
+    }
+}
+
 /// Create a bounded channel pair, returning (sender_value, receiver_value).
 pub fn create_channel(buffer: usize) -> (Value, Value) {
     #[cfg(feature = "concurrency-tokio")]

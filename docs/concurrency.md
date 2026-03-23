@@ -19,6 +19,8 @@ and `tokio::sync::mpsc` instead of `std::sync::mpsc`.
 - `tx.send()` / `rx.recv()` / `rx.try_recv()` — send/recv
 - `tx.close()` — close channel
 - `await_timeout(handle, ms)` / `recv_timeout(rx, ms)` — timeouts
+- `sleep(ms)` — sleep for given milliseconds
+- `timeout(ms, fn)` — run function with time limit, returns `Option` (Some or None on timeout)
 
 ## Architecture
 - `async_rt.rs` — trait interface (`TaskHandle`, `ChannelSender`, `ChannelReceiver`, `Nursery`)
@@ -31,11 +33,9 @@ and `tokio::sync::mpsc` instead of `std::sync::mpsc`.
 - Structured: all tasks scoped to parent
 - Fail-fast by default (nursery model)
 - No Mutex/shared mutable state — channels-only
-- 12 concurrency tests in test suite
+- 16 concurrency tests in test suite
 
 ## Future Unlocks (tokio backend)
-- `sleep(ms)` as a non-blocking async builtin
-- `timeout(ms, expr)` wrapper using `tokio::time::timeout`
 - Async I/O builtins (HTTP fetch, file read) via tokio's IO
 - True cooperative scheduling for lighter task workloads
-- `select` using `tokio::select!` for efficient branch racing (no busy-wait)
+- `select` using `tokio::select!` for efficient branch racing

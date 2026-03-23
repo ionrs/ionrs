@@ -3829,3 +3829,116 @@ fn test_type_ann_tuple() {
     );
     assert!(eval_err("let t: tuple = [1, 2];").contains("type mismatch"));
 }
+
+// ---- Cell (mutable closure state) tests ----
+
+#[test]
+fn test_cell_basic() {
+    assert_eq!(eval("let c = cell(0); c.get()"), Value::Int(0));
+    assert_eq!(eval("let c = cell(0); c.set(42); c.get()"), Value::Int(42));
+}
+
+#[test]
+fn test_cell_update() {
+    assert_eq!(
+        eval("let c = cell(0); c.update(|x| x + 1); c.get()"),
+        Value::Int(1)
+    );
+}
+
+#[test]
+fn test_cell_counter_closure() {
+    assert_eq!(
+        eval(
+            r#"
+        let count = cell(0);
+        let inc = || { count.update(|x| x + 1) };
+        inc();
+        inc();
+        inc();
+        count.get()
+    "#
+        ),
+        Value::Int(3)
+    );
+}
+
+#[test]
+fn test_cell_shared_between_closures() {
+    assert_eq!(
+        eval(
+            r#"
+        let state = cell(0);
+        let inc = || { state.update(|x| x + 1) };
+        let get = || { state.get() };
+        inc();
+        inc();
+        get()
+    "#
+        ),
+        Value::Int(2)
+    );
+}
+
+#[test]
+fn test_cell_accumulator() {
+    assert_eq!(
+        eval(
+            r#"
+        let acc = cell([]);
+        let add = |item| { acc.update(|xs| xs.push(item)) };
+        add(1);
+        add(2);
+        add(3);
+        acc.get()
+    "#
+        ),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+}
+
+#[test]
+fn test_cell_factory_pattern() {
+    assert_eq!(
+        eval(
+            r#"
+        fn make_counter() {
+            let count = cell(0);
+            let inc = || { count.update(|x| x + 1) };
+            let get = || { count.get() };
+            (inc, get)
+        }
+        let (inc, get) = make_counter();
+        inc();
+        inc();
+        inc();
+        get()
+    "#
+        ),
+        Value::Int(3)
+    );
+}
+
+#[test]
+fn test_cell_display() {
+    assert_eq!(eval(r#"f"{cell(42)}""#), Value::Str("cell(42)".to_string()));
+}
+
+#[test]
+fn test_cell_type_of() {
+    assert_eq!(eval("type_of(cell(0))"), Value::Str("cell".to_string()));
+}
+
+#[test]
+fn test_cell_type_annotation() {
+    assert_eq!(eval("let c: cell = cell(0); c.get()"), Value::Int(0));
+    assert!(eval_err("let c: cell = 42;").contains("type mismatch"));
+}
+
+#[test]
+fn test_cell_update_returns_new_value() {
+    assert_eq!(
+        eval("let c = cell(10); c.update(|x| x * 2)"),
+        Value::Int(20)
+    );
+}

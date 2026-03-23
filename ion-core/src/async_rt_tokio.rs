@@ -5,8 +5,6 @@
 //! Active when `concurrency-tokio` feature is enabled.
 //!
 //! ## Future Unlocks (with tokio in place)
-//! - `sleep(ms)` as a non-blocking async builtin
-//! - `timeout(ms, expr)` wrapper using `tokio::time::timeout`
 //! - Async I/O builtins (HTTP fetch, file read) via tokio's IO
 //! - True cooperative scheduling for lighter task workloads
 //! - `select` using `tokio::select!` for efficient branch racing
@@ -135,6 +133,14 @@ where
         inner: Mutex::new(TokioTaskState::Running(Some(handle))),
         cancel_flag,
     })
+}
+
+// ---- Sleep ----
+
+/// Sleep for the given duration.
+/// Uses std::thread::sleep since the Ion interpreter is synchronous.
+pub fn sleep(duration: Duration) {
+    std::thread::sleep(duration);
 }
 
 // ---- Channels ----

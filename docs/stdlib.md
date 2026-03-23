@@ -31,8 +31,11 @@ len, contains, to_list
 ## Bytes Methods (6)
 len, to_list, to_str, to_hex, slice, is_empty
 
-## Global Builtins (27)
+## Cell Methods (3)
+get, set, update
+
+## Global Builtins (30)
 print, println, len, range, enumerate, join, type_of, str, int, float,
 json_encode, json_decode, json_encode_pretty, bytes, bytes_from_hex,
-assert, assert_eq, sort_by, channel,
+assert, assert_eq, sort_by, channel, cell, sleep, timeout,
 abs, min, max, floor, ceil, round, sqrt, pow, clamp

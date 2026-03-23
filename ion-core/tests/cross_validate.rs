@@ -1296,3 +1296,92 @@ fn cross_type_ann_mismatch() {
     // Both engines should error on type mismatch
     assert_both("let x: int = true;");
 }
+
+// ---- Cell (mutable closure state) cross-validation ----
+
+#[test]
+fn cross_cell_basic() {
+    assert_both_eq("let c = cell(0); c.get()", Value::Int(0));
+    assert_both_eq("let c = cell(0); c.set(42); c.get()", Value::Int(42));
+}
+
+#[test]
+fn cross_cell_update() {
+    assert_both_eq(
+        "let c = cell(0); c.update(|x| x + 1); c.get()",
+        Value::Int(1),
+    );
+}
+
+#[test]
+fn cross_cell_counter_closure() {
+    assert_both_eq(
+        r#"
+        let count = cell(0);
+        let inc = || { count.update(|x| x + 1) };
+        inc();
+        inc();
+        inc();
+        count.get()
+    "#,
+        Value::Int(3),
+    );
+}
+
+#[test]
+fn cross_cell_shared_closures() {
+    assert_both_eq(
+        r#"
+        let state = cell(0);
+        let inc = || { state.update(|x| x + 1) };
+        let get = || { state.get() };
+        inc();
+        inc();
+        get()
+    "#,
+        Value::Int(2),
+    );
+}
+
+#[test]
+fn cross_cell_factory() {
+    assert_both_eq(
+        r#"
+        fn make_counter() {
+            let count = cell(0);
+            let inc = || { count.update(|x| x + 1) };
+            let get = || { count.get() };
+            (inc, get)
+        }
+        let (inc, get) = make_counter();
+        inc();
+        inc();
+        get()
+    "#,
+        Value::Int(2),
+    );
+}
+
+#[test]
+fn cross_cell_accumulator() {
+    assert_both_eq(
+        r#"
+        let acc = cell([]);
+        let add = |item| { acc.update(|xs| xs.push(item)) };
+        add(1);
+        add(2);
+        acc.get()
+    "#,
+        Value::List(vec![Value::Int(1), Value::Int(2)]),
+    );
+}
+
+#[test]
+fn cross_cell_type_of() {
+    assert_both_eq("type_of(cell(0))", Value::Str("cell".to_string()));
+}
+
+#[test]
+fn cross_cell_update_returns_value() {
+    assert_both_eq("let c = cell(10); c.update(|x| x * 2)", Value::Int(20));
+}

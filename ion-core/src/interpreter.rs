@@ -1484,6 +1484,7 @@ impl Interpreter {
             Value::Set(items) => self.set_method(items, method, args, span),
             Value::Option(opt) => self.option_method(opt.clone(), method, args, span),
             Value::Result(res) => self.result_method(res.clone(), method, args, span),
+            Value::Cell(cell) => self.cell_method(cell, method, args, span),
             #[cfg(feature = "concurrency")]
             Value::Task(handle) => self.task_method(handle, method, args, span),
             #[cfg(feature = "concurrency")]
@@ -2014,6 +2015,60 @@ impl Interpreter {
                     ion_str!("no method '"),
                     method,
                     ion_str!("' on set")
+                ),
+                span.line,
+                span.col,
+            )
+            .into()),
+        }
+    }
+
+    fn cell_method(
+        &mut self,
+        cell: &std::sync::Arc<std::sync::Mutex<Value>>,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> SignalResult {
+        match method {
+            "get" => {
+                let inner = cell.lock().unwrap();
+                Ok(inner.clone())
+            }
+            "set" => {
+                if args.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!("cell.set() requires 1 argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
+                let mut inner = cell.lock().unwrap();
+                *inner = args[0].clone();
+                Ok(Value::Unit)
+            }
+            "update" => {
+                if args.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!("cell.update() requires a function argument").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
+                let current = { cell.lock().unwrap().clone() };
+                let new_val = self.call_value(&args[0], &[current], span)?;
+                let mut inner = cell.lock().unwrap();
+                *inner = new_val.clone();
+                Ok(new_val)
+            }
+            _ => Err(IonError::type_err(
+                format!(
+                    "{}{}{}",
+                    ion_str!("no method '"),
+                    method,
+                    ion_str!("' on cell"),
                 ),
                 span.line,
                 span.col,
@@ -2721,6 +2776,8 @@ impl Interpreter {
                     }
                 }
             }
+            #[cfg(feature = "concurrency")]
+            Value::BuiltinFn(ref name, _) if name == "timeout" => self.builtin_timeout(args, span),
             Value::BuiltinFn(_, func) => {
                 func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
@@ -2730,6 +2787,51 @@ impl Interpreter {
                 span.col,
             )
             .into()),
+        }
+    }
+
+    #[cfg(feature = "concurrency")]
+    fn builtin_timeout(&mut self, args: &[Value], span: Span) -> SignalResult {
+        if args.len() < 2 {
+            return Err(IonError::runtime(
+                ion_str!("timeout(ms, fn) requires 2 arguments").to_string(),
+                span.line,
+                span.col,
+            )
+            .into());
+        }
+        let ms = args[0].as_int().ok_or_else(|| {
+            SignalOrError::Error(IonError::runtime(
+                ion_str!("timeout: first argument must be int (ms)").to_string(),
+                span.line,
+                span.col,
+            ))
+        })?;
+        let func = args[1].clone();
+        // Call the function synchronously but with a timeout via spawn + join_timeout
+        let captured_env = self.env.capture();
+        let limits = self.limits.clone();
+        let types = self.types.clone();
+        let task = crate::async_rt::spawn_task(move || {
+            let mut child = Interpreter::new();
+            child.limits = limits;
+            child.types = types;
+            for (name, val) in captured_env {
+                child.env.define(name, val, false);
+            }
+            child
+                .call_value(&func, &[], crate::ast::Span { line: 0, col: 0 })
+                .map_err(|e| match e {
+                    SignalOrError::Error(err) => err,
+                    SignalOrError::Signal(_) => {
+                        IonError::runtime("unexpected signal in timeout", 0, 0)
+                    }
+                })
+        });
+        match task.join_timeout(std::time::Duration::from_millis(ms as u64)) {
+            Some(Ok(val)) => Ok(Value::Option(Some(Box::new(val)))),
+            Some(Err(e)) => Err(e.into()),
+            None => Ok(Value::Option(None)),
         }
     }
 
@@ -2851,6 +2953,7 @@ impl Interpreter {
                 "tuple" => matches!(val, Value::Tuple(_)),
                 "set" => matches!(val, Value::Set(_)),
                 "fn" => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
+                "cell" => matches!(val, Value::Cell(_)),
                 "any" => true,
                 _ => true, // unknown types pass (forward compatibility)
             },
@@ -3215,7 +3318,7 @@ impl Interpreter {
                     return body_result;
                 }
             }
-            std::thread::yield_now();
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 
@@ -3406,6 +3509,18 @@ pub fn register_builtins(env: &mut Env) {
                 }
                 _ => Err(ion_str!("set() requires a list argument")),
             }
+        }),
+        false,
+    );
+    env.define(
+        ion_str!("cell"),
+        Value::BuiltinFn(ion_str!("cell"), |args| {
+            if args.len() != 1 {
+                return Err(ion_str!("cell() takes 1 argument"));
+            }
+            Ok(Value::Cell(std::sync::Arc::new(std::sync::Mutex::new(
+                args[0].clone(),
+            ))))
         }),
         false,
     );
@@ -3897,6 +4012,26 @@ pub fn register_builtins(env: &mut Env) {
 
     #[cfg(feature = "concurrency")]
     {
+        env.define(
+            ion_str!("sleep").to_string(),
+            Value::BuiltinFn(ion_str!("sleep").to_string(), |args| {
+                let ms = args
+                    .first()
+                    .and_then(|v| v.as_int())
+                    .ok_or(ion_str!("sleep requires int (ms)"))?;
+                crate::async_rt::sleep(std::time::Duration::from_millis(ms as u64));
+                Ok(Value::Unit)
+            }),
+            false,
+        );
+        env.define(
+            ion_str!("timeout").to_string(),
+            Value::BuiltinFn(ion_str!("timeout").to_string(), |_args| {
+                // Actual implementation is in call_value (needs interpreter context)
+                Err(ion_str!("timeout: internal error (should not reach here)"))
+            }),
+            false,
+        );
         env.define(
             ion_str!("channel").to_string(),
             Value::BuiltinFn(ion_str!("channel").to_string(), |args| {

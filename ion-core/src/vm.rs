@@ -1099,6 +1099,7 @@ impl Vm {
                     "tuple" => matches!(val, Value::Tuple(_)),
                     "set" => matches!(val, Value::Set(_)),
                     "fn" => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
+                    "cell" => matches!(val, Value::Cell(_)),
                     "any" => true,
                     s if s.starts_with("Option") => matches!(val, Value::Option(_)),
                     s if s.starts_with("Result") => matches!(val, Value::Result(_)),
@@ -1829,6 +1830,18 @@ impl Vm {
                 };
             }
 
+            // Cell closure methods
+            (Value::Cell(cell), "update") => {
+                let func = args.first().ok_or_else(|| {
+                    IonError::runtime("cell.update() requires a function argument", line, col)
+                })?;
+                let current = { cell.lock().unwrap().clone() };
+                let new_val = self.invoke_value(func, &[current], line, col)?;
+                let mut inner = cell.lock().unwrap();
+                *inner = new_val.clone();
+                return Ok(new_val);
+            }
+
             _ => {}
         }
 
@@ -1842,6 +1855,27 @@ impl Vm {
             Value::Set(items) => self.set_method(items, method, args, line, col),
             Value::Option(_) => self.option_method(&receiver, method, args, line, col),
             Value::Result(_) => self.result_method(&receiver, method, args, line, col),
+            Value::Cell(cell) => match method {
+                "get" => Ok(cell.lock().unwrap().clone()),
+                "set" => {
+                    if let Some(val) = args.first() {
+                        let mut inner = cell.lock().unwrap();
+                        *inner = val.clone();
+                        Ok(Value::Unit)
+                    } else {
+                        Err(IonError::runtime(
+                            "cell.set() requires 1 argument",
+                            line,
+                            col,
+                        ))
+                    }
+                }
+                _ => Err(IonError::type_err(
+                    format!("no method '{}' on cell", method),
+                    line,
+                    col,
+                )),
+            },
             _ => Err(IonError::type_err(
                 format!("{} has no method '{}'", receiver.type_name(), method),
                 line,
@@ -2680,6 +2714,12 @@ impl Vm {
         // Trampoline loop: handles tail calls without growing the Rust stack
         loop {
             match func {
+                #[cfg(feature = "concurrency")]
+                Value::BuiltinFn(ref name, _) if name == "timeout" => {
+                    let result = self.builtin_timeout(&args, line, col)?;
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 Value::BuiltinFn(_name, f) => {
                     let result = f(&args).map_err(|e| IonError::runtime(e, line, col))?;
                     self.stack.push(result);
@@ -2892,6 +2932,54 @@ impl Vm {
                 line,
                 col,
             )),
+        }
+    }
+
+    #[cfg(feature = "concurrency")]
+    fn builtin_timeout(&self, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
+        if args.len() < 2 {
+            return Err(IonError::runtime(
+                "timeout(ms, fn) requires 2 arguments",
+                line,
+                col,
+            ));
+        }
+        let ms = args[0].as_int().ok_or_else(|| {
+            IonError::runtime("timeout: first argument must be int (ms)", line, col)
+        })?;
+        let func = args[1].clone();
+        let captured_env = self.env.capture();
+        let task = crate::async_rt::spawn_task(move || {
+            let mut child = crate::interpreter::Interpreter::new();
+            for (name, val) in captured_env {
+                child.env.define(name, val, false);
+            }
+            // Build a program that calls the function
+            let program = crate::ast::Program {
+                stmts: vec![crate::ast::Stmt {
+                    kind: crate::ast::StmtKind::ExprStmt {
+                        expr: crate::ast::Expr {
+                            kind: crate::ast::ExprKind::Call {
+                                func: Box::new(crate::ast::Expr {
+                                    kind: crate::ast::ExprKind::Ident("__timeout_fn__".to_string()),
+                                    span: crate::ast::Span { line: 0, col: 0 },
+                                }),
+                                args: vec![],
+                            },
+                            span: crate::ast::Span { line: 0, col: 0 },
+                        },
+                        has_semi: false,
+                    },
+                    span: crate::ast::Span { line: 0, col: 0 },
+                }],
+            };
+            child.env.define("__timeout_fn__".to_string(), func, false);
+            child.eval_program(&program)
+        });
+        match task.join_timeout(std::time::Duration::from_millis(ms as u64)) {
+            Some(Ok(val)) => Ok(Value::Option(Some(Box::new(val)))),
+            Some(Err(e)) => Err(e),
+            None => Ok(Value::Option(None)),
         }
     }
 }

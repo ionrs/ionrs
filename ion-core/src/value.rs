@@ -3,6 +3,7 @@ use serde_json;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::ast::{Param, Stmt};
 #[cfg(feature = "vm")]
@@ -44,6 +45,8 @@ pub enum Value {
     /// Channel sender/receiver pair
     #[cfg(feature = "concurrency")]
     Channel(crate::async_rt::ChannelEnd),
+    /// Shared mutable reference cell for closure state
+    Cell(Arc<Mutex<Value>>),
     Unit,
 }
 
@@ -104,6 +107,7 @@ impl Value {
             Value::Task(_) => ion_static_str!("Task"),
             #[cfg(feature = "concurrency")]
             Value::Channel(_) => ion_static_str!("Channel"),
+            Value::Cell(_) => ion_static_str!("cell"),
             Value::Unit => ion_static_str!("()"),
         }
     }
@@ -265,6 +269,10 @@ impl fmt::Display for Value {
                 }
                 Ok(())
             }
+            Value::Cell(cell) => {
+                let inner = cell.lock().unwrap();
+                write!(f, "cell({})", *inner)
+            }
             Value::Unit => write!(f, "()"),
         }
     }
@@ -309,6 +317,7 @@ impl PartialEq for Value {
                     data: b_d,
                 },
             ) => a_en == b_en && a_v == b_v && a_d == b_d,
+            (Value::Cell(a), Value::Cell(b)) => Arc::ptr_eq(a, b),
             (Value::Unit, Value::Unit) => true,
             (Value::Option(None), Value::Unit) => false,
             // Task and Channel are not comparable
@@ -378,6 +387,7 @@ impl Value {
             }
             #[cfg(feature = "concurrency")]
             Value::Task(_) | Value::Channel(_) => serde_json::Value::Null,
+            Value::Cell(cell) => cell.lock().unwrap().to_json(),
             Value::Bytes(b) => {
                 let hex: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
                 serde_json::Value::String(hex)
@@ -462,6 +472,7 @@ impl Value {
             }
             #[cfg(feature = "concurrency")]
             Value::Task(_) | Value::Channel(_) => rmpv::Value::Nil,
+            Value::Cell(cell) => cell.lock().unwrap().to_msgpack_value(),
             Value::Fn(_) | Value::BuiltinFn(_, _) => rmpv::Value::Nil,
         }
     }

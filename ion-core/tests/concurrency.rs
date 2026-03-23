@@ -223,3 +223,59 @@ fn test_concurrency_feature_enabled() {
     // Simply verify the async keyword parses and runs
     assert_eq!(eval("async { 1 + 1 }"), Value::Int(2));
 }
+
+// ============================================================
+// Sleep
+// ============================================================
+
+#[test]
+fn test_sleep_basic() {
+    // sleep(0) should complete without error
+    assert_eq!(eval("sleep(0); 42"), Value::Int(42));
+}
+
+#[test]
+fn test_sleep_in_async() {
+    assert_eq!(
+        eval(
+            r#"
+        async {
+            let h = spawn { sleep(10); 1 };
+            sleep(50);
+            h.await
+        }
+    "#
+        ),
+        Value::Int(1)
+    );
+}
+
+// ============================================================
+// Timeout
+// ============================================================
+
+#[test]
+fn test_timeout_completes() {
+    // Function completes within timeout -> Some(result)
+    assert_eq!(
+        eval("timeout(1000, || 42)"),
+        Value::Option(Some(Box::new(Value::Int(42))))
+    );
+}
+
+#[test]
+fn test_timeout_expires() {
+    // Function takes longer than timeout -> None
+    assert_eq!(
+        eval(
+            r#"
+        timeout(10, || {
+            let mut i = 0;
+            while i < 100000000 { i = i + 1; }
+            i
+        })
+    "#
+        ),
+        Value::Option(None)
+    );
+}
