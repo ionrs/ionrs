@@ -1093,7 +1093,7 @@ impl Compiler {
             | ExprKind::AwaitExpr(_)
             | ExprKind::SelectExpr(_) => {
                 return Err(IonError::runtime(
-                    "concurrency not supported in bytecode VM".to_string(),
+                    ion_str!("concurrency not supported in bytecode VM").to_string(),
                     line,
                     col,
                 ));
@@ -1104,7 +1104,7 @@ impl Compiler {
             | ExprKind::AwaitExpr(_)
             | ExprKind::SelectExpr(_) => {
                 return Err(IonError::runtime(
-                    "concurrency not available".to_string(),
+                    ion_str!("concurrency not available").to_string(),
                     line,
                     col,
                 ));
@@ -1274,7 +1274,7 @@ impl Compiler {
             }
             _ => {
                 return Err(IonError::runtime(
-                    "complex pattern not yet supported in bytecode VM let".to_string(),
+                    ion_str!("complex pattern not yet supported in bytecode VM let").to_string(),
                     line,
                     0,
                 ));
@@ -1533,7 +1533,7 @@ impl Compiler {
                     ExprKind::Ident(name) => name.clone(),
                     _ => {
                         return Err(IonError::runtime(
-                            "index assignment only supported on variables".to_string(),
+                            ion_str!("index assignment only supported on variables").to_string(),
                             line,
                             0,
                         ))
@@ -1575,7 +1575,7 @@ impl Compiler {
                     ExprKind::Ident(name) => name.clone(),
                     _ => {
                         return Err(IonError::runtime(
-                            "field assignment only supported on variables".to_string(),
+                            ion_str!("field assignment only supported on variables").to_string(),
                             line,
                             0,
                         ))
@@ -1841,7 +1841,7 @@ impl Compiler {
             _ => {
                 // For complex patterns (EnumVariant, Struct), fall back
                 return Err(IonError::runtime(
-                    "complex pattern not yet supported in bytecode VM match".to_string(),
+                    ion_str!("complex pattern not yet supported in bytecode VM match").to_string(),
                     line,
                     0,
                 ));
@@ -1911,7 +1911,7 @@ impl Compiler {
             }
             _ => {
                 return Err(IonError::runtime(
-                    "complex pattern binding not yet supported in bytecode VM".to_string(),
+                    ion_str!("complex pattern binding not yet supported in bytecode VM").to_string(),
                     line,
                     0,
                 ));

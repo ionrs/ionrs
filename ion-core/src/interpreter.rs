@@ -149,7 +149,7 @@ impl Interpreter {
     fn check_cancelled(&self, line: usize, col: usize) -> Result<(), SignalOrError> {
         if let Some(flag) = &self.cancel_flag {
             if flag.load(std::sync::atomic::Ordering::Relaxed) {
-                return Err(IonError::runtime("task cancelled".to_string(), line, col).into());
+                return Err(IonError::runtime(ion_str!("task cancelled"), line, col).into());
             }
         }
         Ok(())
@@ -396,7 +396,7 @@ impl Interpreter {
                             ExprKind::Ident(name) => name.clone(),
                             _ => {
                                 return Err(IonError::runtime(
-                                    "index assignment only supported on variables".to_string(),
+                                    ion_str!("index assignment only supported on variables"),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -432,7 +432,7 @@ impl Interpreter {
                                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                                 if idx >= items.len() {
                                     return Err(IonError::runtime(
-                                        format!("index {} out of range", i),
+                                        format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
                                         stmt.span.line,
                                         stmt.span.col,
                                     )
@@ -445,7 +445,7 @@ impl Interpreter {
                             }
                             _ => {
                                 return Err(IonError::type_err(
-                                    format!("cannot set index on {}", container.type_name()),
+                                    format!("{}{}", ion_str!("cannot set index on "), container.type_name()),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -461,7 +461,7 @@ impl Interpreter {
                             ExprKind::Ident(name) => name.clone(),
                             _ => {
                                 return Err(IonError::runtime(
-                                    "field assignment only supported on variables".to_string(),
+                                    ion_str!("field assignment only supported on variables"),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -495,7 +495,7 @@ impl Interpreter {
                                     fields.insert(field.clone(), final_val);
                                 } else {
                                     return Err(IonError::runtime(
-                                        format!("field '{}' not found", field),
+                                        format!("{}{}{}", ion_str!("field '"), field, ion_str!("' not found")),
                                         stmt.span.line,
                                         stmt.span.col,
                                     )
@@ -504,7 +504,7 @@ impl Interpreter {
                             }
                             _ => {
                                 return Err(IonError::type_err(
-                                    format!("cannot set field on {}", container.type_name()),
+                                    format!("{}{}", ion_str!("cannot set field on "), container.type_name()),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -1232,9 +1232,12 @@ impl Interpreter {
     ) -> SignalOrError {
         IonError::type_err(
             format!(
-                "cannot apply '{}' to {} and {}",
+                "{}{}{}{}{}{}",
+                ion_str!("cannot apply '"),
                 op,
+                ion_str!("' to "),
                 l.type_name(),
+                ion_str!(" and "),
                 r.type_name(),
             ),
             span.line,
@@ -1491,7 +1494,7 @@ impl Interpreter {
                     let val = args[0]
                         .as_int()
                         .ok_or_else(|| {
-                            IonError::type_err("range.contains requires int", span.line, span.col)
+                            IonError::type_err(ion_str!("range.contains requires int"), span.line, span.col)
                         })
                         .map_err(SignalOrError::from)?;
                     let in_range = if *inclusive {
@@ -2581,7 +2584,7 @@ impl Interpreter {
                 Some(v) => Ok(*v),
                 None => {
                     Err(
-                        IonError::runtime("called unwrap on None".to_string(), span.line, span.col)
+                        IonError::runtime(ion_str!("called unwrap on None"), span.line, span.col)
                             .into(),
                     )
                 }
@@ -2656,7 +2659,7 @@ impl Interpreter {
             "unwrap" => match res {
                 Ok(v) => Ok(*v),
                 Err(e) => Err(IonError::runtime(
-                    format!("called unwrap on Err: {}", e),
+                    format!("{}{}", ion_str!("called unwrap on Err: "), e),
                     span.line,
                     span.col,
                 )
@@ -2848,7 +2851,7 @@ impl Interpreter {
                 .map_err(|e| match e {
                     SignalOrError::Error(err) => err,
                     SignalOrError::Signal(_) => {
-                        IonError::runtime("unexpected signal in timeout", 0, 0)
+                        IonError::runtime(ion_str!("unexpected signal in timeout"), 0, 0)
                     }
                 })
         });
@@ -4030,9 +4033,9 @@ pub fn register_builtins(env: &mut Env) {
             }
             if args[0] != args[1] {
                 let msg = if args.len() > 2 {
-                    format!("{}: expected {}, got {}", args[2], args[0], args[1])
+                    format!("{}{}{}{}{}", args[2], ion_str!(": expected "), args[0], ion_str!(", got "), args[1])
                 } else {
-                    format!("assertion failed: expected {}, got {}", args[0], args[1])
+                    format!("{}{}{}{}", ion_str!("assertion failed: expected "), args[0], ion_str!(", got "), args[1])
                 };
                 return Err(msg);
             }

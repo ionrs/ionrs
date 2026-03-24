@@ -68,40 +68,40 @@ impl IonError {
         match kind {
             ErrorKind::NameError => {
                 if msg.contains(&*ion_str!("undefined variable")) {
-                    Some("check spelling, or ensure the variable is declared with `let` before use")
+                    Some(ion_static_str!("check spelling, or ensure the variable is declared with `let` before use"))
                 } else {
                     None
                 }
             }
             ErrorKind::TypeError => {
                 if msg.contains(&*ion_str!("cannot assign to immutable")) {
-                    Some("declare with `let mut` to allow reassignment")
+                    Some(ion_static_str!("declare with `let mut` to allow reassignment"))
                 } else if msg.contains(&*ion_str!("cannot add"))
                     || msg.contains(&*ion_str!("cannot subtract"))
                 {
-                    Some("Ion has no implicit type coercions \u{2014} convert explicitly with `int()`, `float()`, or `str()`")
+                    Some(ion_static_str!("Ion has no implicit type coercions \u{2014} convert explicitly with `int()`, `float()`, or `str()`"))
                 } else if msg.contains(&*ion_str!("no method")) {
-                    Some("use `.to_string()` to inspect the value's type, or check LANGUAGE.md for available methods")
+                    Some(ion_static_str!("use `.to_string()` to inspect the value's type, or check LANGUAGE.md for available methods"))
                 } else {
                     None
                 }
             }
             ErrorKind::ParseError => {
                 if msg.contains(&*ion_str!("expected ';'")) {
-                    Some("Ion requires semicolons after statements")
+                    Some(ion_static_str!("Ion requires semicolons after statements"))
                 } else if msg.contains(&*ion_str!("expected '}'")) {
-                    Some("check for unmatched `{` braces")
+                    Some(ion_static_str!("check for unmatched `{` braces"))
                 } else {
                     None
                 }
             }
             ErrorKind::RuntimeError => {
                 if msg.contains(&*ion_str!("division by zero")) {
-                    Some("check the divisor before dividing, or use a try/catch block")
+                    Some(ion_static_str!("check the divisor before dividing, or use a try/catch block"))
                 } else if msg.contains(&*ion_str!("stack overflow")) {
-                    Some("check for infinite recursion, or increase the stack depth limit")
+                    Some(ion_static_str!("check for infinite recursion, or increase the stack depth limit"))
                 } else if msg.contains(&*ion_str!("index out of bounds")) {
-                    Some("use `.len()` to check the collection size, or `.get()` for safe access")
+                    Some(ion_static_str!("use `.len()` to check the collection size, or `.get()` for safe access"))
                 } else {
                     None
                 }
@@ -112,13 +112,13 @@ impl IonError {
 
     fn kind_str(&self) -> &str {
         match &self.kind {
-            ErrorKind::LexError => "lex",
-            ErrorKind::ParseError => "parse",
-            ErrorKind::RuntimeError => "runtime",
-            ErrorKind::TypeError => "type",
-            ErrorKind::NameError => "name",
-            ErrorKind::PropagatedErr => "propagated_err",
-            ErrorKind::PropagatedNone => "propagated_none",
+            ErrorKind::LexError => ion_static_str!("lex"),
+            ErrorKind::ParseError => ion_static_str!("parse"),
+            ErrorKind::RuntimeError => ion_static_str!("runtime"),
+            ErrorKind::TypeError => ion_static_str!("type"),
+            ErrorKind::NameError => ion_static_str!("name"),
+            ErrorKind::PropagatedErr => ion_static_str!("propagated_err"),
+            ErrorKind::PropagatedNone => ion_static_str!("propagated_none"),
         }
     }
 

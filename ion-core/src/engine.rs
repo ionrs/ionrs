@@ -93,7 +93,7 @@ impl Engine {
             .interpreter
             .env
             .get(name)
-            .ok_or_else(|| format!("variable '{}' not found", name))?;
+            .ok_or_else(|| format!("{}{}{}", ion_str!("variable '"), name, ion_str!("' not found")))?;
         T::from_ion(val)
     }
 
