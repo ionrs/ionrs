@@ -16,6 +16,7 @@
     { "include": "#function-call" },
     { "include": "#lambda" },
     { "include": "#dict-literal" },
+    { "include": "#module-path" },
     { "include": "#punctuation" },
     { "include": "#identifiers" }
   ],
@@ -134,7 +135,7 @@
       "patterns": [
         {
           "name": "keyword.control.ion",
-          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|async|spawn|select|try|catch)\\b"
+          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|async|spawn|select|try|catch|use)\\b"
         },
         {
           "name": "keyword.declaration.ion",
@@ -278,8 +279,25 @@
       ]
     },
 
+    "module-path": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(::)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "entity.name.namespace.ion" },
+            "2": { "name": "punctuation.separator.namespace.ion" },
+            "3": { "name": "entity.name.other.ion" }
+          }
+        }
+      ]
+    },
+
     "punctuation": {
       "patterns": [
+        {
+          "name": "punctuation.separator.namespace.ion",
+          "match": "::"
+        },
         {
           "name": "punctuation.separator.ion",
           "match": "[;,]"

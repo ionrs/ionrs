@@ -17,6 +17,7 @@ Ion is an embeddable scripting language for Rust applications. It has Rust-flavo
 - [Methods](#methods)
 - [Bytes](#bytes)
 - [Concurrency](#concurrency)
+- [Modules](#modules)
 - [Embedding API](#embedding-api)
 
 ---
@@ -842,6 +843,71 @@ select {
 
 ---
 
+## Modules
+
+Modules provide namespaced access to functions and values registered by the host application.
+
+### Module path access
+
+Use `::` to access module members:
+
+```
+let result = math::add(1, 2);
+let pi = math::PI;
+```
+
+Nested submodules:
+```
+let resp = net::http::get("https://example.com");
+```
+
+### Use imports
+
+Import specific names into the current scope:
+
+```
+use math::add;             // single import
+use math::{add, PI};       // multiple imports
+use math::*;               // glob import (all names)
+```
+
+After importing, names can be used directly:
+```
+use math::add;
+add(1, 2)                  // 3 (no need for math::add)
+```
+
+### Submodule imports
+
+```
+use net::http::get;        // import from nested module
+use net::http::*;          // glob import from nested module
+```
+
+### Registering modules (Rust side)
+
+```rust
+use ion_core::module::Module;
+
+let mut math = Module::new("math");
+math.register_fn("add", |args| { /* ... */ });
+math.set("PI", Value::Float(std::f64::consts::PI));
+
+let mut engine = Engine::new();
+engine.register_module(math);
+```
+
+Submodules:
+```rust
+let mut net = Module::new("net");
+let mut http = Module::new("http");
+http.register_fn("get", |args| { /* ... */ });
+net.register_submodule(http);
+engine.register_module(net);
+```
+
+---
+
 ## Embedding API
 
 Ion is designed to be embedded in Rust applications.
@@ -865,6 +931,22 @@ engine.eval("player_hp > 50").unwrap(); // Value::Bool(true)
 // Read values back
 let hp = engine.get("player_hp");
 ```
+
+### Register modules
+
+```rust
+use ion_core::module::Module;
+
+let mut math = Module::new("math");
+math.register_fn("add", |args| {
+    let (a, b) = (args[0].as_int().unwrap(), args[1].as_int().unwrap());
+    Ok(Value::Int(a + b))
+});
+math.set("PI", Value::Float(std::f64::consts::PI));
+engine.register_module(math);
+```
+
+Scripts can then use `math::add(1, 2)` or `use math::*;`.
 
 ### Register custom functions
 

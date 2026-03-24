@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ion_core::ast::{Param, StmtKind};
+use ion_core::ast::{Param, StmtKind, UseImports};
 use ion_core::error::IonError;
 use ion_core::lexer::Lexer;
 use ion_core::parser::Parser;
@@ -95,6 +95,23 @@ fn collect_defs_from_stmts(stmts: &[ion_core::ast::Stmt], defs: &mut Vec<Definit
             StmtKind::WhileLet { body, .. } => collect_defs_from_stmts(body, defs),
             StmtKind::Loop { body } => collect_defs_from_stmts(body, defs),
             StmtKind::ExprStmt { expr, .. } => collect_defs_from_expr(expr, defs),
+            StmtKind::Use { path, imports } => {
+                let module_path = path.join("::");
+                let names: Vec<String> = match imports {
+                    UseImports::Single(name) => vec![name.clone()],
+                    UseImports::Names(names) => names.clone(),
+                    UseImports::Glob => vec![format!("{}::*", module_path)],
+                };
+                for name in names {
+                    defs.push(Definition {
+                        name: name.clone(),
+                        kind: DefKind::Variable,
+                        line,
+                        col,
+                        detail: format!("use {}::{}", module_path, name),
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -362,7 +379,7 @@ const BUILTINS: &[BuiltinInfo] = &[
 const KEYWORDS: &[&str] = &[
     "let", "mut", "fn", "if", "else", "while", "for", "loop", "break", "continue", "return",
     "match", "in", "true", "false", "None", "Some", "Ok", "Err", "async", "spawn", "select", "try",
-    "catch",
+    "catch", "use",
 ];
 
 // ---- Main ----
@@ -556,6 +573,7 @@ fn handle_hover(source: &str, pos: Position) -> Option<Hover> {
         "return" => Some("Return a value from a function early.\n\n```ion\nfn check(x) { if x < 0 { return Err(\"negative\"); } Ok(x) }\n```"),
         "mut" => Some("Mark a binding as mutable.\n\n```ion\nlet mut count = 0;\ncount += 1;\n```"),
         "in" => Some("Used in `for` loops and membership tests.\n\n```ion\nfor x in [1, 2, 3] { println(x); }\n```"),
+        "use" => Some("Import names from a module.\n\n```ion\nuse math::add;          // single import\nuse math::{add, PI};    // multiple imports\nuse math::*;            // glob import\n```"),
         _ => None,
     };
 

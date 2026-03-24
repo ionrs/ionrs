@@ -22,6 +22,12 @@ engine.get_typed::<Player>("player")?;     // Value → T: IonType
 // Register Rust functions
 engine.register_fn("square", |args| { ... });
 
+// Register modules (namespaced functions/values)
+let mut math = Module::new("math");
+math.register_fn("add", |args| { ... });
+math.set("PI", Value::Float(std::f64::consts::PI));
+engine.register_module(math);              // scripts use math::add() or `use math::*;`
+
 // Register host types
 engine.register_type::<Player>();          // via #[derive(IonType)]
 engine.register_struct(def);               // manual HostStructDef

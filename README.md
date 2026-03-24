@@ -73,6 +73,10 @@ try {
     f"caught: {e}"
 }
 
+// Modules and imports
+use math::{add, PI};
+let area = add(PI, PI);
+
 // Loops + functional
 let sum = [1, 2, 3, 4, 5].fold(0, |acc, x| acc + x);
 for (i, item) in enumerate(items) {
@@ -105,6 +109,22 @@ let result = engine.eval(r#"
 "#).unwrap();
 
 assert_eq!(result, Value::Str("A".to_string()));
+```
+
+### Register Modules
+
+```rust
+use ion_core::module::Module;
+use ion_core::value::Value;
+
+let mut math = Module::new("math");
+math.register_fn("add", |args: &[Value]| {
+    Ok(Value::Int(args[0].as_int().unwrap() + args[1].as_int().unwrap()))
+});
+math.set("PI", Value::Float(std::f64::consts::PI));
+engine.register_module(math);
+
+// Scripts can use: math::add(1, 2) or `use math::*;`
 ```
 
 ### Host Types with Derive
