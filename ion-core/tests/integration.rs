@@ -4100,3 +4100,122 @@ fn test_use_member_not_found_error() {
     assert!(result.is_err());
     assert!(result.unwrap_err().message.contains("not found in module"));
 }
+
+// --- Stdlib Modules ---
+
+#[test]
+fn test_stdlib_math_constants() {
+    let pi = eval("math::PI");
+    assert!(matches!(pi, Value::Float(f) if (f - std::f64::consts::PI).abs() < 1e-10));
+    let e = eval("math::E");
+    assert!(matches!(e, Value::Float(f) if (f - std::f64::consts::E).abs() < 1e-10));
+    let tau = eval("math::TAU");
+    assert!(matches!(tau, Value::Float(f) if (f - std::f64::consts::TAU).abs() < 1e-10));
+    assert_eq!(eval("math::INF > 999999999"), Value::Bool(true));
+}
+
+#[test]
+fn test_stdlib_math_abs() {
+    assert_eq!(eval("math::abs(-5)"), Value::Int(5));
+    assert_eq!(eval("math::abs(3)"), Value::Int(3));
+    assert_eq!(eval("math::abs(-2.5)"), Value::Float(2.5));
+}
+
+#[test]
+fn test_stdlib_math_min_max() {
+    assert_eq!(eval("math::min(3, 1, 2)"), Value::Int(1));
+    assert_eq!(eval("math::max(3, 1, 2)"), Value::Int(3));
+    assert_eq!(eval("math::min(1.5, 2.5)"), Value::Float(1.5));
+    assert_eq!(eval("math::max(1.5, 2.5)"), Value::Float(2.5));
+}
+
+#[test]
+fn test_stdlib_math_floor_ceil_round() {
+    assert_eq!(eval("math::floor(3.7)"), Value::Float(3.0));
+    assert_eq!(eval("math::ceil(3.2)"), Value::Float(4.0));
+    assert_eq!(eval("math::round(3.5)"), Value::Float(4.0));
+    assert_eq!(eval("math::round(3.4)"), Value::Float(3.0));
+}
+
+#[test]
+fn test_stdlib_math_sqrt_pow() {
+    assert_eq!(eval("math::sqrt(9.0)"), Value::Float(3.0));
+    assert_eq!(eval("math::pow(2, 10)"), Value::Int(1024));
+    assert_eq!(eval("math::pow(2.0, 0.5)"), Value::Float(2.0_f64.sqrt()));
+}
+
+#[test]
+fn test_stdlib_math_clamp() {
+    assert_eq!(eval("math::clamp(5, 1, 10)"), Value::Int(5));
+    assert_eq!(eval("math::clamp(-1, 0, 10)"), Value::Int(0));
+    assert_eq!(eval("math::clamp(20, 0, 10)"), Value::Int(10));
+}
+
+#[test]
+fn test_stdlib_math_trig() {
+    assert_eq!(eval("math::sin(0.0)"), Value::Float(0.0));
+    assert_eq!(eval("math::cos(0.0)"), Value::Float(1.0));
+    let tan_result = eval("math::tan(0.0)");
+    assert!(matches!(tan_result, Value::Float(f) if f.abs() < 1e-10));
+}
+
+#[test]
+fn test_stdlib_math_log() {
+    assert_eq!(eval("math::log(1.0)"), Value::Float(0.0));
+    assert_eq!(eval("math::log2(8.0)"), Value::Float(3.0));
+    assert_eq!(eval("math::log10(100.0)"), Value::Float(2.0));
+}
+
+#[test]
+fn test_stdlib_math_checks() {
+    assert_eq!(eval("math::is_nan(math::NAN)"), Value::Bool(true));
+    assert_eq!(eval("math::is_nan(1.0)"), Value::Bool(false));
+    assert_eq!(eval("math::is_inf(math::INF)"), Value::Bool(true));
+    assert_eq!(eval("math::is_inf(1.0)"), Value::Bool(false));
+}
+
+#[test]
+fn test_stdlib_math_use_import() {
+    assert_eq!(eval("use math::{sin, PI}; sin(PI)"), Value::Float(std::f64::consts::PI.sin()));
+    assert_eq!(eval("use math::*; abs(-42)"), Value::Int(42));
+}
+
+#[test]
+fn test_stdlib_json_encode_decode() {
+    assert_eq!(
+        eval(r#"json::encode(#{name: "ion", version: 1})"#),
+        eval(r#"json_encode(#{name: "ion", version: 1})"#),
+    );
+    assert_eq!(
+        eval(r#"json::decode("{\"x\": 42}")"#),
+        eval(r#"json_decode("{\"x\": 42}")"#),
+    );
+}
+
+#[test]
+fn test_stdlib_json_pretty() {
+    let result = eval(r#"json::pretty(#{a: 1})"#);
+    match &result {
+        Value::Str(s) => assert!(s.contains('\n')),
+        _ => panic!("expected string"),
+    }
+}
+
+#[test]
+fn test_stdlib_json_use_import() {
+    assert_eq!(
+        eval(r#"use json::encode; encode([1, 2, 3])"#),
+        Value::Str("[1,2,3]".to_string()),
+    );
+}
+
+#[test]
+fn test_stdlib_io_eprintln() {
+    // Just verify it doesn't error
+    assert_eq!(eval(r#"io::eprintln("test")"#), Value::Unit);
+}
+
+#[test]
+fn test_stdlib_io_use_import() {
+    assert_eq!(eval(r#"use io::println; println("hello")"#), Value::Unit);
+}

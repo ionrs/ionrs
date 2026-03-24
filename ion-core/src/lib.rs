@@ -71,6 +71,7 @@ pub mod interpreter;
 pub mod lexer;
 pub mod module;
 pub mod parser;
+pub mod stdlib;
 pub mod token;
 pub mod value;
 #[cfg(feature = "vm")]

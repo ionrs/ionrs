@@ -597,6 +597,23 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
 
     let is_dot_completion = col > 0 && line_text.as_bytes().get(col - 1) == Some(&b'.');
 
+    // Check if we're after a `::` (module member completion)
+    let module_prefix = {
+        let before_cursor = &line_text[..col.min(line_text.len())];
+        if let Some(idx) = before_cursor.rfind("::") {
+            let prefix = before_cursor[..idx].trim();
+            // Extract the last word as the module name
+            let mod_name = prefix.rsplit(|c: char| c.is_whitespace() || c == '(' || c == ',' || c == '{').next().unwrap_or(prefix);
+            if !mod_name.is_empty() {
+                Some(mod_name.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
     // Check if we're in a type annotation position (after `:` in a let binding)
     let is_type_position = {
         let before_cursor = &line_text[..col.min(line_text.len())];
@@ -606,7 +623,58 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
             && !before_cursor.contains('=')
     };
 
-    if is_type_position {
+    if let Some(ref mod_name) = module_prefix {
+        let members: &[(&str, &str, CompletionItemKind)] = match mod_name.as_str() {
+            "math" => &[
+                ("PI", "Pi constant (3.14159...)", CompletionItemKind::CONSTANT),
+                ("E", "Euler's number (2.71828...)", CompletionItemKind::CONSTANT),
+                ("TAU", "Tau (2π)", CompletionItemKind::CONSTANT),
+                ("INF", "Positive infinity", CompletionItemKind::CONSTANT),
+                ("NAN", "Not-a-number", CompletionItemKind::CONSTANT),
+                ("abs", "Absolute value", CompletionItemKind::FUNCTION),
+                ("min", "Minimum of arguments", CompletionItemKind::FUNCTION),
+                ("max", "Maximum of arguments", CompletionItemKind::FUNCTION),
+                ("floor", "Floor (round down)", CompletionItemKind::FUNCTION),
+                ("ceil", "Ceiling (round up)", CompletionItemKind::FUNCTION),
+                ("round", "Round to nearest", CompletionItemKind::FUNCTION),
+                ("sqrt", "Square root", CompletionItemKind::FUNCTION),
+                ("pow", "Exponentiation", CompletionItemKind::FUNCTION),
+                ("clamp", "Clamp value to range", CompletionItemKind::FUNCTION),
+                ("sin", "Sine", CompletionItemKind::FUNCTION),
+                ("cos", "Cosine", CompletionItemKind::FUNCTION),
+                ("tan", "Tangent", CompletionItemKind::FUNCTION),
+                ("atan2", "Two-argument arctangent", CompletionItemKind::FUNCTION),
+                ("log", "Natural logarithm", CompletionItemKind::FUNCTION),
+                ("log2", "Base-2 logarithm", CompletionItemKind::FUNCTION),
+                ("log10", "Base-10 logarithm", CompletionItemKind::FUNCTION),
+                ("is_nan", "Check if NaN", CompletionItemKind::FUNCTION),
+                ("is_inf", "Check if infinite", CompletionItemKind::FUNCTION),
+            ],
+            "json" => &[
+                ("encode", "Value to JSON string", CompletionItemKind::FUNCTION),
+                ("decode", "JSON string to value", CompletionItemKind::FUNCTION),
+                ("pretty", "Pretty-printed JSON string", CompletionItemKind::FUNCTION),
+            ],
+            "io" => &[
+                ("print", "Print without newline", CompletionItemKind::FUNCTION),
+                ("println", "Print with newline", CompletionItemKind::FUNCTION),
+                ("eprintln", "Print to stderr with newline", CompletionItemKind::FUNCTION),
+            ],
+            _ => &[],
+        };
+        for (label, doc, kind) in members {
+            items.push(CompletionItem {
+                label: label.to_string(),
+                kind: Some(*kind),
+                documentation: Some(lsp_types::Documentation::String(doc.to_string())),
+                ..Default::default()
+            });
+        }
+        return CompletionResponse::List(CompletionList {
+            is_incomplete: false,
+            items,
+        });
+    } else if is_type_position {
         let type_names = [
             ("int", "Integer type"),
             ("float", "Floating-point type"),

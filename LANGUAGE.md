@@ -884,6 +884,54 @@ use net::http::get;        // import from nested module
 use net::http::*;          // glob import from nested module
 ```
 
+### Standard library modules
+
+The following modules are available by default in every Engine:
+
+#### `math`
+
+| Name | Description |
+|------|-------------|
+| `math::PI` | Pi (3.14159...) |
+| `math::E` | Euler's number (2.71828...) |
+| `math::TAU` | Tau (2π) |
+| `math::INF` | Positive infinity |
+| `math::NAN` | Not-a-number |
+| `math::abs(x)` | Absolute value |
+| `math::min(a, b, ...)` | Minimum |
+| `math::max(a, b, ...)` | Maximum |
+| `math::floor(x)` | Floor |
+| `math::ceil(x)` | Ceiling |
+| `math::round(x)` | Round to nearest |
+| `math::sqrt(x)` | Square root |
+| `math::pow(base, exp)` | Exponentiation |
+| `math::clamp(val, lo, hi)` | Clamp to range |
+| `math::sin(x)` | Sine |
+| `math::cos(x)` | Cosine |
+| `math::tan(x)` | Tangent |
+| `math::atan2(y, x)` | Two-argument arctangent |
+| `math::log(x)` | Natural logarithm |
+| `math::log2(x)` | Base-2 logarithm |
+| `math::log10(x)` | Base-10 logarithm |
+| `math::is_nan(x)` | Check if NaN |
+| `math::is_inf(x)` | Check if infinite |
+
+#### `json`
+
+| Name | Description |
+|------|-------------|
+| `json::encode(value)` | Value to JSON string |
+| `json::decode(string)` | JSON string to value |
+| `json::pretty(value)` | Pretty-printed JSON string |
+
+#### `io`
+
+| Name | Description |
+|------|-------------|
+| `io::print(args...)` | Print without newline |
+| `io::println(args...)` | Print with newline |
+| `io::eprintln(args...)` | Print to stderr with newline |
+
 ### Registering modules (Rust side)
 
 ```rust

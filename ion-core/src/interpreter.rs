@@ -4239,4 +4239,7 @@ pub fn register_builtins(env: &mut Env) {
             false,
         );
     }
+
+    // Register stdlib modules (math, json, io)
+    crate::stdlib::register_stdlib(env);
 }
