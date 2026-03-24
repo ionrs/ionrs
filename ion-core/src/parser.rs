@@ -2,6 +2,12 @@ use crate::ast::*;
 use crate::error::IonError;
 use crate::token::{SpannedToken, Token};
 
+/// Result of parsing: partial AST + accumulated errors.
+pub struct ParseOutput {
+    pub program: Program,
+    pub errors: Vec<IonError>,
+}
+
 pub struct Parser {
     tokens: Vec<SpannedToken>,
     pos: usize,
@@ -17,46 +23,78 @@ impl Parser {
         }
     }
 
-    pub fn parse_program(&mut self) -> Result<Program, IonError> {
+    /// Parse the full program, recovering from errors at statement boundaries.
+    /// Returns a `ParseOutput` containing both the partial AST and any errors.
+    pub fn parse_program_recovering(&mut self) -> ParseOutput {
         let mut stmts = Vec::new();
         while !self.is_at_end() {
+            let before = self.pos;
             match self.parse_stmt() {
                 Ok(stmt) => stmts.push(stmt),
                 Err(e) => {
                     self.errors.push(e);
                     self.synchronize();
+                    // If no progress was made, force advance to prevent infinite loop
+                    if self.pos == before {
+                        self.advance();
+                    }
                 }
             }
         }
-        if self.errors.is_empty() {
-            Ok(Program { stmts })
+        ParseOutput {
+            program: Program { stmts },
+            errors: std::mem::take(&mut self.errors),
+        }
+    }
+
+    /// Parse the full program, returning an error if any parse errors occurred.
+    /// For multi-error reporting, use `parse_program_recovering` instead.
+    pub fn parse_program(&mut self) -> Result<Program, IonError> {
+        let output = self.parse_program_recovering();
+        if output.errors.is_empty() {
+            Ok(output.program)
         } else {
-            let mut first = self.errors.remove(0);
-            first.additional = std::mem::take(&mut self.errors);
+            let mut errors = output.errors;
+            let mut first = errors.remove(0);
+            first.additional = errors;
             Err(first)
         }
     }
 
     /// Advance past the current error to the next statement boundary.
+    /// Respects brace nesting — stops at `}` that closes the current block.
     fn synchronize(&mut self) {
+        let mut brace_depth = 0i32;
         while !self.is_at_end() {
-            // If we just passed a semicolon, we're at a new statement
-            if self.pos > 0 {
+            // If we just passed a semicolon at the same brace depth, we're at a new statement
+            if self.pos > 0 && brace_depth == 0 {
                 if let Token::Semicolon = &self.tokens[self.pos - 1].token {
                     return;
                 }
             }
-            // Stop at tokens that typically begin a new statement
             match self.peek() {
-                Token::Let
-                | Token::Fn
-                | Token::For
-                | Token::While
-                | Token::If
-                | Token::Return
-                | Token::Match
-                | Token::Loop
-                | Token::Try => return,
+                // Track brace depth to avoid skipping past a closing }
+                Token::LBrace => {
+                    brace_depth += 1;
+                    self.advance();
+                }
+                Token::RBrace => {
+                    if brace_depth > 0 {
+                        brace_depth -= 1;
+                        self.advance();
+                    } else {
+                        // This } closes the enclosing block — stop before it
+                        return;
+                    }
+                }
+                // Stop at tokens that typically begin a new statement (if at top level)
+                Token::Let | Token::Fn | Token::For | Token::While | Token::If
+                | Token::Return | Token::Match | Token::Loop | Token::Try
+                | Token::Break | Token::Continue
+                    if brace_depth == 0 =>
+                {
+                    return;
+                }
                 _ => {
                     self.advance();
                 }
@@ -425,7 +463,18 @@ impl Parser {
     fn parse_block_stmts(&mut self) -> Result<Vec<Stmt>, IonError> {
         let mut stmts = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_at_end() {
-            stmts.push(self.parse_stmt()?);
+            let before = self.pos;
+            match self.parse_stmt() {
+                Ok(stmt) => stmts.push(stmt),
+                Err(e) => {
+                    self.errors.push(e);
+                    self.synchronize();
+                    // If no progress was made, force advance to prevent infinite loop
+                    if self.pos == before {
+                        self.advance();
+                    }
+                }
+            }
         }
         Ok(stmts)
     }

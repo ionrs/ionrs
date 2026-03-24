@@ -48,12 +48,10 @@ fn collect_definitions(source: &str) -> Vec<Definition> {
         Err(_) => return vec![],
     };
     let mut parser = Parser::new(tokens);
-    let program = match parser.parse_program() {
-        Ok(p) => p,
-        Err(_) => return vec![],
-    };
+    // Use recovering parse so definitions are available even with errors
+    let output = parser.parse_program_recovering();
     let mut defs = Vec::new();
-    collect_defs_from_stmts(&program.stmts, &mut defs);
+    collect_defs_from_stmts(&output.program.stmts, &mut defs);
     defs
 }
 
@@ -1255,11 +1253,9 @@ fn compute_diagnostics(source: &str) -> Vec<Diagnostic> {
     };
 
     let mut parser = Parser::new(tokens);
-    match parser.parse_program() {
-        Ok(_) => {}
-        Err(err) => {
-            add_error_diagnostic(&mut diagnostics, &err);
-        }
+    let output = parser.parse_program_recovering();
+    for err in &output.errors {
+        diagnostics.push(ion_error_to_diagnostic(err));
     }
 
     diagnostics
