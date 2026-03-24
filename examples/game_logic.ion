@@ -31,15 +31,15 @@ let goblin = #{name: "Goblin", hp: 40, attack: 12, defense: 5, luck: 3};
 
 // Combat round
 let result = calculate_damage(hero, goblin);
-println(f"{result.attacker_name} attacks {result.defender_name}!");
+io::println(f"{result.attacker_name} attacks {result.defender_name}!");
 if result.is_crit {
-    println("Critical hit!");
+    io::println("Critical hit!");
 }
-println(f"Deals {result.damage} damage.");
+io::println(f"Deals {result.damage} damage.");
 
 let mut goblin = apply_damage(goblin, result.damage);
-println(f"{goblin.name} HP: {goblin.hp}");
+io::println(f"{goblin.name} HP: {goblin.hp}");
 
 if !is_alive(goblin) {
-    println(f"{goblin.name} has been defeated!");
+    io::println(f"{goblin.name} has been defeated!");
 }

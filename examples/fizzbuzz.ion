@@ -2,12 +2,12 @@
 
 for i in 1..=30 {
     if i % 15 == 0 {
-        println("FizzBuzz");
+        io::println("FizzBuzz");
     } else if i % 3 == 0 {
-        println("Fizz");
+        io::println("Fizz");
     } else if i % 5 == 0 {
-        println("Buzz");
+        io::println("Buzz");
     } else {
-        println(i);
+        io::println(i);
     }
 }

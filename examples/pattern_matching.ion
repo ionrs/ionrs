@@ -7,8 +7,8 @@ fn find_user(name) {
 }
 
 match find_user("alice") {
-    Some(id) => println(f"Found user with id: {id}"),
-    None => println("User not found"),
+    Some(id) => io::println(f"Found user with id: {id}"),
+    None => io::println("User not found"),
 }
 
 // Result handling with ? operator
@@ -22,8 +22,8 @@ fn parse_config(input) {
 }
 
 match parse_config("8080") {
-    Ok(config) => println(f"Server at {config.host}:{config.port}"),
-    Err(e) => println(f"Config error: {e}"),
+    Ok(config) => io::println(f"Server at {config.host}:{config.port}"),
+    Err(e) => io::println(f"Config error: {e}"),
 }
 
 // List pattern matching
@@ -36,10 +36,10 @@ fn describe(items) {
     }
 }
 
-println(describe([]));
-println(describe([42]));
-println(describe([1, 2]));
-println(describe([10, 20, 30, 40]));
+io::println(describe([]));
+io::println(describe([42]));
+io::println(describe([1, 2]));
+io::println(describe([10, 20, 30, 40]));
 
 // Tuple matching
 fn classify_point(point) {
@@ -51,10 +51,10 @@ fn classify_point(point) {
     }
 }
 
-println(classify_point((0, 0)));
-println(classify_point((5, 0)));
-println(classify_point((0, 3)));
-println(classify_point((2, 7)));
+io::println(classify_point((0, 0)));
+io::println(classify_point((5, 0)));
+io::println(classify_point((0, 3)));
+io::println(classify_point((2, 7)));
 
 // Guards
 fn grade(score) {
@@ -68,5 +68,5 @@ fn grade(score) {
 }
 
 for score in [95, 82, 73, 61, 45] {
-    println(f"Score {score}: {grade(score)}");
+    io::println(f"Score {score}: {grade(score)}");
 }

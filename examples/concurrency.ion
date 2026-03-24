@@ -11,7 +11,7 @@ let result = async {
     let t3 = spawn 30 * 4;
     t1.await + t2.await + t3.await
 };
-println(f"Parallel sum: {result}");  // 20 + 60 + 120 = 200
+io::println(f"Parallel sum: {result}");  // 20 + 60 + 120 = 200
 
 // ---- Spawning functions ----
 
@@ -28,7 +28,7 @@ let answer = async {
     let b = spawn compute(200);
     (a.await, b.await)
 };
-println(f"Computed: {answer}");  // (4950, 19900)
+io::println(f"Computed: {answer}");  // (4950, 19900)
 
 // ---- Task status ----
 
@@ -38,7 +38,7 @@ let status = async {
     let finished = t.is_finished();
     #{value: val, finished: finished}
 };
-println(f"Task status: {status}");
+io::println(f"Task status: {status}");
 
 // ---- Channels: producer/consumer ----
 
@@ -68,7 +68,7 @@ let total = async {
     }
     sum
 };
-println(f"Channel sum: {total}");  // 10+20+30+40+50 = 150
+io::println(f"Channel sum: {total}");  // 10+20+30+40+50 = 150
 
 // ---- Multiple producers ----
 
@@ -98,7 +98,7 @@ let collected = async {
     }
     count
 };
-println(f"Messages received: {collected}");  // 4
+io::println(f"Messages received: {collected}");  // 4
 
 // ---- Task cancellation ----
 
@@ -108,4 +108,4 @@ let cancel_result = async {
     t.cancel();
     t.is_cancelled()
 };
-println(f"Task cancelled: {cancel_result}");
+io::println(f"Task cancelled: {cancel_result}");

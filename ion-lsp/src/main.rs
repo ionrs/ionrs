@@ -205,16 +205,6 @@ struct BuiltinInfo {
 
 const BUILTINS: &[BuiltinInfo] = &[
     BuiltinInfo {
-        name: "print",
-        signature: "print(args...)",
-        description: "Print without newline",
-    },
-    BuiltinInfo {
-        name: "println",
-        signature: "println(args...)",
-        description: "Print with newline",
-    },
-    BuiltinInfo {
         name: "len",
         signature: "len(x)",
         description: "Length of list, string, dict, or bytes",
@@ -250,71 +240,6 @@ const BUILTINS: &[BuiltinInfo] = &[
         description: "Convert to float",
     },
     BuiltinInfo {
-        name: "abs",
-        signature: "abs(x)",
-        description: "Absolute value",
-    },
-    BuiltinInfo {
-        name: "min",
-        signature: "min(a, b, ...)",
-        description: "Minimum of arguments",
-    },
-    BuiltinInfo {
-        name: "max",
-        signature: "max(a, b, ...)",
-        description: "Maximum of arguments",
-    },
-    BuiltinInfo {
-        name: "floor",
-        signature: "floor(x)",
-        description: "Floor (rounds down)",
-    },
-    BuiltinInfo {
-        name: "ceil",
-        signature: "ceil(x)",
-        description: "Ceiling (rounds up)",
-    },
-    BuiltinInfo {
-        name: "round",
-        signature: "round(x)",
-        description: "Round to nearest",
-    },
-    BuiltinInfo {
-        name: "sqrt",
-        signature: "sqrt(x)",
-        description: "Square root",
-    },
-    BuiltinInfo {
-        name: "pow",
-        signature: "pow(base, exp)",
-        description: "Exponentiation",
-    },
-    BuiltinInfo {
-        name: "clamp",
-        signature: "clamp(val, min, max)",
-        description: "Clamp value to range [min, max]",
-    },
-    BuiltinInfo {
-        name: "join",
-        signature: "join(list, separator)",
-        description: "Join list elements into a string with separator",
-    },
-    BuiltinInfo {
-        name: "json_encode",
-        signature: "json_encode(value)",
-        description: "Value to JSON string",
-    },
-    BuiltinInfo {
-        name: "json_decode",
-        signature: "json_decode(string)",
-        description: "JSON string to value",
-    },
-    BuiltinInfo {
-        name: "json_encode_pretty",
-        signature: "json_encode_pretty(value)",
-        description: "Pretty-printed JSON",
-    },
-    BuiltinInfo {
         name: "bytes",
         signature: "bytes() / bytes(list) / bytes(string) / bytes(n)",
         description: "Create bytes",
@@ -333,11 +258,6 @@ const BUILTINS: &[BuiltinInfo] = &[
         name: "assert_eq",
         signature: "assert_eq(a, b) / assert_eq(a, b, msg)",
         description: "Error if values are not equal",
-    },
-    BuiltinInfo {
-        name: "sort_by",
-        signature: "sort_by(list, fn)",
-        description: "Sort list by key function",
     },
     BuiltinInfo {
         name: "channel",
@@ -363,16 +283,6 @@ const BUILTINS: &[BuiltinInfo] = &[
         name: "timeout",
         signature: "timeout(ms, fn)",
         description: "Run function with time limit, returns Option (Some or None on timeout)",
-    },
-    BuiltinInfo {
-        name: "msgpack_encode",
-        signature: "msgpack_encode(value)",
-        description: "Encode value to MessagePack bytes (requires msgpack feature)",
-    },
-    BuiltinInfo {
-        name: "msgpack_decode",
-        signature: "msgpack_decode(bytes)",
-        description: "Decode MessagePack bytes to value (requires msgpack feature)",
     },
 ];
 
@@ -659,6 +569,9 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
                 ("print", "Print without newline", CompletionItemKind::FUNCTION),
                 ("println", "Print with newline", CompletionItemKind::FUNCTION),
                 ("eprintln", "Print to stderr with newline", CompletionItemKind::FUNCTION),
+            ],
+            "string" => &[
+                ("join", "Join list elements into string with optional separator", CompletionItemKind::FUNCTION),
             ],
             _ => &[],
         };

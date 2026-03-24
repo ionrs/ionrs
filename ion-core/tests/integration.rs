@@ -1609,12 +1609,12 @@ fn test_dict_spread_non_dict_error() {
 
 #[test]
 fn test_json_encode_int() {
-    assert_eq!(eval("json_encode(42)"), Value::Str("42".into()));
+    assert_eq!(eval("json::encode(42)"), Value::Str("42".into()));
 }
 
 #[test]
 fn test_json_encode_dict() {
-    let val = eval(r#"json_encode(#{ "name": "Ion", "version": 1 })"#);
+    let val = eval(r#"json::encode(#{ "name": "Ion", "version": 1 })"#);
     if let Value::Str(s) = val {
         assert!(s.contains("\"name\""));
         assert!(s.contains("\"Ion\""));
@@ -1626,12 +1626,12 @@ fn test_json_encode_dict() {
 
 #[test]
 fn test_json_encode_list() {
-    assert_eq!(eval("json_encode([1, 2, 3])"), Value::Str("[1,2,3]".into()));
+    assert_eq!(eval("json::encode([1, 2, 3])"), Value::Str("[1,2,3]".into()));
 }
 
 #[test]
 fn test_json_decode_object() {
-    let val = eval(r#"json_decode("{\"a\": 1, \"b\": 2}")"#);
+    let val = eval(r#"json::decode("{\"a\": 1, \"b\": 2}")"#);
     if let Value::Dict(map) = val {
         assert_eq!(map["a"], Value::Int(1));
         assert_eq!(map["b"], Value::Int(2));
@@ -1643,7 +1643,7 @@ fn test_json_decode_object() {
 #[test]
 fn test_json_decode_array() {
     assert_eq!(
-        eval(r#"json_decode("[1, 2, 3]")"#),
+        eval(r#"json::decode("[1, 2, 3]")"#),
         Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
     );
 }
@@ -1653,8 +1653,8 @@ fn test_json_roundtrip() {
     let val = eval(
         r#"
         let data = #{ "name": "test", "values": [1, 2, 3] };
-        let encoded = json_encode(data);
-        json_decode(encoded)
+        let encoded = json::encode(data);
+        json::decode(encoded)
     "#,
     );
     if let Value::Dict(map) = val {
@@ -1670,8 +1670,8 @@ fn test_json_roundtrip() {
 
 #[test]
 fn test_json_decode_invalid() {
-    let err = eval_err(r#"json_decode("not json")"#);
-    assert!(err.contains("json_decode error"), "got: {}", err);
+    let err = eval_err(r#"json::decode("not json")"#);
+    assert!(err.contains("json::decode error"), "got: {}", err);
 }
 
 // ============================================================
@@ -1748,17 +1748,17 @@ fn test_loop_within_limit() {
 
 #[test]
 fn test_abs() {
-    assert_eq!(eval("abs(-5)"), Value::Int(5));
-    assert_eq!(eval("abs(5)"), Value::Int(5));
-    assert_eq!(eval("abs(-3.14)"), Value::Float(3.14));
+    assert_eq!(eval("math::abs(-5)"), Value::Int(5));
+    assert_eq!(eval("math::abs(5)"), Value::Int(5));
+    assert_eq!(eval("math::abs(-3.14)"), Value::Float(3.14));
 }
 
 #[test]
 fn test_min_max() {
-    assert_eq!(eval("min(3, 1, 2)"), Value::Int(1));
-    assert_eq!(eval("max(3, 1, 2)"), Value::Int(3));
-    assert_eq!(eval("min(1.5, 2.5)"), Value::Float(1.5));
-    assert_eq!(eval("max(1, 2.5)"), Value::Float(2.5));
+    assert_eq!(eval("math::min(3, 1, 2)"), Value::Int(1));
+    assert_eq!(eval("math::max(3, 1, 2)"), Value::Int(3));
+    assert_eq!(eval("math::min(1.5, 2.5)"), Value::Float(1.5));
+    assert_eq!(eval("math::max(1, 2.5)"), Value::Float(2.5));
 }
 
 #[test]
@@ -2033,23 +2033,23 @@ fn test_unregistered_type_error() {
 
 #[test]
 fn test_floor_ceil_round() {
-    assert_eq!(eval("floor(3.7)"), Value::Float(3.0));
-    assert_eq!(eval("ceil(3.2)"), Value::Float(4.0));
-    assert_eq!(eval("round(3.5)"), Value::Float(4.0));
-    assert_eq!(eval("round(3.4)"), Value::Float(3.0));
-    assert_eq!(eval("floor(5)"), Value::Int(5));
+    assert_eq!(eval("math::floor(3.7)"), Value::Float(3.0));
+    assert_eq!(eval("math::ceil(3.2)"), Value::Float(4.0));
+    assert_eq!(eval("math::round(3.5)"), Value::Float(4.0));
+    assert_eq!(eval("math::round(3.4)"), Value::Float(3.0));
+    assert_eq!(eval("math::floor(5)"), Value::Int(5));
 }
 
 #[test]
 fn test_pow() {
-    assert_eq!(eval("pow(2, 10)"), Value::Int(1024));
-    assert_eq!(eval("pow(2.0, 0.5)"), Value::Float(2.0_f64.sqrt()));
+    assert_eq!(eval("math::pow(2, 10)"), Value::Int(1024));
+    assert_eq!(eval("math::pow(2.0, 0.5)"), Value::Float(2.0_f64.sqrt()));
 }
 
 #[test]
 fn test_sqrt() {
-    assert_eq!(eval("sqrt(16)"), Value::Float(4.0));
-    assert_eq!(eval("sqrt(2.0)"), Value::Float(2.0_f64.sqrt()));
+    assert_eq!(eval("math::sqrt(16)"), Value::Float(4.0));
+    assert_eq!(eval("math::sqrt(2.0)"), Value::Float(2.0_f64.sqrt()));
 }
 
 #[test]
@@ -2085,7 +2085,7 @@ fn test_enumerate_builtin() {
 
 #[test]
 fn test_json_encode_pretty() {
-    let val = eval(r#"json_encode_pretty(#{ "a": 1 })"#);
+    let val = eval(r#"json::pretty(#{ "a": 1 })"#);
     if let Value::Str(s) = val {
         assert!(s.contains('\n'), "expected newlines in pretty JSON: {}", s);
     } else {
@@ -3179,11 +3179,11 @@ fn test_sort_by() {
 
 #[test]
 fn test_clamp() {
-    assert_eq!(eval("clamp(5, 0, 3)"), Value::Int(3));
-    assert_eq!(eval("clamp(-1, 0, 10)"), Value::Int(0));
-    assert_eq!(eval("clamp(5, 0, 10)"), Value::Int(5));
-    assert_eq!(eval("clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
-    assert_eq!(eval("clamp(0.5, 0.0, 1.0)"), Value::Float(0.5));
+    assert_eq!(eval("math::clamp(5, 0, 3)"), Value::Int(3));
+    assert_eq!(eval("math::clamp(-1, 0, 10)"), Value::Int(0));
+    assert_eq!(eval("math::clamp(5, 0, 10)"), Value::Int(5));
+    assert_eq!(eval("math::clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
+    assert_eq!(eval("math::clamp(0.5, 0.0, 1.0)"), Value::Float(0.5));
 }
 
 #[test]
@@ -3274,14 +3274,14 @@ fn test_dict_zip() {
 #[test]
 fn test_join_builtin() {
     assert_eq!(
-        eval(r#"join(["a", "b", "c"], ",")"#),
+        eval(r#"string::join(["a", "b", "c"], ",")"#),
         Value::Str("a,b,c".to_string())
     );
     assert_eq!(
-        eval(r#"join([1, 2, 3], " ")"#),
+        eval(r#"string::join([1, 2, 3], " ")"#),
         Value::Str("1 2 3".to_string())
     );
-    assert_eq!(eval(r#"join(["x"], "-")"#), Value::Str("x".to_string()));
+    assert_eq!(eval(r#"string::join(["x"], "-")"#), Value::Str("x".to_string()));
 }
 
 #[test]
@@ -3516,14 +3516,14 @@ fn test_dict_keys_of() {
 #[cfg(feature = "msgpack")]
 #[test]
 fn test_msgpack_round_trip_int() {
-    assert_eq!(eval("msgpack_decode(msgpack_encode(42))"), Value::Int(42));
+    assert_eq!(eval("json::msgpack_decode(json::msgpack_encode(42))"), Value::Int(42));
 }
 
 #[cfg(feature = "msgpack")]
 #[test]
 fn test_msgpack_round_trip_string() {
     assert_eq!(
-        eval(r#"msgpack_decode(msgpack_encode("hello"))"#),
+        eval(r#"json::msgpack_decode(json::msgpack_encode("hello"))"#),
         Value::Str("hello".to_string())
     );
 }
@@ -3532,7 +3532,7 @@ fn test_msgpack_round_trip_string() {
 #[test]
 fn test_msgpack_round_trip_bytes() {
     assert_eq!(
-        eval(r#"msgpack_decode(msgpack_encode(b"\xde\xad"))"#),
+        eval(r#"json::msgpack_decode(json::msgpack_encode(b"\xde\xad"))"#),
         Value::Bytes(vec![0xde, 0xad])
     );
 }
@@ -3541,7 +3541,7 @@ fn test_msgpack_round_trip_bytes() {
 #[test]
 fn test_msgpack_round_trip_list() {
     assert_eq!(
-        eval("msgpack_decode(msgpack_encode([1, 2, 3]))"),
+        eval("json::msgpack_decode(json::msgpack_encode([1, 2, 3]))"),
         Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
     );
 }
@@ -3550,7 +3550,7 @@ fn test_msgpack_round_trip_list() {
 #[test]
 fn test_msgpack_round_trip_dict() {
     assert_eq!(
-        eval(r#"msgpack_decode(msgpack_encode(#{a: 1, b: 2}))"#),
+        eval(r#"json::msgpack_decode(json::msgpack_encode(#{a: 1, b: 2}))"#),
         Value::Dict(indexmap::indexmap! {
             "a".to_string() => Value::Int(1),
             "b".to_string() => Value::Int(2),
@@ -3563,7 +3563,7 @@ fn test_msgpack_round_trip_dict() {
 fn test_msgpack_round_trip_nested() {
     assert_eq!(
         eval(
-            r#"let data = #{name: "ion", items: [1, 2], raw: b"\xff"}; msgpack_decode(msgpack_encode(data))"#
+            r#"let data = #{name: "ion", items: [1, 2], raw: b"\xff"}; json::msgpack_decode(json::msgpack_encode(data))"#
         ),
         Value::Dict(indexmap::indexmap! {
             "name".to_string() => Value::Str("ion".to_string()),
@@ -3577,7 +3577,7 @@ fn test_msgpack_round_trip_nested() {
 #[test]
 fn test_msgpack_encode_returns_bytes() {
     assert_eq!(
-        eval(r#"type_of(msgpack_encode(42))"#),
+        eval(r#"type_of(json::msgpack_encode(42))"#),
         Value::Str("bytes".to_string())
     );
 }
@@ -3586,11 +3586,11 @@ fn test_msgpack_encode_returns_bytes() {
 #[test]
 fn test_msgpack_round_trip_bool_none() {
     assert_eq!(
-        eval("msgpack_decode(msgpack_encode(true))"),
+        eval("json::msgpack_decode(json::msgpack_encode(true))"),
         Value::Bool(true)
     );
     assert_eq!(
-        eval("msgpack_decode(msgpack_encode(None))"),
+        eval("json::msgpack_decode(json::msgpack_encode(None))"),
         Value::Option(None)
     );
 }
@@ -3599,7 +3599,7 @@ fn test_msgpack_round_trip_bool_none() {
 #[test]
 fn test_msgpack_round_trip_float() {
     assert_eq!(
-        eval("msgpack_decode(msgpack_encode(3.14))"),
+        eval("json::msgpack_decode(json::msgpack_encode(3.14))"),
         Value::Float(3.14)
     );
 }
@@ -4182,14 +4182,14 @@ fn test_stdlib_math_use_import() {
 
 #[test]
 fn test_stdlib_json_encode_decode() {
-    assert_eq!(
-        eval(r#"json::encode(#{name: "ion", version: 1})"#),
-        eval(r#"json_encode(#{name: "ion", version: 1})"#),
-    );
-    assert_eq!(
-        eval(r#"json::decode("{\"x\": 42}")"#),
-        eval(r#"json_decode("{\"x\": 42}")"#),
-    );
+    let val = eval(r#"json::encode(#{name: "ion", version: 1})"#);
+    assert!(matches!(val, Value::Str(_)));
+    let val = eval(r#"json::decode("{\"x\": 42}")"#);
+    if let Value::Dict(map) = val {
+        assert_eq!(map["x"], Value::Int(42));
+    } else {
+        panic!("expected dict");
+    }
 }
 
 #[test]

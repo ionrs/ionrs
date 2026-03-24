@@ -8,56 +8,56 @@ fn compose(f, g) {
 let double = |x| x * 2;
 let inc = |x| x + 1;
 let double_then_inc = compose(inc, double);
-println(f"double_then_inc(5) = {double_then_inc(5)}");  // 11
+io::println(f"double_then_inc(5) = {double_then_inc(5)}");  // 11
 
 // Currying
 fn add(a) {
     |b| a + b
 }
 let add10 = add(10);
-println(f"add10(5) = {add10(5)}");  // 15
+io::println(f"add10(5) = {add10(5)}");  // 15
 
 // Method chaining pipeline
 let result = [1, 2, 3, 4, 5]
     .map(|x| x * x)
     .filter(|x| x > 5)
     .fold(0, |a, b| a + b);
-println(f"Sum of squares > 5: {result}");  // 9 + 16 + 25 = 50
+io::println(f"Sum of squares > 5: {result}");  // 9 + 16 + 25 = 50
 
 // flat_map
 let nested = [[1, 2], [3, 4], [5]];
 let flat = nested.flat_map(|xs| xs.map(|x| x * 10));
-println(f"flat_map result: {flat}");  // [10, 20, 30, 40, 50]
+io::println(f"flat_map result: {flat}");  // [10, 20, 30, 40, 50]
 
 // reduce (no initial value needed)
 let product = [1, 2, 3, 4, 5].reduce(|a, b| a * b);
-println(f"Product: {product}");  // 120
+io::println(f"Product: {product}");  // 120
 
 // zip
 let names = ["Alice", "Bob", "Charlie"];
 let scores = [95, 82, 73];
 let paired = names.zip(scores);
-println(f"Zipped: {paired}");  // [(Alice, 95), (Bob, 82), (Charlie, 73)]
+io::println(f"Zipped: {paired}");  // [(Alice, 95), (Bob, 82), (Charlie, 73)]
 
 // chunk
 let data = [1, 2, 3, 4, 5, 6, 7];
-println(f"Chunks of 3: {data.chunk(3)}");  // [[1, 2, 3], [4, 5, 6], [7]]
+io::println(f"Chunks of 3: {data.chunk(3)}");  // [[1, 2, 3], [4, 5, 6], [7]]
 
 // sort_by
 let words = ["banana", "apple", "cherry"];
 let sorted = words.sort_by(|a, b| a.len() - b.len());
-println(f"By length: {sorted}");  // [apple, banana, cherry]
+io::println(f"By length: {sorted}");  // [apple, banana, cherry]
 
 // Comprehensions
 let evens = [x * 2 for x in 0..10];
-println(f"Evens: {evens}");
+io::println(f"Evens: {evens}");
 
 let doubled = [(x, x * 2) for x in 0..4 if x > 0];
-println(f"Doubled: {doubled}");
+io::println(f"Doubled: {doubled}");
 
 // Dict comprehension
 let squares = #{str(n): n * n for n in 1..=5};
-println(f"Squares: {squares}");
+io::println(f"Squares: {squares}");
 
 // Pipeline operator |>
 // |> passes as first argument: x |> f(y) = f(x, y)
@@ -65,9 +65,9 @@ let words = "hello world";
 let result = words.split(" ")
     .map(|w| w.to_upper())
     .join(" -> ");
-println(f"Pipeline: {result}");  // HELLO -> WORLD
+io::println(f"Pipeline: {result}");  // HELLO -> WORLD
 
 // any/all
 let nums = [2, 4, 6, 8];
-println(f"All even? {nums.all(|x| x % 2 == 0)}");  // true
-println(f"Any > 5? {nums.any(|x| x > 5)}");  // true
+io::println(f"All even? {nums.all(|x| x % 2 == 0)}");  // true
+io::println(f"Any > 5? {nums.any(|x| x > 5)}");  // true

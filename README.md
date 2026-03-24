@@ -80,7 +80,7 @@ let area = add(PI, PI);
 // Loops + functional
 let sum = [1, 2, 3, 4, 5].fold(0, |acc, x| acc + x);
 for (i, item) in enumerate(items) {
-    println(f"{i}: {item}");
+    io::println(f"{i}: {item}");
 }
 ```
 

@@ -281,6 +281,26 @@ pub fn json_module() -> Module {
             .map_err(|e| format!("{}{}", ion_str!("json::pretty error: "), e))
     });
 
+    #[cfg(feature = "msgpack")]
+    m.register_fn("msgpack_encode", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("json::msgpack_encode takes 1 argument"));
+        }
+        args[0].to_msgpack().map(Value::Bytes)
+    });
+
+    #[cfg(feature = "msgpack")]
+    m.register_fn("msgpack_decode", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("json::msgpack_decode takes 1 argument"));
+        }
+        let data = match &args[0] {
+            Value::Bytes(b) => b,
+            _ => return Err(ion_str!("json::msgpack_decode requires bytes")),
+        };
+        Value::from_msgpack(data)
+    });
+
     m
 }
 
@@ -311,6 +331,32 @@ pub fn io_module() -> Module {
     m
 }
 
+/// Build the `str` stdlib module.
+///
+/// Functions: join
+pub fn string_module() -> Module {
+    let mut m = Module::new("string");
+
+    m.register_fn("join", |args: &[Value]| {
+        if args.is_empty() || args.len() > 2 {
+            return Err(ion_str!("string::join requires 1-2 arguments: list, [separator]"));
+        }
+        let items = match &args[0] {
+            Value::List(items) => items,
+            _ => return Err(ion_str!("string::join requires a list as first argument")),
+        };
+        let sep = if args.len() > 1 {
+            args[1].as_str().unwrap_or("").to_string()
+        } else {
+            String::new()
+        };
+        let parts: Vec<String> = items.iter().map(|v| format!("{}", v)).collect();
+        Ok(Value::Str(parts.join(&sep)))
+    });
+
+    m
+}
+
 /// Register all stdlib modules in the given environment.
 pub fn register_stdlib(env: &mut crate::env::Env) {
     let math = math_module();
@@ -321,4 +367,7 @@ pub fn register_stdlib(env: &mut crate::env::Env) {
 
     let io = io_module();
     env.define(io.name.clone(), io.to_value(), false);
+
+    let string_mod = string_module();
+    env.define(string_mod.name.clone(), string_mod.to_value(), false);
 }

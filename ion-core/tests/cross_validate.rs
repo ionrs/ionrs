@@ -696,15 +696,15 @@ fn cross_dict_entries() {
 
 #[test]
 fn cross_math_builtins() {
-    assert_both_eq("abs(-5)", Value::Int(5));
-    assert_both_eq("abs(3.5)", Value::Float(3.5));
-    assert_both_eq("min(3, 7)", Value::Int(3));
-    assert_both_eq("max(3, 7)", Value::Int(7));
-    assert_both_eq("floor(3.7)", Value::Float(3.0));
-    assert_both_eq("ceil(3.2)", Value::Float(4.0));
-    assert_both_eq("round(3.5)", Value::Float(4.0));
-    assert_both_eq("sqrt(16.0)", Value::Float(4.0));
-    assert_both_eq("pow(2, 10)", Value::Int(1024));
+    assert_both_eq("math::abs(-5)", Value::Int(5));
+    assert_both_eq("math::abs(3.5)", Value::Float(3.5));
+    assert_both_eq("math::min(3, 7)", Value::Int(3));
+    assert_both_eq("math::max(3, 7)", Value::Int(7));
+    assert_both_eq("math::floor(3.7)", Value::Float(3.0));
+    assert_both_eq("math::ceil(3.2)", Value::Float(4.0));
+    assert_both_eq("math::round(3.5)", Value::Float(4.0));
+    assert_both_eq("math::sqrt(16.0)", Value::Float(4.0));
+    assert_both_eq("math::pow(2, 10)", Value::Int(1024));
 }
 
 // ============================================================
@@ -840,9 +840,9 @@ fn cross_sort_by() {
 
 #[test]
 fn cross_clamp() {
-    assert_both_eq("clamp(5, 0, 3)", Value::Int(3));
-    assert_both_eq("clamp(-1, 0, 10)", Value::Int(0));
-    assert_both_eq("clamp(5, 0, 10)", Value::Int(5));
+    assert_both_eq("math::clamp(5, 0, 3)", Value::Int(3));
+    assert_both_eq("math::clamp(-1, 0, 10)", Value::Int(0));
+    assert_both_eq("math::clamp(5, 0, 10)", Value::Int(5));
 }
 
 #[test]
@@ -890,7 +890,7 @@ fn cross_dict_zip() {
 
 #[test]
 fn cross_join_builtin() {
-    assert_both_eq(r#"join(["a", "b"], ",")"#, Value::Str("a,b".to_string()));
+    assert_both_eq(r#"string::join(["a", "b"], ",")"#, Value::Str("a,b".to_string()));
 }
 
 #[test]
@@ -1086,7 +1086,7 @@ fn cross_named_args_with_default() {
 #[test]
 fn cross_json_encode_decode() {
     assert_both_eq(
-        r#"json_decode(json_encode(#{a: 1, b: "two"}))"#,
+        r#"json::decode(json::encode(#{a: 1, b: "two"}))"#,
         Value::Dict(indexmap::indexmap! {
             "a".to_string() => Value::Int(1),
             "b".to_string() => Value::Str("two".to_string()),
@@ -1150,14 +1150,14 @@ fn cross_result_methods() {
 #[cfg(feature = "msgpack")]
 #[test]
 fn cross_msgpack_int() {
-    assert_both_eq("msgpack_decode(msgpack_encode(42))", Value::Int(42));
+    assert_both_eq("json::msgpack_decode(json::msgpack_encode(42))", Value::Int(42));
 }
 
 #[cfg(feature = "msgpack")]
 #[test]
 fn cross_msgpack_string() {
     assert_both_eq(
-        r#"msgpack_decode(msgpack_encode("hello"))"#,
+        r#"json::msgpack_decode(json::msgpack_encode("hello"))"#,
         Value::Str("hello".to_string()),
     );
 }
@@ -1166,7 +1166,7 @@ fn cross_msgpack_string() {
 #[test]
 fn cross_msgpack_bytes() {
     assert_both_eq(
-        r#"msgpack_decode(msgpack_encode(b"\xde\xad"))"#,
+        r#"json::msgpack_decode(json::msgpack_encode(b"\xde\xad"))"#,
         Value::Bytes(vec![0xde, 0xad]),
     );
 }
@@ -1175,7 +1175,7 @@ fn cross_msgpack_bytes() {
 #[test]
 fn cross_msgpack_list() {
     assert_both_eq(
-        "msgpack_decode(msgpack_encode([1, 2, 3]))",
+        "json::msgpack_decode(json::msgpack_encode([1, 2, 3]))",
         Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
     );
 }
@@ -1184,7 +1184,7 @@ fn cross_msgpack_list() {
 #[test]
 fn cross_msgpack_dict() {
     assert_both_eq(
-        r#"let d = #{a: 1}; msgpack_decode(msgpack_encode(d))"#,
+        r#"let d = #{a: 1}; json::msgpack_decode(json::msgpack_encode(d))"#,
         Value::Dict(indexmap::indexmap! { "a".to_string() => Value::Int(1) }),
     );
 }

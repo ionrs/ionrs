@@ -8,8 +8,8 @@ let active: bool = true;
 let items: list = [1, 2, 3];
 let config: dict = #{port: 8080};
 
-println(f"x = {x}, pi = {pi}, name = {name}");
-println(f"active = {active}, items = {items}");
+io::println(f"x = {x}, pi = {pi}, name = {name}");
+io::println(f"active = {active}, items = {items}");
 
 // Generic type annotations (outer type checked, inner is documentation)
 let maybe: Option<int> = Some(42);
@@ -17,23 +17,23 @@ let result: Result<string, string> = Ok("success");
 let nums: list<int> = [1, 2, 3];
 let lookup: dict<string, int> = #{a: 1, b: 2};
 
-println(f"\nOption: {maybe}");
-println(f"Result: {result}");
-println(f"Typed list: {nums}");
-println(f"Typed dict: {lookup}");
+io::println(f"\nOption: {maybe}");
+io::println(f"Result: {result}");
+io::println(f"Typed list: {nums}");
+io::println(f"Typed dict: {lookup}");
 
 // The "any" type accepts everything
 let anything: any = "could be anything";
-println(f"Any: {anything}");
+io::println(f"Any: {anything}");
 
 // fn type for function values
 let double: fn = |x| x * 2;
-println(f"double(5) = {double(5)}");
+io::println(f"double(5) = {double(5)}");
 
 // Type checking with type_of
 let values = [42, 3.14, "hello", true, [1], #{}, (1, 2), None, Ok(1)];
 for v in values {
-    println(f"  {v} -> {type_of(v)}");
+    io::println(f"  {v} -> {type_of(v)}");
 }
 
 // Type annotations catch mismatches at binding time
@@ -41,16 +41,16 @@ fn safe_bind(value) {
     try {
         // Using match for runtime type dispatch
         match type_of(value) {
-            "int" => println(f"  {value} is an int"),
-            "string" => println(f"  {value} is a string"),
-            t => println(f"  {value} is a {t}"),
+            "int" => io::println(f"  {value} is an int"),
+            "string" => io::println(f"  {value} is a string"),
+            t => io::println(f"  {value} is a {t}"),
         }
     } catch e {
-        println(f"  Error: {e}");
+        io::println(f"  Error: {e}");
     }
 }
 
-println("\nType checking:");
+io::println("\nType checking:");
 safe_bind(42);
 safe_bind("hello");
 safe_bind([1, 2]);

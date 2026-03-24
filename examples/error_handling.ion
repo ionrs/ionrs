@@ -17,8 +17,8 @@ fn parse_point(input) {
 let inputs = ["3, 4", "10,20", "bad,5", "1,2,3"];
 for input in inputs {
     match parse_point(input) {
-        Ok((x, y)) => println(f"  '{input}' -> point({x}, {y})"),
-        Err(e) => println(f"  '{input}' -> error: {e}"),
+        Ok((x, y)) => io::println(f"  '{input}' -> point({x}, {y})"),
+        Err(e) => io::println(f"  '{input}' -> error: {e}"),
     }
 }
 
@@ -34,17 +34,17 @@ let db = #{
 
 let alice_age = lookup(db, "alice")
     .map(|user| user.age);
-println(f"\nAlice's age: {alice_age}");
+io::println(f"\nAlice's age: {alice_age}");
 
 let unknown = lookup(db, "charlie");
-println(f"Charlie: {unknown}");
+io::println(f"Charlie: {unknown}");
 
 // unwrap_or for defaults
 let name = None.unwrap_or("anonymous");
-println(f"Name: {name}");
+io::println(f"Name: {name}");
 
 let val = Some(42).unwrap_or(0);
-println(f"Value: {val}");
+io::println(f"Value: {val}");
 
 // Result methods
 fn safe_divide(a, b) {
@@ -58,19 +58,19 @@ fn safe_divide(a, b) {
 let result = safe_divide(10, 3)
     .map(|n| n * 100)
     .unwrap_or(0);
-println(f"\n10/3 * 100 = {result}");
+io::println(f"\n10/3 * 100 = {result}");
 
 let fallback = safe_divide(10, 0).unwrap_or(-1);
-println(f"10/0 with fallback: {fallback}");
+io::println(f"10/0 with fallback: {fallback}");
 
 // is_ok / is_err
-println(f"10/3 is_ok: {safe_divide(10, 3).is_ok()}");
-println(f"10/0 is_err: {safe_divide(10, 0).is_err()}");
+io::println(f"10/3 is_ok: {safe_divide(10, 3).is_ok()}");
+io::println(f"10/0 is_err: {safe_divide(10, 0).is_err()}");
 
 // map_err
 let tagged = safe_divide(10, 0)
     .map_err(|e| f"math error: {e}");
-println(f"Tagged error: {tagged}");
+io::println(f"Tagged error: {tagged}");
 
 // ---- The ? operator ----
 // ? unwraps Ok/Some, propagates Err/None to the caller
@@ -82,8 +82,8 @@ fn parse_and_double(s) {
 
 let r1 = parse_and_double("5");
 let r2 = parse_and_double("abc");
-println(f"\nparse_and_double('5') = {r1}");    // Ok(10)
-println(f"parse_and_double('abc') = {r2}");    // Err(...)
+io::println(f"\nparse_and_double('5') = {r1}");    // Ok(10)
+io::println(f"parse_and_double('abc') = {r2}");    // Err(...)
 
 // Chained ? across function boundaries
 fn compute(input) {
@@ -95,9 +95,9 @@ fn compute(input) {
 let c1 = compute("3,4");
 let c2 = compute("bad,5");
 let c3 = compute("1,2,3");
-println(f"compute('3,4') = {c1}");      // Ok(7)
-println(f"compute('bad,5') = {c2}");    // Err(bad x: ...)
-println(f"compute('1,2,3') = {c3}");    // Err(expected 'x,y' format)
+io::println(f"compute('3,4') = {c1}");      // Ok(7)
+io::println(f"compute('bad,5') = {c2}");    // Err(bad x: ...)
+io::println(f"compute('1,2,3') = {c3}");    // Err(expected 'x,y' format)
 
 // ? with Option
 fn first_even(items) {
@@ -105,6 +105,6 @@ fn first_even(items) {
     if first % 2 == 0 { Some(first) } else { None }
 }
 
-println(f"\nfirst_even([4,5,6]) = {first_even([4, 5, 6])}");  // Some(4)
-println(f"first_even([3,5,7]) = {first_even([3, 5, 7])}");    // None
-println(f"first_even([]) = {first_even([])}");                  // None
+io::println(f"\nfirst_even([4,5,6]) = {first_even([4, 5, 6])}");  // Some(4)
+io::println(f"first_even([3,5,7]) = {first_even([3, 5, 7])}");    // None
+io::println(f"first_even([]) = {first_even([])}");                  // None

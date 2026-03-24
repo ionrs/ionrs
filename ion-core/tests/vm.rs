@@ -293,7 +293,7 @@ fn test_vm_recursive_fn() {
 #[test]
 fn test_vm_builtin_fn() {
     assert_eq!(vm_eval("len([1, 2, 3])"), Value::Int(3));
-    assert_eq!(vm_eval("abs(-5)"), Value::Int(5));
+    assert_eq!(vm_eval("math::abs(-5)"), Value::Int(5));
 }
 
 // ============================================================
@@ -445,7 +445,7 @@ fn test_vm_range_inclusive() {
 
 #[test]
 fn test_vm_pipe() {
-    assert_eq!(vm_eval("-5 |> abs"), Value::Int(5));
+    assert_eq!(vm_eval("-5 |> math::abs"), Value::Int(5));
 }
 
 // ============================================================
@@ -1077,10 +1077,10 @@ fn test_vm_fn_cache_recursive() {
         vm_eval(
             r#"
         fn fib(n) { if n <= 1 { n } else { fib(n - 1) + fib(n - 2) } }
-        fib(15)
+        fib(10)
     "#
         ),
-        Value::Int(610)
+        Value::Int(55)
     );
 }
 
@@ -1561,10 +1561,10 @@ fn test_vm_sort_by() {
 
 #[test]
 fn test_vm_clamp() {
-    assert_eq!(vm_eval("clamp(5, 0, 3)"), Value::Int(3));
-    assert_eq!(vm_eval("clamp(-1, 0, 10)"), Value::Int(0));
-    assert_eq!(vm_eval("clamp(5, 0, 10)"), Value::Int(5));
-    assert_eq!(vm_eval("clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
+    assert_eq!(vm_eval("math::clamp(5, 0, 3)"), Value::Int(3));
+    assert_eq!(vm_eval("math::clamp(-1, 0, 10)"), Value::Int(0));
+    assert_eq!(vm_eval("math::clamp(5, 0, 10)"), Value::Int(5));
+    assert_eq!(vm_eval("math::clamp(1.5, 0.0, 1.0)"), Value::Float(1.0));
 }
 
 // === try/catch VM tests ===

@@ -3,47 +3,47 @@
 let greeting = "Hello, World!";
 
 // Basic methods
-println(f"Length: {greeting.len()}");
-println(f"Upper: {greeting.to_upper()}");
-println(f"Lower: {greeting.to_lower()}");
+io::println(f"Length: {greeting.len()}");
+io::println(f"Upper: {greeting.to_upper()}");
+io::println(f"Lower: {greeting.to_lower()}");
 
 let has_world = greeting.contains("World");
-println(f"Contains World: {has_world}");
+io::println(f"Contains World: {has_world}");
 
 // Splitting and joining
 let csv = "alice,bob,charlie,diana";
 let names = csv.split(",");
-println(f"Names: {names}");
-println(f"Joined: {names.join(" & ")}");
+io::println(f"Names: {names}");
+io::println(f"Joined: {names.join(" & ")}");
 
 // String multiplication
 let border = "=" * 40;
-println(border);
-println("  Ion Language String Demo");
-println(border);
+io::println(border);
+io::println("  Ion Language String Demo");
+io::println(border);
 
 // Trimming and padding
 let messy = "   hello   ";
-println(f"Trimmed: [{messy.trim()}]");
-println(f"Trim start: [{messy.trim_start()}]");
-println(f"Trim end: [{messy.trim_end()}]");
+io::println(f"Trimmed: [{messy.trim()}]");
+io::println(f"Trim start: [{messy.trim_start()}]");
+io::println(f"Trim end: [{messy.trim_end()}]");
 
 let label = "ID";
-println(f"Pad start: [{label.pad_start(10, " ")}]");
-println(f"Pad end: [{label.pad_end(10, "-")}]");
+io::println(f"Pad start: [{label.pad_start(10, " ")}]");
+io::println(f"Pad end: [{label.pad_end(10, "-")}]");
 
 // Replace and repeat
 let text = "the quick brown fox";
 let replaced = text.replace("fox", "cat");
-println(f"Replaced: {replaced}");
-println(f"Repeat: {"ab".repeat(5)}");
+io::println(f"Replaced: {replaced}");
+io::println(f"Repeat: {"ab".repeat(5)}");
 
 // Starts/ends with and strip prefix/suffix
 let path = "/home/user/file.txt";
-println(f"Starts with /home: {path.starts_with("/home")}");
-println(f"Ends with .txt: {path.ends_with(".txt")}");
-println(f"Strip prefix: {path.strip_prefix("/home")}");
-println(f"Strip suffix: {path.strip_suffix(".txt")}");
+io::println(f"Starts with /home: {path.starts_with("/home")}");
+io::println(f"Ends with .txt: {path.ends_with(".txt")}");
+io::println(f"Strip prefix: {path.strip_prefix("/home")}");
+io::println(f"Strip suffix: {path.strip_suffix(".txt")}");
 
 // F-string interpolation with dicts
 let items = [
@@ -54,21 +54,21 @@ let items = [
 
 for item in items {
     let p = item.price;
-    println(f"  {item.name}: ${p}");
+    io::println(f"  {item.name}: ${p}");
 }
-println(border);
+io::println(border);
 
 // String search
 match text.find("quick") {
-    Some(i) => println(f"Found 'quick' at index {i}"),
-    None => println("Not found"),
+    Some(i) => io::println(f"Found 'quick' at index {i}"),
+    None => io::println("Not found"),
 }
 
 // Parsing strings to numbers
 let input = "42";
 match input.to_int() {
-    Ok(n) => println(f"Parsed: {n * 2}"),
-    Err(e) => println(f"Parse error: {e}"),
+    Ok(n) => io::println(f"Parsed: {n * 2}"),
+    Err(e) => io::println(f"Parse error: {e}"),
 }
 
 // Triple-quoted strings
@@ -78,21 +78,21 @@ Violets are blue,
 Ion is neat,
 And so are you.
 """;
-println(poem);
+io::println(poem);
 
 // Chars and reverse
 let word = "racecar";
 let reversed = word.reverse();
-println(f"'{word}' reversed is '{reversed}'");
+io::println(f"'{word}' reversed is '{reversed}'");
 if word == reversed {
-    println("It's a palindrome!");
+    io::println("It's a palindrome!");
 }
 
 // String slicing and indexing
 let alpha = "abcdefg";
-println(f"First: {alpha[0]}, Last: {alpha[-1]}, Third: {alpha[2]}");
-println(f"Slice [1..4]: {alpha[1..4]}");
+io::println(f"First: {alpha[0]}, Last: {alpha[-1]}, Third: {alpha[2]}");
+io::println(f"Slice [1..4]: {alpha[1..4]}");
 
 // Unicode support
-println(f"Char length of 'Hello': {"Hello".char_len()}");
-println(f"Byte length of 'Hello': {"Hello".len()}");
+io::println(f"Char length of 'Hello': {"Hello".char_len()}");
+io::println(f"Byte length of 'Hello': {"Hello".len()}");

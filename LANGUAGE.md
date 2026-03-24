@@ -164,15 +164,15 @@ Iterates over lists, tuples, dicts, strings, bytes, and ranges.
 
 ```
 for x in [1, 2, 3] {
-    println(x);
+    io::println(x);
 }
 
 for (key, val) in #{a: 1, b: 2} {
-    println(key, val);
+    io::println(key, val);
 }
 
 for ch in "hello" {
-    println(ch);
+    io::println(ch);
 }
 ```
 
@@ -192,7 +192,7 @@ let result = loop {
 for x in [1, 2, 3, 4, 5] {
     if x == 3 { continue; }
     if x == 5 { break; }
-    println(x);
+    io::println(x);
 }
 ```
 
@@ -556,12 +556,6 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 
 ## Builtin Functions
 
-### I/O
-| Function | Description |
-|----------|-------------|
-| `print(args...)` | Print without newline |
-| `println(args...)` | Print with newline |
-
 ### Type conversion
 | Function | Description |
 |----------|-------------|
@@ -577,20 +571,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `range(n)` | `[0, 1, ..., n-1]` |
 | `range(start, end)` | `[start, start+1, ..., end-1]` |
 | `enumerate(val)` | `[(0, a), (1, b), ...]` (list, string, or dict) |
-| `join(list, sep)` | Join list elements with separator |
-
-### Math
-| Function | Description |
-|----------|-------------|
-| `abs(x)` | Absolute value |
-| `min(a, b, ...)` | Minimum of arguments |
-| `max(a, b, ...)` | Maximum of arguments |
-| `floor(x)` | Floor (rounds down) |
-| `ceil(x)` | Ceiling (rounds up) |
-| `round(x)` | Round to nearest |
-| `sqrt(x)` | Square root |
-| `pow(base, exp)` | Exponentiation |
-| `clamp(val, min, max)` | Clamp value to range |
+| `set(list)` | Create a set (deduplicates) |
+| `cell(value)` | Mutable reference cell for shared closure state |
 
 ### Assertions
 | Function | Description |
@@ -599,13 +581,6 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `assert(cond, msg)` | Error with custom message if `cond` is false |
 | `assert_eq(a, b)` | Error if `a != b` |
 | `assert_eq(a, b, msg)` | Error with custom message if `a != b` |
-
-### JSON
-| Function | Description |
-|----------|-------------|
-| `json_encode(value)` | Value to JSON string |
-| `json_encode_pretty(value)` | Pretty-printed JSON |
-| `json_decode(string)` | JSON string to value |
 
 ### Bytes
 | Function | Description |
@@ -931,6 +906,12 @@ The following modules are available by default in every Engine:
 | `io::print(args...)` | Print without newline |
 | `io::println(args...)` | Print with newline |
 | `io::eprintln(args...)` | Print to stderr with newline |
+
+#### `string`
+
+| Name | Description |
+|------|-------------|
+| `string::join(list, sep?)` | Join list elements into a string with optional separator |
 
 ### Registering modules (Rust side)
 
