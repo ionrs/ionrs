@@ -715,6 +715,7 @@ impl<'a> Lexer<'a> {
             "select" => Token::Select,
             "try" => Token::Try,
             "catch" => Token::Catch,
+            "use" => Token::Use,
             _ => Token::Ident(text.to_string()),
         };
         Ok(self.spanned(token, line, col))

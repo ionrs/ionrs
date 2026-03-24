@@ -69,6 +69,7 @@ pub mod host_types;
 pub mod intern;
 pub mod interpreter;
 pub mod lexer;
+pub mod module;
 pub mod parser;
 pub mod token;
 pub mod value;

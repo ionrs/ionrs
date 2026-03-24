@@ -54,6 +54,11 @@ pub enum StmtKind {
     Break { value: Option<Expr> },
     /// `continue;`
     Continue,
+    /// `use module::{name1, name2}` or `use module::*`
+    Use {
+        path: Vec<String>,
+        imports: UseImports,
+    },
     /// `return [expr];`
     Return { value: Option<Expr> },
     /// Assignment: `lhs = rhs;` or `lhs += rhs;`
@@ -107,6 +112,8 @@ pub enum ExprKind {
 
     // Variables
     Ident(String),
+    /// `module::path::name` — module path access
+    ModulePath(Vec<String>),
 
     // Constructors
     /// `Some(expr)`
@@ -379,4 +386,15 @@ pub enum TypeAnn {
 pub enum UnaryOp {
     Neg,
     Not,
+}
+
+/// What to import from a module path.
+#[derive(Debug, Clone)]
+pub enum UseImports {
+    /// `use path::*` — import all names
+    Glob,
+    /// `use path::{a, b, c}` — import specific names
+    Names(Vec<String>),
+    /// `use path::name` — import a single name (sugar for Names(vec![name]))
+    Single(String),
 }

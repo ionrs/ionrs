@@ -90,7 +90,7 @@ impl Parser {
                 // Stop at tokens that typically begin a new statement (if at top level)
                 Token::Let | Token::Fn | Token::For | Token::While | Token::If
                 | Token::Return | Token::Match | Token::Loop | Token::Try
-                | Token::Break | Token::Continue
+                | Token::Break | Token::Continue | Token::Use
                     if brace_depth == 0 =>
                 {
                     return;
@@ -202,6 +202,7 @@ impl Parser {
                 })
             }
             Token::Return => self.parse_return_stmt(),
+            Token::Use => self.parse_use_stmt(),
             _ => self.parse_expr_or_assign_stmt(),
         }
     }
@@ -406,6 +407,72 @@ impl Parser {
         self.eat(&Token::Semicolon)?;
         Ok(Stmt {
             kind: StmtKind::Return { value },
+            span,
+        })
+    }
+
+    /// Parse `use path::name;` or `use path::{a, b};` or `use path::*;`
+    fn parse_use_stmt(&mut self) -> Result<Stmt, IonError> {
+        let span = self.span();
+        self.eat(&Token::Use)?;
+
+        // Parse the module path: `a::b::...`
+        let mut path = Vec::new();
+        path.push(self.eat_ident()?);
+        while self.check(&Token::ColonColon) {
+            self.advance();
+            // Check what follows ::
+            if self.check(&Token::Star) {
+                // use path::*
+                self.advance();
+                self.eat(&Token::Semicolon)?;
+                return Ok(Stmt {
+                    kind: StmtKind::Use {
+                        path,
+                        imports: UseImports::Glob,
+                    },
+                    span,
+                });
+            } else if self.check(&Token::LBrace) {
+                // use path::{a, b, c}
+                self.advance();
+                let mut names = Vec::new();
+                while !self.check(&Token::RBrace) && !self.is_at_end() {
+                    names.push(self.eat_ident()?);
+                    if !self.check(&Token::RBrace) {
+                        self.eat(&Token::Comma)?;
+                    }
+                }
+                self.eat(&Token::RBrace)?;
+                self.eat(&Token::Semicolon)?;
+                return Ok(Stmt {
+                    kind: StmtKind::Use {
+                        path,
+                        imports: UseImports::Names(names),
+                    },
+                    span,
+                });
+            } else {
+                // More path segments or final single name
+                path.push(self.eat_ident()?);
+            }
+        }
+
+        // `use path::name;` — last segment is the imported name
+        self.eat(&Token::Semicolon)?;
+        if path.len() < 2 {
+            return Err(IonError::parse(
+                ion_str!("use statement requires at least module::name"),
+                span.line,
+                span.col,
+            ));
+        }
+        let name = path.pop().unwrap();
+        Ok(Stmt {
+            kind: StmtKind::Use {
+                path,
+                imports: UseImports::Single(name),
+            },
             span,
         })
     }
@@ -1320,34 +1387,58 @@ impl Parser {
             }
             Token::Ident(name) => {
                 self.advance();
-                // Check for :: (enum variant)
+                // Check for :: (enum variant or module path)
                 if self.check(&Token::ColonColon) {
                     self.advance();
-                    let variant = self.eat_ident()?;
-                    if self.check(&Token::LParen) {
-                        self.advance();
-                        let mut args = Vec::new();
-                        while !self.check(&Token::RParen) && !self.is_at_end() {
-                            args.push(self.parse_expr()?);
-                            if !self.check(&Token::RParen) {
-                                self.eat(&Token::Comma)?;
-                            }
+                    let second = self.eat_ident()?;
+                    // If more :: segments follow, it's a module path: a::b::c::...
+                    if self.check(&Token::ColonColon) {
+                        let mut segments = vec![name, second];
+                        while self.check(&Token::ColonColon) {
+                            self.advance();
+                            segments.push(self.eat_ident()?);
                         }
-                        self.eat(&Token::RParen)?;
                         Ok(Expr {
-                            kind: ExprKind::EnumVariantCall {
-                                enum_name: name,
-                                variant,
-                                args,
-                            },
+                            kind: ExprKind::ModulePath(segments),
                             span,
                         })
-                    } else {
+                    }
+                    // Two segments: could be enum variant or module path
+                    // Enum variants have uppercase first char (e.g. Color::Red)
+                    else if name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                        // Enum variant — check for call args
+                        if self.check(&Token::LParen) {
+                            self.advance();
+                            let mut args = Vec::new();
+                            while !self.check(&Token::RParen) && !self.is_at_end() {
+                                args.push(self.parse_expr()?);
+                                if !self.check(&Token::RParen) {
+                                    self.eat(&Token::Comma)?;
+                                }
+                            }
+                            self.eat(&Token::RParen)?;
+                            Ok(Expr {
+                                kind: ExprKind::EnumVariantCall {
+                                    enum_name: name,
+                                    variant: second,
+                                    args,
+                                },
+                                span,
+                            })
+                        } else {
+                            Ok(Expr {
+                                kind: ExprKind::EnumVariant {
+                                    enum_name: name,
+                                    variant: second,
+                                },
+                                span,
+                            })
+                        }
+                    }
+                    // Two segments, lowercase first: module path (e.g. fs::read)
+                    else {
                         Ok(Expr {
-                            kind: ExprKind::EnumVariant {
-                                enum_name: name,
-                                variant,
-                            },
+                            kind: ExprKind::ModulePath(vec![name, second]),
                             span,
                         })
                     }

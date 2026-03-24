@@ -37,6 +37,7 @@ pub enum Token {
     Select,
     Try,
     Catch,
+    Use,
 
     // Delimiters
     LParen,    // (

@@ -518,6 +518,117 @@ impl Interpreter {
                 }
                 Ok(Value::Unit)
             }
+            StmtKind::Use { path, imports } => {
+                // Resolve the module dict by walking the path segments
+                let root = self.env.get(&path[0]).ok_or_else(|| {
+                    SignalOrError::Error(IonError::name(
+                        format!("{}{}", ion_str!("undefined module: "), &path[0]),
+                        stmt.span.line,
+                        stmt.span.col,
+                    ))
+                })?;
+                let mut module_val = root.clone();
+                for seg in &path[1..] {
+                    match &module_val {
+                        Value::Dict(map) => {
+                            module_val = map.get(seg).cloned().ok_or_else(|| {
+                                SignalOrError::Error(IonError::name(
+                                    format!(
+                                        "{}{}{}{}",
+                                        ion_str!("'"),
+                                        seg,
+                                        ion_str!("' not found in module "),
+                                        &path[0]
+                                    ),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                ))
+                            })?;
+                        }
+                        _ => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "{}{}{}",
+                                    ion_str!("'"),
+                                    seg,
+                                    ion_str!("' is not a module")
+                                ),
+                                stmt.span.line,
+                                stmt.span.col,
+                            )
+                            .into())
+                        }
+                    }
+                }
+                // Now import from module_val (which should be a dict)
+                match imports {
+                    UseImports::Glob => {
+                        if let Value::Dict(map) = &module_val {
+                            for (name, val) in map {
+                                self.env.define(name.clone(), val.clone(), false);
+                            }
+                        } else {
+                            return Err(IonError::type_err(
+                                ion_str!("use target is not a module"),
+                                stmt.span.line,
+                                stmt.span.col,
+                            )
+                            .into());
+                        }
+                    }
+                    UseImports::Names(names) => {
+                        if let Value::Dict(map) = &module_val {
+                            for name in names {
+                                let val = map.get(name).ok_or_else(|| {
+                                    SignalOrError::Error(IonError::name(
+                                        format!(
+                                            "{}{}{}",
+                                            ion_str!("'"),
+                                            name,
+                                            ion_str!("' not found in module")
+                                        ),
+                                        stmt.span.line,
+                                        stmt.span.col,
+                                    ))
+                                })?;
+                                self.env.define(name.clone(), val.clone(), false);
+                            }
+                        } else {
+                            return Err(IonError::type_err(
+                                ion_str!("use target is not a module"),
+                                stmt.span.line,
+                                stmt.span.col,
+                            )
+                            .into());
+                        }
+                    }
+                    UseImports::Single(name) => {
+                        if let Value::Dict(map) = &module_val {
+                            let val = map.get(name).ok_or_else(|| {
+                                SignalOrError::Error(IonError::name(
+                                    format!(
+                                        "{}{}{}",
+                                        ion_str!("'"),
+                                        name,
+                                        ion_str!("' not found in module")
+                                    ),
+                                    stmt.span.line,
+                                    stmt.span.col,
+                                ))
+                            })?;
+                            self.env.define(name.clone(), val.clone(), false);
+                        } else {
+                            return Err(IonError::type_err(
+                                ion_str!("use target is not a module"),
+                                stmt.span.line,
+                                stmt.span.col,
+                            )
+                            .into());
+                        }
+                    }
+                }
+                Ok(Value::Unit)
+            }
         }
     }
 
@@ -554,6 +665,51 @@ impl Interpreter {
                 )
                 .into()
             }),
+
+            ExprKind::ModulePath(segments) => {
+                // Resolve a::b::c by walking dict fields from the root module
+                let root = self.env.get(&segments[0]).ok_or_else(|| {
+                    SignalOrError::Error(IonError::name(
+                        format!("{}{}", ion_str!("undefined module: "), &segments[0]),
+                        span.line,
+                        span.col,
+                    ))
+                })?;
+                let mut current = root.clone();
+                for seg in &segments[1..] {
+                    match &current {
+                        Value::Dict(map) => {
+                            current = map.get(seg).cloned().ok_or_else(|| {
+                                SignalOrError::Error(IonError::name(
+                                    format!(
+                                        "{}{}{}{}",
+                                        ion_str!("'"),
+                                        seg,
+                                        ion_str!("' not found in module "),
+                                        &segments[0]
+                                    ),
+                                    span.line,
+                                    span.col,
+                                ))
+                            })?;
+                        }
+                        _ => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "{}{}{}",
+                                    ion_str!("cannot access '"),
+                                    seg,
+                                    ion_str!("' on non-module value")
+                                ),
+                                span.line,
+                                span.col,
+                            )
+                            .into())
+                        }
+                    }
+                }
+                Ok(current)
+            }
 
             ExprKind::SomeExpr(e) => {
                 let val = self.eval_expr(e)?;

@@ -487,6 +487,14 @@ impl Compiler {
                 self.compile_assign(target, op, value, line)?;
                 self.chunk.emit_op(Op::Pop, line); // discard assignment result
             }
+            StmtKind::Use { .. } => {
+                // Use statements modify global scope at runtime — bail to tree-walk
+                return Err(IonError::runtime(
+                    ion_str!("use statements not yet supported in VM"),
+                    line,
+                    0,
+                ));
+            }
             StmtKind::WhileLet {
                 pattern,
                 expr,
@@ -591,6 +599,16 @@ impl Compiler {
                 } else {
                     let idx = self.chunk.add_constant(Value::Str(name.clone()));
                     self.chunk.emit_op_u16(Op::GetGlobal, idx, line);
+                }
+            }
+
+            ExprKind::ModulePath(segments) => {
+                // Load root module as global, then chain GetField for each segment
+                let root_idx = self.chunk.add_constant(Value::Str(segments[0].clone()));
+                self.chunk.emit_op_u16(Op::GetGlobal, root_idx, line);
+                for seg in &segments[1..] {
+                    let idx = self.chunk.add_constant(Value::Str(seg.clone()));
+                    self.chunk.emit_op_u16_span(Op::GetField, idx, line, col);
                 }
             }
 

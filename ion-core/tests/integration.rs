@@ -1,6 +1,7 @@
 use ion_core::engine::Engine;
 use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef, IonType};
 use ion_core::interpreter::Limits;
+use ion_core::module::Module;
 use ion_core::value::Value;
 use ion_core::IonType;
 
@@ -3952,4 +3953,150 @@ fn test_cell_update_returns_new_value() {
         eval("let c = cell(10); c.update(|x| x * 2)"),
         Value::Int(20)
     );
+}
+
+// --- Module / Namespace System ---
+
+fn engine_with_math_module() -> Engine {
+    let mut engine = Engine::new();
+    let mut math = Module::new("math");
+    math.register_fn("add", |args: &[Value]| {
+        match (&args[0], &args[1]) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+            _ => Err("expected two ints".to_string()),
+        }
+    });
+    math.set("PI", Value::Float(std::f64::consts::PI));
+    engine.register_module(math);
+    engine
+}
+
+#[test]
+fn test_module_path_access() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("math::add(1, 2)").unwrap(),
+        Value::Int(3)
+    );
+}
+
+#[test]
+fn test_module_constant_access() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("math::PI").unwrap(),
+        Value::Float(std::f64::consts::PI)
+    );
+}
+
+#[test]
+fn test_use_single_import() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("use math::add; add(3, 4)").unwrap(),
+        Value::Int(7)
+    );
+}
+
+#[test]
+fn test_use_glob_import() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("use math::*; add(10, 20)").unwrap(),
+        Value::Int(30)
+    );
+}
+
+#[test]
+fn test_use_named_imports() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("use math::{add, PI}; add(1, 2)").unwrap(),
+        Value::Int(3)
+    );
+}
+
+#[test]
+fn test_use_named_imports_constant() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("use math::{PI}; PI").unwrap(),
+        Value::Float(std::f64::consts::PI)
+    );
+}
+
+#[test]
+fn test_module_submodule() {
+    let mut engine = Engine::new();
+    let mut net = Module::new("net");
+    let mut http = Module::new("http");
+    http.register_fn("get", |_args: &[Value]| {
+        Ok(Value::Str("response".to_string()))
+    });
+    net.register_submodule(http);
+    engine.register_module(net);
+    assert_eq!(
+        engine.eval("net::http::get()").unwrap(),
+        Value::Str("response".to_string())
+    );
+}
+
+#[test]
+fn test_use_from_submodule() {
+    let mut engine = Engine::new();
+    let mut net = Module::new("net");
+    let mut http = Module::new("http");
+    http.register_fn("get", |_args: &[Value]| {
+        Ok(Value::Str("ok".to_string()))
+    });
+    net.register_submodule(http);
+    engine.register_module(net);
+    assert_eq!(
+        engine.eval("use net::http::get; get()").unwrap(),
+        Value::Str("ok".to_string())
+    );
+}
+
+#[test]
+fn test_use_glob_from_submodule() {
+    let mut engine = Engine::new();
+    let mut net = Module::new("net");
+    let mut http = Module::new("http");
+    http.register_fn("get", |_args: &[Value]| {
+        Ok(Value::Str("ok".to_string()))
+    });
+    http.set("PORT", Value::Int(8080));
+    net.register_submodule(http);
+    engine.register_module(net);
+    assert_eq!(
+        engine.eval("use net::http::*; get()").unwrap(),
+        Value::Str("ok".to_string())
+    );
+    assert_eq!(
+        engine.eval("use net::http::*; PORT").unwrap(),
+        Value::Int(8080)
+    );
+}
+
+#[test]
+fn test_module_undefined_error() {
+    let engine_result = Engine::new().eval("foo::bar");
+    assert!(engine_result.is_err());
+    assert!(engine_result.unwrap_err().message.contains("undefined module"));
+}
+
+#[test]
+fn test_module_member_not_found_error() {
+    let mut engine = engine_with_math_module();
+    let result = engine.eval("math::nonexistent");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("not found in module"));
+}
+
+#[test]
+fn test_use_member_not_found_error() {
+    let mut engine = engine_with_math_module();
+    let result = engine.eval("use math::nonexistent;");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("not found in module"));
 }

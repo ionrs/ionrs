@@ -4,6 +4,7 @@ use crate::error::IonError;
 use crate::host_types::{HostEnumDef, HostStructDef, IonType, IonTypeDef};
 use crate::interpreter::{Interpreter, Limits};
 use crate::lexer::Lexer;
+use crate::module::Module;
 use crate::parser::Parser;
 use crate::value::Value;
 
@@ -70,6 +71,13 @@ impl Engine {
     /// Register a host enum type that scripts can construct and match on.
     pub fn register_enum(&mut self, def: HostEnumDef) {
         self.interpreter.types.register_enum(def);
+    }
+
+    /// Register a module that scripts can access via `module::name` or `use module::*`.
+    pub fn register_module(&mut self, module: Module) {
+        let name = module.name.clone();
+        let value = module.to_value();
+        self.interpreter.env.define(name, value, false);
     }
 
     /// Register a type via the IonType trait (used with `#[derive(IonType)]`).
