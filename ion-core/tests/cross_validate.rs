@@ -1825,3 +1825,83 @@ fn cross_recursive_sum() {
         Value::Int(15),
     );
 }
+
+// ============================================================
+// Shift operators
+// ============================================================
+
+#[test]
+fn cross_shift_left() {
+    assert_both_eq("1 << 10", Value::Int(1024));
+    assert_both_eq("3 << 4", Value::Int(48));
+}
+
+#[test]
+fn cross_shift_right() {
+    assert_both_eq("1024 >> 5", Value::Int(32));
+    assert_both_eq("255 >> 4", Value::Int(15));
+}
+
+#[test]
+fn cross_shift_out_of_range() {
+    // Both should error on out-of-range shift counts
+    assert_both("1 << 64");
+    assert_both("1 >> -1");
+    assert_both("1 << -1");
+}
+
+// ============================================================
+// Match exhaustiveness
+// ============================================================
+
+#[test]
+fn cross_match_non_exhaustive() {
+    // Both should error on non-exhaustive match
+    assert_both(r#"match 42 { 1 => "one", 2 => "two" }"#);
+}
+
+// ============================================================
+// Module path access
+// ============================================================
+
+#[test]
+fn cross_math_module() {
+    assert_both_eq("math::abs(-5)", Value::Int(5));
+    assert_both_eq("math::max(3, 7)", Value::Int(7));
+    assert_both_eq("math::min(3, 7)", Value::Int(3));
+}
+
+#[test]
+fn cross_math_constants() {
+    assert_both("math::PI");
+    assert_both("math::E");
+}
+
+#[test]
+fn cross_string_join() {
+    assert_both_eq(
+        r#"string::join(["a", "b", "c"], ", ")"#,
+        Value::Str("a, b, c".to_string()),
+    );
+}
+
+// ============================================================
+// Window / chunk edge cases
+// ============================================================
+
+#[test]
+fn cross_window() {
+    assert_both_eq(
+        "[1, 2, 3, 4].window(2)",
+        Value::List(vec![
+            Value::List(vec![Value::Int(1), Value::Int(2)]),
+            Value::List(vec![Value::Int(2), Value::Int(3)]),
+            Value::List(vec![Value::Int(3), Value::Int(4)]),
+        ]),
+    );
+}
+
+#[test]
+fn cross_window_zero_error() {
+    assert_both("[1, 2, 3].window(0)");
+}

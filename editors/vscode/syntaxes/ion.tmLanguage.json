@@ -140,10 +140,6 @@
         {
           "name": "keyword.declaration.ion",
           "match": "\\b(let|mut|fn)\\b"
-        },
-        {
-          "name": "keyword.operator.ion",
-          "match": "\\b(and|or|not)\\b"
         }
       ]
     },

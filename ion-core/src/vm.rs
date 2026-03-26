@@ -313,7 +313,16 @@ impl Vm {
                 let b = self.pop(line, col)?;
                 let a = self.pop(line, col)?;
                 match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x << y)),
+                    (Value::Int(x), Value::Int(y)) if (0..64).contains(&y) => {
+                        self.stack.push(Value::Int(x << y))
+                    }
+                    (Value::Int(_), Value::Int(y)) => {
+                        return Err(IonError::runtime(
+                            format!("shift count {} is out of range 0..64", y),
+                            line,
+                            col,
+                        ))
+                    }
                     (a, b) => {
                         return Err(IonError::type_err(
                             format!(
@@ -332,7 +341,16 @@ impl Vm {
                 let b = self.pop(line, col)?;
                 let a = self.pop(line, col)?;
                 match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x >> y)),
+                    (Value::Int(x), Value::Int(y)) if (0..64).contains(&y) => {
+                        self.stack.push(Value::Int(x >> y))
+                    }
+                    (Value::Int(_), Value::Int(y)) => {
+                        return Err(IonError::runtime(
+                            format!("shift count {} is out of range 0..64", y),
+                            line,
+                            col,
+                        ))
+                    }
                     (a, b) => {
                         return Err(IonError::type_err(
                             format!(
@@ -810,7 +828,11 @@ impl Vm {
                 }
             }
             Op::MatchEnd => {
-                // Currently unused — match uses Jump/JumpIfFalse directly
+                return Err(IonError::runtime(
+                    ion_str!("non-exhaustive match").to_string(),
+                    line,
+                    col,
+                ));
             }
 
             // --- Range ---
@@ -2195,6 +2217,13 @@ impl Vm {
                 let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
                     IonError::type_err(ion_str!("window requires int argument"), line, col)
                 })? as usize;
+                if n == 0 {
+                    return Err(IonError::runtime(
+                        ion_str!("window size must be > 0"),
+                        line,
+                        col,
+                    ));
+                }
                 let result: Vec<Value> =
                     items.windows(n).map(|w| Value::List(w.to_vec())).collect();
                 Ok(Value::List(result))

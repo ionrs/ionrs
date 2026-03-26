@@ -1,7 +1,7 @@
 //! AST → Bytecode compiler for the Ion VM.
 
 use crate::ast::*;
-use crate::bytecode::{Chunk, FnProto, Op};
+use crate::bytecode::{Chunk, Op};
 use crate::error::IonError;
 use crate::value::{FnChunkCache, Value};
 
@@ -245,8 +245,12 @@ impl Compiler {
             (ExprKind::Int(a), BinOp::BitAnd, ExprKind::Int(b)) => Some(Value::Int(a & b)),
             (ExprKind::Int(a), BinOp::BitOr, ExprKind::Int(b)) => Some(Value::Int(a | b)),
             (ExprKind::Int(a), BinOp::BitXor, ExprKind::Int(b)) => Some(Value::Int(a ^ b)),
-            (ExprKind::Int(a), BinOp::Shl, ExprKind::Int(b)) => Some(Value::Int(a << (*b as u32))),
-            (ExprKind::Int(a), BinOp::Shr, ExprKind::Int(b)) => Some(Value::Int(a >> (*b as u32))),
+            (ExprKind::Int(a), BinOp::Shl, ExprKind::Int(b)) if (0..64).contains(b) => {
+                Some(Value::Int(a << (*b as u32)))
+            }
+            (ExprKind::Int(a), BinOp::Shr, ExprKind::Int(b)) if (0..64).contains(b) => {
+                Some(Value::Int(a >> (*b as u32)))
+            }
             // Float op Float
             (ExprKind::Float(a), BinOp::Add, ExprKind::Float(b)) => Some(Value::Float(a + b)),
             (ExprKind::Float(a), BinOp::Sub, ExprKind::Float(b)) => Some(Value::Float(a - b)),
@@ -441,6 +445,13 @@ impl Compiler {
                 self.compile_loop(body, line)?;
             }
             StmtKind::Break { value } => {
+                if self.continue_target.is_none() {
+                    return Err(IonError::runtime(
+                        ion_str!("break outside of loop").to_string(),
+                        line,
+                        0,
+                    ));
+                }
                 if let Some(expr) = value {
                     self.compile_expr(expr)?;
                 } else {
@@ -469,7 +480,11 @@ impl Compiler {
                     let offset = self.chunk.len() - target + 3;
                     self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
                 } else {
-                    self.chunk.emit_jump(Op::Jump, line);
+                    return Err(IonError::runtime(
+                        ion_str!("continue outside of loop").to_string(),
+                        line,
+                        0,
+                    ));
                 }
             }
             StmtKind::Return { value } => {
@@ -1355,27 +1370,6 @@ impl Compiler {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn compile_lambda(
-        &mut self,
-        params: &[String],
-        body: &Expr,
-        line: usize,
-    ) -> Result<FnProto, IonError> {
-        let mut fn_compiler = Compiler::new();
-        fn_compiler.compile_expr(body)?;
-        fn_compiler.chunk.emit_op(Op::Return, line);
-        #[cfg(feature = "optimize")]
-        fn_compiler.chunk.peephole_optimize();
-        Ok(FnProto {
-            name: "<lambda>".to_string(),
-            arity: params.len(),
-            chunk: fn_compiler.chunk,
-            param_names: params.to_vec(),
-            has_defaults: vec![false; params.len()],
-        })
-    }
-
     fn compile_for(
         &mut self,
         pattern: &Pattern,
@@ -1714,8 +1708,8 @@ impl Compiler {
             self.chunk.emit_op(Op::Pop, line); // pop false
         }
 
-        // No arm matched — push Unit
-        self.chunk.emit_op(Op::Unit, line);
+        // No arm matched — runtime error (matches interpreter behavior)
+        self.chunk.emit_op(Op::MatchEnd, line);
 
         for j in end_jumps {
             self.chunk.patch_jump(j);

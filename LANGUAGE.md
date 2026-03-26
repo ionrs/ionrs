@@ -731,6 +731,25 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.to_str()` | Result | Decode as UTF-8 |
 | `.to_hex()` | String | Hex-encoded string |
 
+### Cell Methods
+
+A `Cell` is a shared mutable reference cell, created with the top-level builtin `cell(value)`. It enables shared mutable state across closures.
+
+```
+let c = cell(0);
+c.get()           // 0
+c.set(42);
+c.get()           // 42
+c.update(|v| v + 1);
+c.get()           // 43
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.get()` | Value | Read the current value |
+| `.set(v)` | Unit | Replace the stored value with `v` |
+| `.update(fn)` | Unit | Apply `fn` to the current value and store the result |
+
 ---
 
 ## Bytes

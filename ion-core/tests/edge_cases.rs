@@ -364,3 +364,146 @@ fn edge_dict_overwrite_key() {
 fn edge_dict_missing_key() {
     assert_eq!(eval(r#"#{"a": 1}.b"#), Value::Option(None));
 }
+
+// ============================================================
+// Shift operator bounds
+// ============================================================
+
+#[test]
+fn edge_shift_left_valid() {
+    assert_eq!(eval("1 << 0"), Value::Int(1));
+    assert_eq!(eval("1 << 10"), Value::Int(1024));
+    assert_eq!(eval("1 << 63"), Value::Int(i64::MIN));
+}
+
+#[test]
+fn edge_shift_right_valid() {
+    assert_eq!(eval("1024 >> 5"), Value::Int(32));
+    assert_eq!(eval("-1 >> 1"), Value::Int(-1));
+}
+
+#[test]
+fn edge_shift_left_out_of_range() {
+    let msg = eval_err("1 << 64");
+    assert!(msg.contains("out of range"), "got: {}", msg);
+}
+
+#[test]
+fn edge_shift_right_out_of_range() {
+    let msg = eval_err("1 >> -1");
+    assert!(msg.contains("out of range"), "got: {}", msg);
+}
+
+#[test]
+fn edge_shift_left_negative() {
+    let msg = eval_err("1 << -1");
+    assert!(msg.contains("out of range"), "got: {}", msg);
+}
+
+// ============================================================
+// Arity errors
+// ============================================================
+
+#[test]
+fn edge_len_no_args() {
+    let msg = eval_err("len()");
+    assert!(msg.contains("requires 1 argument") || msg.contains("arity"), "got: {}", msg);
+}
+
+#[test]
+fn edge_type_of_no_args() {
+    let msg = eval_err("type_of()");
+    assert!(msg.contains("requires 1 argument") || msg.contains("arity"), "got: {}", msg);
+}
+
+#[test]
+fn edge_dict_insert_arity() {
+    let msg = eval_err(r#"let d = #{"a": 1}; d.insert("b")"#);
+    assert!(msg.contains("insert") || msg.contains("argument"), "got: {}", msg);
+}
+
+// ============================================================
+// bytes / bytes_from_hex errors
+// ============================================================
+
+#[test]
+fn edge_bytes_allocation_cap() {
+    let msg = eval_err("bytes(100000000)");
+    assert!(msg.contains("out of range"), "got: {}", msg);
+}
+
+#[test]
+fn edge_bytes_negative() {
+    let msg = eval_err("bytes(-1)");
+    assert!(msg.contains("out of range"), "got: {}", msg);
+}
+
+#[test]
+fn edge_bytes_from_hex_non_ascii() {
+    let msg = eval_err(r#"bytes_from_hex("café")"#);
+    assert!(msg.contains("ASCII") || msg.contains("invalid"), "got: {}", msg);
+}
+
+#[test]
+fn edge_bytes_from_hex_odd_length() {
+    let msg = eval_err(r#"bytes_from_hex("abc")"#);
+    assert!(msg.contains("length") || msg.contains("odd") || msg.contains("invalid"), "got: {}", msg);
+}
+
+// ============================================================
+// window(0) error
+// ============================================================
+
+#[test]
+fn edge_window_zero() {
+    let msg = eval_err("[1, 2, 3].window(0)");
+    assert!(msg.contains("must be > 0") || msg.contains("window"), "got: {}", msg);
+}
+
+// ============================================================
+// reduce on empty list
+// ============================================================
+
+#[test]
+fn edge_reduce_empty_list() {
+    let msg = eval_err("[].reduce(|a, b| a + b)");
+    assert!(msg.contains("empty") || msg.contains("reduce"), "got: {}", msg);
+}
+
+// ============================================================
+// Float division by zero
+// ============================================================
+
+#[test]
+fn edge_float_div_by_zero() {
+    let result = eval("1.0 / 0.0");
+    match result {
+        Value::Float(f) => assert!(f.is_infinite(), "expected infinity, got: {}", f),
+        other => panic!("expected Float, got: {:?}", other),
+    }
+}
+
+#[test]
+fn edge_float_zero_div_zero() {
+    let result = eval("0.0 / 0.0");
+    match result {
+        Value::Float(f) => assert!(f.is_nan(), "expected NaN, got: {}", f),
+        other => panic!("expected Float, got: {:?}", other),
+    }
+}
+
+// ============================================================
+// Break/continue outside loop (compile error)
+// ============================================================
+
+#[test]
+fn edge_break_outside_loop() {
+    let msg = eval_err("break;");
+    assert!(msg.contains("outside") || msg.contains("loop") || msg.contains("break"), "got: {}", msg);
+}
+
+#[test]
+fn edge_continue_outside_loop() {
+    let msg = eval_err("continue;");
+    assert!(msg.contains("outside") || msg.contains("loop") || msg.contains("continue"), "got: {}", msg);
+}

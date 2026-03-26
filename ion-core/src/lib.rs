@@ -77,5 +77,8 @@ pub mod value;
 #[cfg(feature = "vm")]
 pub mod vm;
 
+pub use engine::Engine;
+pub use value::Value;
+
 #[cfg(feature = "derive")]
 pub use ion_derive::IonType;

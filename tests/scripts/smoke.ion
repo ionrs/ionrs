@@ -45,14 +45,14 @@ let found = loop {
 };
 
 // Print results
-println(f"Language: {name} v{version}");
-println(f"x = {x}");
-println(greet("world"));
-println(f"nums = {nums}");
-println(f"doubled = {doubled}");
-println(f"sum = {sum}");
-println(f"result = {result}");
-println(f"final = {final_result}");
-println(f"config = {config}");
-println(f"status = {status}");
-println(f"found = {found}");
+io::println(f"Language: {name} v{version}");
+io::println(f"x = {x}");
+io::println(greet("world"));
+io::println(f"nums = {nums}");
+io::println(f"doubled = {doubled}");
+io::println(f"sum = {sum}");
+io::println(f"result = {result}");
+io::println(f"final = {final_result}");
+io::println(f"config = {config}");
+io::println(f"status = {status}");
+io::println(f"found = {found}");

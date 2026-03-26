@@ -1345,11 +1345,25 @@ impl Interpreter {
                 _ => Err(self.type_mismatch_err(ion_str!("^"), l, r, span)),
             },
             BinOp::Shl => match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a << b)),
+                (Value::Int(a), Value::Int(b)) if (0..64).contains(b) => {
+                    Ok(Value::Int(a << b))
+                }
+                (Value::Int(_), Value::Int(b)) => Err(IonError::runtime(
+                    format!("shift count {} is out of range 0..64", b),
+                    span.line,
+                    span.col,
+                ).into()),
                 _ => Err(self.type_mismatch_err(ion_str!("<<"), l, r, span)),
             },
             BinOp::Shr => match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a >> b)),
+                (Value::Int(a), Value::Int(b)) if (0..64).contains(b) => {
+                    Ok(Value::Int(a >> b))
+                }
+                (Value::Int(_), Value::Int(b)) => Err(IonError::runtime(
+                    format!("shift count {} is out of range 0..64", b),
+                    span.line,
+                    span.col,
+                ).into()),
                 _ => Err(self.type_mismatch_err(ion_str!(">>"), l, r, span)),
             },
         }
@@ -2059,6 +2073,14 @@ impl Interpreter {
                         span.col,
                     )
                 })? as usize;
+                if n == 0 {
+                    return Err(IonError::runtime(
+                        ion_str!("window size must be > 0").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
                 let result: Vec<Value> =
                     items.windows(n).map(|w| Value::List(w.to_vec())).collect();
                 Ok(Value::List(result))
@@ -2629,6 +2651,14 @@ impl Interpreter {
                 })
             }
             "insert" => {
+                if args.len() < 2 {
+                    return Err(IonError::runtime(
+                        ion_str!("insert requires 2 arguments: key, value").to_string(),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
                 let key = args[0].as_str().ok_or_else(|| {
                     IonError::type_err(
                         ion_str!("insert requires string key").to_string(),
@@ -3061,11 +3091,8 @@ impl Interpreter {
                         }
                     }
                 }
-                // Convert to flat args, using None for unfilled slots (defaults will handle them)
-                let args: Vec<Value> = ordered
-                    .into_iter()
-                    .map(|v| v.unwrap_or(Value::Unit))
-                    .collect();
+                // Keep as Option<Value> so we can distinguish "not provided" from "provided Unit"
+                let opt_args: Vec<Option<Value>> = ordered;
                 // Use call_value with the reordered args, but handle defaults specially
                 if self.call_depth >= self.limits.max_call_depth {
                     return Err(IonError::runtime(
@@ -3081,8 +3108,8 @@ impl Interpreter {
                     self.env.define(name.clone(), val.clone(), false);
                 }
                 for (i, param) in ion_fn.params.iter().enumerate() {
-                    let val = if i < args.len() && args[i] != Value::Unit {
-                        args[i].clone()
+                    let val = if i < opt_args.len() && opt_args[i].is_some() {
+                        opt_args[i].clone().unwrap()
                     } else if let Some(default) = &param.default {
                         self.eval_expr(default)?
                     } else {
@@ -3630,16 +3657,21 @@ pub fn register_builtins(env: &mut Env) {
 
     env.define(
         ion_str!("len").to_string(),
-        Value::BuiltinFn(ion_str!("len").to_string(), |args| match &args[0] {
-            Value::List(items) => Ok(Value::Int(items.len() as i64)),
-            Value::Str(s) => Ok(Value::Int(s.len() as i64)),
-            Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
-            Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
-            _ => Err(format!(
-                "{}{}",
-                ion_str!("len() not supported for "),
-                args[0].type_name()
-            )),
+        Value::BuiltinFn(ion_str!("len").to_string(), |args| {
+            if args.is_empty() {
+                return Err(ion_str!("len() requires 1 argument"));
+            }
+            match &args[0] {
+                Value::List(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Str(s) => Ok(Value::Int(s.len() as i64)),
+                Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
+                Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
+                _ => Err(format!(
+                    "{}{}",
+                    ion_str!("len() not supported for "),
+                    args[0].type_name()
+                )),
+            }
         }),
         false,
     );
@@ -3703,6 +3735,9 @@ pub fn register_builtins(env: &mut Env) {
     env.define(
         ion_str!("type_of").to_string(),
         Value::BuiltinFn(ion_str!("type_of").to_string(), |args| {
+            if args.is_empty() {
+                return Err(ion_str!("type_of() requires 1 argument"));
+            }
             Ok(Value::Str(args[0].type_name().to_string()))
         }),
         false,
@@ -3834,7 +3869,12 @@ pub fn register_builtins(env: &mut Env) {
                 Ok(Value::Bytes(bytes))
             }
             Some(Value::Str(s)) => Ok(Value::Bytes(s.as_bytes().to_vec())),
-            Some(Value::Int(n)) => Ok(Value::Bytes(vec![0u8; *n as usize])),
+            Some(Value::Int(n)) if *n >= 0 && *n <= 10_000_000 => {
+                Ok(Value::Bytes(vec![0u8; *n as usize]))
+            }
+            Some(Value::Int(n)) => Err(format!(
+                "bytes(n): size {} is out of range (0..10_000_000)", n
+            )),
             None => Ok(Value::Bytes(Vec::new())),
             _ => Err(format!(
                 "{}{}",
@@ -3853,6 +3893,9 @@ pub fn register_builtins(env: &mut Env) {
             let s = args[0]
                 .as_str()
                 .ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
+            if !s.is_ascii() {
+                return Err(ion_str!("bytes_from_hex requires an ASCII hex string"));
+            }
             if s.len() % 2 != 0 {
                 return Err(ion_str!("hex string must have even length").to_string());
             }

@@ -309,21 +309,6 @@ impl Chunk {
         self.code[offset]
     }
 
-    /// Post-pass: replace `Call N; Return` with `TailCall N; Return`.
-    #[allow(dead_code)]
-    pub fn optimize_tail_calls(&mut self) {
-        let call_byte = Op::Call as u8;
-        let return_byte = Op::Return as u8;
-        let tail_call_byte = Op::TailCall as u8;
-        // Call is 2 bytes (opcode + u8 arg_count), Return is 1 byte
-        let mut i = 0;
-        while i + 2 < self.code.len() {
-            if self.code[i] == call_byte && self.code[i + 2] == return_byte {
-                self.code[i] = tail_call_byte;
-            }
-            i += 1;
-        }
-    }
 
     /// Return the total size (opcode + operands) of the instruction at `offset`.
     pub fn instruction_size(code: &[u8], offset: usize) -> usize {

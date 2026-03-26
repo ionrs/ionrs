@@ -39,10 +39,6 @@ impl Engine {
         self.interpreter.env.get(name).cloned()
     }
 
-    /// Try to get a variable, returning None if it doesn't exist.
-    pub fn try_get(&self, name: &str) -> Option<Value> {
-        self.interpreter.env.get(name).cloned()
-    }
 
     /// Get all top-level bindings.
     pub fn get_all(&self) -> HashMap<String, Value> {
