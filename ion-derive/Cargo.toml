@@ -3,8 +3,9 @@ name = "ion-derive"
 version = "0.1.0"
 edition = "2021"
 description = "Derive macro for Ion scripting language host types"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/paiml/ionlang"
+readme = "../README.md"
 keywords = ["scripting", "derive", "ion"]
 categories = ["compilers"]
 
