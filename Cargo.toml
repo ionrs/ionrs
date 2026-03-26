@@ -1,4 +1,4 @@
 [workspace]
 members = ["ion-core", "ion-cli", "ion-derive", "ion-lsp"]
-exclude = ["ion-core/fuzz"]
+exclude = ["ion-core/fuzz", "editors/zed"]
 resolver = "2"
