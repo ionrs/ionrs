@@ -1,0 +1,29 @@
+{
+  "name": "tree-sitter-ion",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Ion programming language",
+  "repository": "https://github.com/paiml/ionlang",
+  "license": "MIT",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "keywords": ["parser", "tree-sitter", "ion"],
+  "dependencies": {
+    "nan": "^2.18.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.22.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.ion",
+      "file-types": ["ion"],
+      "highlights": "queries/highlights.scm",
+      "injection-regex": "^ion$"
+    }
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "grammars": [
+    {
+      "name": "ion",
+      "camelcase": "Ion",
+      "scope": "source.ion",
+      "path": ".",
+      "file-types": ["ion"],
+      "highlights": "queries/highlights.scm",
+      "injection-regex": "^ion$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for the Ion programming language",
+    "authors": [
+      {
+        "name": "paiml"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/paiml/ionlang"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "node": true,
+    "rust": true
+  }
+}
