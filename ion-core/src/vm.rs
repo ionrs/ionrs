@@ -1142,7 +1142,10 @@ impl Vm {
                     "dict" => matches!(val, Value::Dict(_)),
                     "tuple" => matches!(val, Value::Tuple(_)),
                     "set" => matches!(val, Value::Set(_)),
-                    "fn" => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
+                    "fn" => matches!(
+                        val,
+                        Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _)
+                    ),
                     "cell" => matches!(val, Value::Cell(_)),
                     "any" => true,
                     s if s.starts_with("Option") => matches!(val, Value::Option(_)),
@@ -2825,6 +2828,11 @@ impl Vm {
                     self.stack.push(result);
                     return Ok(());
                 }
+                Value::BuiltinClosure(_name, f) => {
+                    let result = f.call(&args).map_err(|e| IonError::runtime(e, line, col))?;
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 Value::Fn(ion_fn) => {
                     self.env.push_scope();
 
@@ -3029,6 +3037,11 @@ impl Vm {
             Value::BuiltinFn(_, f) => {
                 // Builtins don't support named args, just pass positionally
                 let result = f(&raw_args).map_err(|e| IonError::runtime(e, line, col))?;
+                self.stack.push(result);
+                Ok(())
+            }
+            Value::BuiltinClosure(_, f) => {
+                let result = f.call(&raw_args).map_err(|e| IonError::runtime(e, line, col))?;
                 self.stack.push(result);
                 Ok(())
             }

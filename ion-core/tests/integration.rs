@@ -4219,3 +4219,44 @@ fn test_stdlib_io_eprintln() {
 fn test_stdlib_io_use_import() {
     assert_eq!(eval(r#"use io::println; println("hello")"#), Value::Unit);
 }
+
+// ============================================================
+// register_closure — captures host state across calls
+// ============================================================
+
+#[test]
+fn test_register_closure_captures_counter() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+
+    let counter = Arc::new(AtomicU64::new(0));
+    let counter_for_closure = counter.clone();
+
+    let mut engine = Engine::new();
+    engine.register_closure("host_tick", move |_args| {
+        let n = counter_for_closure.fetch_add(1, Ordering::Relaxed) + 1;
+        Ok(Value::Int(n as i64))
+    });
+
+    // Each call returns the post-increment value and bumps the
+    // host-side counter. This proves the closure captured `counter`.
+    assert_eq!(engine.eval("host_tick()").unwrap(), Value::Int(1));
+    assert_eq!(engine.eval("host_tick()").unwrap(), Value::Int(2));
+    assert_eq!(
+        engine.eval("host_tick() + host_tick()").unwrap(),
+        Value::Int(7)
+    );
+    assert_eq!(counter.load(Ordering::Relaxed), 4);
+}
+
+#[test]
+fn test_register_closure_type_matches_fn() {
+    // The closure-backed variant should satisfy `: fn` type annotations
+    // exactly like a plain BuiltinFn does.
+    let mut engine = Engine::new();
+    engine.register_closure("noop", |_| Ok(Value::Unit));
+    assert_eq!(
+        engine.eval("let f: fn = noop; f()").unwrap(),
+        Value::Unit
+    );
+}

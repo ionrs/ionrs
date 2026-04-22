@@ -2994,6 +2994,9 @@ impl Interpreter {
             Value::BuiltinFn(_, func) => {
                 func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
+            Value::BuiltinClosure(_, func) => {
+                func.call(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            }
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("not callable: "), func.type_name()),
                 span.line,
@@ -3169,7 +3172,10 @@ impl Interpreter {
                 "dict" => matches!(val, Value::Dict(_)),
                 "tuple" => matches!(val, Value::Tuple(_)),
                 "set" => matches!(val, Value::Set(_)),
-                "fn" => matches!(val, Value::Fn(_) | Value::BuiltinFn(_, _)),
+                "fn" => matches!(
+                    val,
+                    Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _)
+                ),
                 "cell" => matches!(val, Value::Cell(_)),
                 "any" => true,
                 _ => true, // unknown types pass (forward compatibility)

@@ -26,6 +26,13 @@ pub enum Value {
     Result(Result<Box<Value>, Box<Value>>),
     Fn(IonFn),
     BuiltinFn(String, BuiltinFn),
+    /// Closure-backed builtin. Unlike `BuiltinFn` (a bare `fn` pointer),
+    /// this variant can capture host-side state — e.g. a
+    /// `tokio::runtime::Handle` for async host calls, a database
+    /// connection pool, or shared counters.
+    ///
+    /// Register via `Engine::register_closure`.
+    BuiltinClosure(String, BuiltinClosureFn),
     /// Ordered set of unique values
     Set(Vec<Value>),
     /// Host-injected struct: `TypeName { field: val, ... }`
@@ -91,6 +98,32 @@ pub type FnChunkCache = HashMap<u64, Chunk>;
 /// A built-in function: Rust-side callback.
 pub type BuiltinFn = fn(&[Value]) -> Result<Value, String>;
 
+/// Wrapper around a closure-backed builtin so `Value` can still derive
+/// `Debug`. `dyn Fn` doesn't implement `Debug`; we print a placeholder.
+#[derive(Clone)]
+pub struct BuiltinClosureFn(
+    pub Arc<dyn Fn(&[Value]) -> Result<Value, String> + Send + Sync>,
+);
+
+impl fmt::Debug for BuiltinClosureFn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<closure>")
+    }
+}
+
+impl BuiltinClosureFn {
+    pub fn new<F>(func: F) -> Self
+    where
+        F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
+    {
+        Self(Arc::new(func))
+    }
+
+    pub fn call(&self, args: &[Value]) -> Result<Value, String> {
+        (self.0)(args)
+    }
+}
+
 impl Value {
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -107,6 +140,7 @@ impl Value {
             Value::Result(_) => ion_static_str!("Result"),
             Value::Fn(_) => ion_static_str!("fn"),
             Value::BuiltinFn(_, _) => ion_static_str!("builtin_fn"),
+            Value::BuiltinClosure(_, _) => ion_static_str!("builtin_fn"),
             Value::HostStruct { .. } => ion_static_str!("struct"),
             Value::HostEnum { .. } => ion_static_str!("enum"),
             #[cfg(feature = "concurrency")]
@@ -259,6 +293,7 @@ impl fmt::Display for Value {
             },
             Value::Fn(func) => write!(f, "<fn {}>", func.name),
             Value::BuiltinFn(name, _) => write!(f, "<builtin {}>", name),
+            Value::BuiltinClosure(name, _) => write!(f, "<builtin {}>", name),
             #[cfg(feature = "concurrency")]
             Value::Task(_) => write!(f, "<Task>"),
             #[cfg(feature = "concurrency")]
@@ -450,7 +485,9 @@ impl Value {
                     .map(|v| v.to_json())
                     .collect(),
             ),
-            Value::Fn(_) | Value::BuiltinFn(_, _) => serde_json::Value::Null,
+            Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => {
+                serde_json::Value::Null
+            }
         }
     }
 
@@ -541,7 +578,9 @@ impl Value {
                     .map(|v| v.to_msgpack_value())
                     .collect(),
             ),
-            Value::Fn(_) | Value::BuiltinFn(_, _) => rmpv::Value::Nil,
+            Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => {
+                rmpv::Value::Nil
+            }
         }
     }
 

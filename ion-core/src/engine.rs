@@ -59,6 +59,25 @@ impl Engine {
         );
     }
 
+    /// Register a built-in backed by a closure. Unlike `register_fn`,
+    /// this accepts any `Fn` — including closures that capture
+    /// host-side state such as a `tokio::runtime::Handle`, a database
+    /// pool, or shared counters. See `docs/concurrency.md` for the
+    /// tokio embedding pattern.
+    pub fn register_closure<F>(&mut self, name: &str, func: F)
+    where
+        F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
+    {
+        self.interpreter.env.define(
+            name.to_string(),
+            Value::BuiltinClosure(
+                name.to_string(),
+                crate::value::BuiltinClosureFn::new(func),
+            ),
+            false,
+        );
+    }
+
     /// Register a host struct type that scripts can construct and match on.
     pub fn register_struct(&mut self, def: HostStructDef) {
         self.interpreter.types.register_struct(def);
