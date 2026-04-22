@@ -18,6 +18,7 @@ concurrency-tokio = ["concurrency", "tokio"]
 vm = []
 optimize = ["vm"]
 msgpack = ["rmpv"]
+rewrite = []
 
 [dependencies]
 obfstr = { version = "0.4", optional = true }

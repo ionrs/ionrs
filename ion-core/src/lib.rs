@@ -22,6 +22,7 @@
 //! - **`derive`** — `#[derive(IonType)]` for host type injection
 //! - **`concurrency`** — Structured concurrency primitives
 //! - **`obfuscate`** — String obfuscation via `obfstr`
+//! - **`rewrite`** — Source rewriter for replacing global values
 
 /// Macro for string obfuscation. Returns a `String`.
 /// When the `obfuscate` feature is enabled, strings are encrypted at compile
@@ -71,6 +72,8 @@ pub mod interpreter;
 pub mod lexer;
 pub mod module;
 pub mod parser;
+#[cfg(feature = "rewrite")]
+pub mod rewrite;
 pub mod stdlib;
 pub mod token;
 pub mod value;
