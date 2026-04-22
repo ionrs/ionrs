@@ -55,10 +55,8 @@ macro_rules! ion_static_str {
 pub mod ast;
 #[cfg(feature = "concurrency")]
 pub mod async_rt;
-#[cfg(all(feature = "concurrency", not(feature = "concurrency-tokio")))]
+#[cfg(feature = "concurrency")]
 pub mod async_rt_std;
-#[cfg(feature = "concurrency-tokio")]
-pub mod async_rt_tokio;
 #[cfg(feature = "vm")]
 pub mod bytecode;
 #[cfg(feature = "vm")]

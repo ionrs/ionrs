@@ -3054,8 +3054,10 @@ impl Vm {
         })?;
         let func = args[1].clone();
         let captured_env = self.env.capture();
-        let task = crate::async_rt::spawn_task(move || {
+        let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task = crate::async_rt::spawn_task_with_cancel(cancel_flag, move |flag| {
             let mut child = crate::interpreter::Interpreter::new();
+            child.cancel_flag = Some(flag);
             for (name, val) in captured_env {
                 child.env.define(name, val, false);
             }
@@ -3084,7 +3086,10 @@ impl Vm {
         match task.join_timeout(std::time::Duration::from_millis(ms as u64)) {
             Some(Ok(val)) => Ok(Value::Option(Some(Box::new(val)))),
             Some(Err(e)) => Err(e),
-            None => Ok(Value::Option(None)),
+            None => {
+                task.cancel();
+                Ok(Value::Option(None))
+            }
         }
     }
 }

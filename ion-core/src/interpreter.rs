@@ -55,7 +55,7 @@ pub struct Interpreter {
     #[cfg(feature = "concurrency")]
     nursery: Option<crate::async_rt::Nursery>,
     #[cfg(feature = "concurrency")]
-    cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(crate) cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for Interpreter {
@@ -3025,10 +3025,12 @@ impl Interpreter {
         let captured_env = self.env.capture();
         let limits = self.limits.clone();
         let types = self.types.clone();
-        let task = crate::async_rt::spawn_task(move || {
+        let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task = crate::async_rt::spawn_task_with_cancel(cancel_flag, move |flag| {
             let mut child = Interpreter::new();
             child.limits = limits;
             child.types = types;
+            child.cancel_flag = Some(flag);
             for (name, val) in captured_env {
                 child.env.define(name, val, false);
             }
@@ -3044,7 +3046,12 @@ impl Interpreter {
         match task.join_timeout(std::time::Duration::from_millis(ms as u64)) {
             Some(Ok(val)) => Ok(Value::Option(Some(Box::new(val)))),
             Some(Err(e)) => Err(e.into()),
-            None => Ok(Value::Option(None)),
+            None => {
+                // Timer expired — signal cancellation so the runaway
+                // task terminates at the next statement boundary.
+                task.cancel();
+                Ok(Value::Option(None))
+            }
         }
     }
 
@@ -3444,11 +3451,13 @@ impl Interpreter {
         let limits = self.limits.clone();
         let types = self.types.clone();
 
+        let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let task_handle: Arc<dyn crate::async_rt::TaskHandle> =
-            crate::async_rt::spawn_task(move || {
+            crate::async_rt::spawn_task_with_cancel(cancel_flag, move |flag| {
                 let mut child = Interpreter::new();
                 child.limits = limits;
                 child.types = types;
+                child.cancel_flag = Some(flag);
                 // Load captured environment
                 for (name, val) in captured_env {
                     child.env.define(name, val, false);
@@ -3498,30 +3507,42 @@ impl Interpreter {
             let limits = self.limits.clone();
             let types = self.types.clone();
 
-            let handle = crate::async_rt::spawn_task(move || {
-                let mut child = Interpreter::new();
-                child.limits = limits;
-                child.types = types;
-                for (name, val) in captured_env {
-                    child.env.define(name, val, false);
-                }
-                let program = crate::ast::Program {
-                    stmts: vec![crate::ast::Stmt {
-                        kind: crate::ast::StmtKind::ExprStmt {
-                            expr: expr_clone,
-                            has_semi: false,
-                        },
-                        span: crate::ast::Span { line: 0, col: 0 },
-                    }],
-                };
-                child.eval_program(&program)
-            });
+            let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let handle =
+                crate::async_rt::spawn_task_with_cancel(cancel_flag, move |flag| {
+                    let mut child = Interpreter::new();
+                    child.limits = limits;
+                    child.types = types;
+                    child.cancel_flag = Some(flag);
+                    for (name, val) in captured_env {
+                        child.env.define(name, val, false);
+                    }
+                    let program = crate::ast::Program {
+                        stmts: vec![crate::ast::Stmt {
+                            kind: crate::ast::StmtKind::ExprStmt {
+                                expr: expr_clone,
+                                has_semi: false,
+                            },
+                            span: crate::ast::Span { line: 0, col: 0 },
+                        }],
+                    };
+                    child.eval_program(&program)
+                });
             tasks.push((i, handle));
         }
 
-        // Wait for the first task to complete (channel-based, no polling)
+        // Wait for the first task to complete (condvar-based, no polling)
         let handles: Vec<_> = tasks.iter().map(|(_, h)| h.clone()).collect();
         let (winner_idx, result) = crate::async_rt::wait_any(&handles);
+
+        // Signal cancellation to losing branches so they terminate at
+        // the next statement boundary instead of burning CPU.
+        for (i, h) in handles.iter().enumerate() {
+            if i != winner_idx {
+                h.cancel();
+            }
+        }
+
         let result = result?;
         let branch = &branches[tasks[winner_idx].0];
         self.env.push_scope();

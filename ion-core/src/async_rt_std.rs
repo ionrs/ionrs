@@ -1,79 +1,117 @@
-//! std::thread backend for Ion concurrency.
+//! std::thread backend for Ion concurrency (the only backend).
 //!
-//! Uses `std::thread::spawn` for tasks and `std::sync::mpsc` for channels.
-//! Zero external dependencies. Active when `concurrency` is enabled
-//! but `concurrency-tokio` is not.
+//! Each `spawn` creates one OS thread. The thread wrapper signals a
+//! completion condvar and notifies any `Subscriber`s when the body
+//! returns, so `wait_any` and `join_timeout` don't need extra threads
+//! or busy-polling.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::async_rt::{ChannelEnd, ChannelReceiver, ChannelSender, TaskHandle};
+use crate::async_rt::{ChannelEnd, ChannelReceiver, ChannelSender, Subscriber, TaskHandle};
 use crate::error::IonError;
 use crate::value::Value;
 
 // ---- Task ----
 
+/// Shared completion state between the worker thread and the handle.
 #[derive(Debug)]
-pub struct StdTaskHandle {
-    inner: Mutex<StdTaskState>,
-    cancel_flag: Arc<AtomicBool>,
+struct TaskSlot {
+    /// Protected state: result once finished, and pending subscribers
+    /// that want to be notified on completion.
+    inner: Mutex<SlotInner>,
+    /// Broadcast when the task finishes. Used by `join`/`join_timeout`.
+    cv: Condvar,
 }
 
 #[derive(Debug)]
-enum StdTaskState {
-    Running(Option<thread::JoinHandle<Result<Value, IonError>>>),
+struct SlotInner {
+    state: SlotState,
+    /// Subscribers that get one-shot-notified when the task finishes.
+    subs: Vec<Subscriber>,
+}
+
+#[derive(Debug)]
+enum SlotState {
+    Running,
+    /// Result is `Some` until exactly one `join()` consumes it, then
+    /// replaced with `None`. Subsequent `join()` calls return `None`
+    /// from the state (we preserve the result by cloning before taking).
     Finished(Result<Value, IonError>),
+}
+
+#[derive(Debug)]
+pub struct StdTaskHandle {
+    slot: Arc<TaskSlot>,
+    join_handle: Mutex<Option<thread::JoinHandle<()>>>,
+    cancel_flag: Arc<AtomicBool>,
 }
 
 impl TaskHandle for StdTaskHandle {
     fn join(&self) -> Result<Value, IonError> {
-        let mut state = self.inner.lock().unwrap();
-        match &mut *state {
-            StdTaskState::Running(handle) => {
-                let h = handle.take().unwrap();
-                let result = h
-                    .join()
-                    .unwrap_or_else(|_| Err(IonError::runtime("task panicked".to_string(), 0, 0)));
-                let ret = result.clone();
-                *state = StdTaskState::Finished(result);
-                ret
+        // Ensure the thread has exited before reading the result. We
+        // take the JoinHandle under its own lock (it's not held across
+        // the wait on the condvar to avoid contention with subscribers).
+        let handle_opt = self.join_handle.lock().unwrap().take();
+        if let Some(h) = handle_opt {
+            // Wait on the condvar first (so panicking threads still
+            // wake us via the panic path inside the wrapper).
+            let mut inner = self.slot.inner.lock().unwrap();
+            while matches!(inner.state, SlotState::Running) {
+                inner = self.slot.cv.wait(inner).unwrap();
             }
-            StdTaskState::Finished(result) => result.clone(),
+            drop(inner);
+            let _ = h.join();
+        } else {
+            // Another joiner already consumed the handle. Just wait
+            // on the condvar until the state is Finished.
+            let mut inner = self.slot.inner.lock().unwrap();
+            while matches!(inner.state, SlotState::Running) {
+                inner = self.slot.cv.wait(inner).unwrap();
+            }
+        }
+        let inner = self.slot.inner.lock().unwrap();
+        match &inner.state {
+            SlotState::Finished(r) => r.clone(),
+            SlotState::Running => Err(IonError::runtime(
+                "task completion signalled but state still Running".to_string(),
+                0,
+                0,
+            )),
         }
     }
 
     fn join_timeout(&self, timeout: Duration) -> Option<Result<Value, IonError>> {
         let deadline = std::time::Instant::now() + timeout;
-        loop {
-            {
-                let state = self.inner.lock().unwrap();
-                if matches!(&*state, StdTaskState::Finished(_)) {
-                    drop(state);
-                    return Some(self.join());
-                }
-                if let StdTaskState::Running(Some(h)) = &*state {
-                    if h.is_finished() {
-                        drop(state);
-                        return Some(self.join());
-                    }
-                }
-            }
-            if std::time::Instant::now() >= deadline {
+        let mut inner = self.slot.inner.lock().unwrap();
+        while matches!(inner.state, SlotState::Running) {
+            let now = std::time::Instant::now();
+            if now >= deadline {
                 return None;
             }
-            thread::sleep(Duration::from_millis(1));
+            let (g, res) = self.slot.cv.wait_timeout(inner, deadline - now).unwrap();
+            inner = g;
+            if res.timed_out() && matches!(inner.state, SlotState::Running) {
+                return None;
+            }
+        }
+        // Finished — reap the join handle opportunistically.
+        drop(inner);
+        if let Some(h) = self.join_handle.lock().unwrap().take() {
+            let _ = h.join();
+        }
+        let inner = self.slot.inner.lock().unwrap();
+        match &inner.state {
+            SlotState::Finished(r) => Some(r.clone()),
+            SlotState::Running => None,
         }
     }
 
     fn is_finished(&self) -> bool {
-        let state = self.inner.lock().unwrap();
-        match &*state {
-            StdTaskState::Finished(_) => true,
-            StdTaskState::Running(Some(h)) => h.is_finished(),
-            StdTaskState::Running(None) => true,
-        }
+        let inner = self.slot.inner.lock().unwrap();
+        matches!(inner.state, SlotState::Finished(_))
     }
 
     fn cancel(&self) {
@@ -83,32 +121,78 @@ impl TaskHandle for StdTaskHandle {
     fn is_cancelled(&self) -> bool {
         self.cancel_flag.load(Ordering::Relaxed)
     }
+
+    fn subscribe(&self, sub: Subscriber) {
+        let mut inner = self.slot.inner.lock().unwrap();
+        if matches!(inner.state, SlotState::Finished(_)) {
+            drop(inner);
+            notify_subscriber(sub);
+        } else {
+            inner.subs.push(sub);
+        }
+    }
 }
 
-/// Spawn a task on a new OS thread.
-pub fn spawn_task<F>(f: F) -> Arc<dyn TaskHandle>
+fn notify_subscriber(sub: Subscriber) {
+    let (mtx, cv) = &*sub.rendezvous;
+    let mut guard = mtx.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(sub.my_index);
+        cv.notify_one();
+    }
+}
+
+/// Spawn a task on a new OS thread, threading the cancel flag into
+/// the body closure so a child interpreter can poll it.
+pub fn spawn_task_with_cancel<F>(cancel_flag: Arc<AtomicBool>, f: F) -> Arc<dyn TaskHandle>
 where
-    F: FnOnce() -> Result<Value, IonError> + Send + 'static,
+    F: FnOnce(Arc<AtomicBool>) -> Result<Value, IonError> + Send + 'static,
 {
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    let handle = thread::spawn(f);
+    let slot = Arc::new(TaskSlot {
+        inner: Mutex::new(SlotInner {
+            state: SlotState::Running,
+            subs: Vec::new(),
+        }),
+        cv: Condvar::new(),
+    });
+
+    let worker_slot = slot.clone();
+    let worker_cancel = cancel_flag.clone();
+    let join_handle = thread::spawn(move || {
+        // Catch panics so they become an Ion runtime error rather than
+        // poisoning the mutex. UnwindSafe on a captured closure is awkward;
+        // use AssertUnwindSafe since the only shared state (slot) is
+        // only read after we set Finished below.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(worker_cancel)));
+        let result = match result {
+            Ok(r) => r,
+            Err(_) => Err(IonError::runtime("task panicked".to_string(), 0, 0)),
+        };
+        let subs_to_wake = {
+            let mut inner = worker_slot.inner.lock().unwrap();
+            inner.state = SlotState::Finished(result);
+            std::mem::take(&mut inner.subs)
+        };
+        worker_slot.cv.notify_all();
+        for sub in subs_to_wake {
+            notify_subscriber(sub);
+        }
+    });
+
     Arc::new(StdTaskHandle {
-        inner: Mutex::new(StdTaskState::Running(Some(handle))),
+        slot,
+        join_handle: Mutex::new(Some(join_handle)),
         cancel_flag,
     })
 }
 
-/// Get the cancel flag for cooperative cancellation checks.
-/// Called before spawn_task so the flag can be shared with the child interpreter.
-pub fn new_cancel_flag() -> Arc<AtomicBool> {
-    Arc::new(AtomicBool::new(false))
-}
-
 // ---- Channels ----
+
+use crossbeam_channel::{bounded, Receiver, Sender};
 
 #[derive(Debug)]
 pub struct StdChannelSender {
-    inner: Mutex<Option<std::sync::mpsc::SyncSender<Value>>>,
+    inner: Mutex<Option<Sender<Value>>>,
 }
 
 impl ChannelSender for StdChannelSender {
@@ -130,35 +214,31 @@ impl ChannelSender for StdChannelSender {
 
 #[derive(Debug)]
 pub struct StdChannelReceiver {
-    inner: Mutex<std::sync::mpsc::Receiver<Value>>,
+    // crossbeam Receiver is Send+Sync, no mutex needed.
+    inner: Receiver<Value>,
 }
 
 impl ChannelReceiver for StdChannelReceiver {
     fn recv(&self) -> Option<Value> {
-        let receiver = self.inner.lock().unwrap();
-        receiver.recv().ok()
+        self.inner.recv().ok()
     }
 
     fn try_recv(&self) -> Option<Value> {
-        let receiver = self.inner.lock().unwrap();
-        receiver.try_recv().ok()
+        self.inner.try_recv().ok()
     }
 
     fn recv_timeout(&self, timeout: Duration) -> Option<Value> {
-        let receiver = self.inner.lock().unwrap();
-        receiver.recv_timeout(timeout).ok()
+        self.inner.recv_timeout(timeout).ok()
     }
 }
 
 /// Create a bounded channel pair, returning (sender_value, receiver_value).
 pub fn create_channel(buffer: usize) -> (Value, Value) {
-    let (tx, rx) = std::sync::mpsc::sync_channel(buffer);
+    let (tx, rx) = bounded::<Value>(buffer.max(1));
     (
         Value::Channel(ChannelEnd::Sender(Arc::new(StdChannelSender {
             inner: Mutex::new(Some(tx)),
         }))),
-        Value::Channel(ChannelEnd::Receiver(Arc::new(StdChannelReceiver {
-            inner: Mutex::new(rx),
-        }))),
+        Value::Channel(ChannelEnd::Receiver(Arc::new(StdChannelReceiver { inner: rx }))),
     )
 }

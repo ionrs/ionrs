@@ -279,3 +279,31 @@ fn test_timeout_expires() {
         Value::Option(None)
     );
 }
+
+// ============================================================
+// Cancellation — Tier A wires cancel through to child interpreters
+// ============================================================
+
+#[test]
+fn test_cancel_stops_task_at_stmt_boundary() {
+    // timeout() should now actually cancel the runaway task so the
+    // surrounding program returns promptly. If cancellation were a
+    // no-op, the loop would run to completion (many seconds) before
+    // the test wall-clock returns.
+    let start = std::time::Instant::now();
+    let val = eval(
+        r#"
+        timeout(5, || {
+            let mut i = 0;
+            while i < 10_000_000_000 { i = i + 1; }
+            i
+        })
+    "#,
+    );
+    assert_eq!(val, Value::Option(None));
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(2),
+        "timeout didn't cancel the task: elapsed {:?}",
+        start.elapsed()
+    );
+}

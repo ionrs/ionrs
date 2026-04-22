@@ -846,7 +846,7 @@ All phases are complete.
 23. Spawn / await
 24. Select
 25. Channels
-26. Tokio backend option (`concurrency-tokio` feature)
+26. Cooperative cancellation (flag propagated to child interpreters; select cancels losers)
 
 ### Phase 5 — Performance ✓
 27. Bytecode compiler
