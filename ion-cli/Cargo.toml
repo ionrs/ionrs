@@ -1,6 +1,6 @@
 [package]
 name = "ionlang-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "CLI runner and REPL for the Ion scripting language"
 license = "MIT"
@@ -18,4 +18,4 @@ default = ["vm"]
 vm = ["ion-core/vm"]
 
 [dependencies]
-ion-core = { version = "0.1.0", path = "../ion-core", default-features = true }
+ion-core = { version = "0.2.0", path = "../ion-core", default-features = true }
