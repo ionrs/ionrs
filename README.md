@@ -92,7 +92,7 @@ use ion_core::value::Value;
 
 let mut engine = Engine::new();
 
-// Register host functions
+// Register host functions (plain fn pointer — no captures)
 engine.register_fn("fetch_score", |args: &[Value]| {
     let name = args[0].as_str().unwrap_or("unknown");
     Ok(Value::Int(match name {
@@ -102,8 +102,18 @@ engine.register_fn("fetch_score", |args: &[Value]| {
     }))
 });
 
+// Register closures that capture host state (DB pool, tokio Handle,
+// shared counter, etc.)
+let hits = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+let hits_c = hits.clone();
+engine.register_closure("record_hit", move |_args| {
+    hits_c.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(Value::Unit)
+});
+
 // Use from Ion scripts
 let result = engine.eval(r#"
+    record_hit();
     let score = fetch_score("alice");
     if score >= 90 { "A" } else { "B" }
 "#).unwrap();
@@ -195,8 +205,10 @@ editors/      Editor syntax highlighting
 | `vm` | Yes | Bytecode compiler + stack VM |
 | `optimize` | Yes | Peephole optimizer, constant folding, DCE, TCO |
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
-| `concurrency` | No | Structured concurrency (spawn/await) |
+| `concurrency` | No | Structured concurrency (`spawn` / `.await` / `select` / channels) |
 | `obfuscate` | No | String obfuscation via obfstr |
+| `msgpack` | No | `Value::to_msgpack()` via rmpv |
+| `rewrite` | No | Source rewriter — `rewrite::replace_global(src, name, new_value)` |
 
 ## Building
 
@@ -208,9 +220,28 @@ cargo run --bin ion-cli script.ion   # run a script
 cargo run --bin ion-cli              # start REPL
 ```
 
-## Language Reference
+## Documentation
 
-See [LANGUAGE.md](LANGUAGE.md) for the complete language specification.
+- [LANGUAGE.md](LANGUAGE.md) — complete language specification
+- [DESIGN.md](DESIGN.md) — design decisions and implementation phases
+- [docs/embedding.md](docs/embedding.md) — embedding API reference
+- [docs/concurrency.md](docs/concurrency.md) — concurrency model, cancellation,
+  and the tokio embedding pattern
+- [docs/stdlib.md](docs/stdlib.md) — standard library reference
+- [docs/performance.md](docs/performance.md) — performance strategy
+- [docs/vm-internals.md](docs/vm-internals.md) — bytecode VM internals
+- [docs/testing.md](docs/testing.md) — test suite layout
+- [docs/tooling.md](docs/tooling.md) — CLI, LSP, editor support
+
+## Embedding inside a tokio application
+
+Ion's interpreter is synchronous. Inside a tokio host, wrap
+`engine.eval()` in `tokio::task::spawn_blocking` and use
+`register_closure` to capture a `tokio::runtime::Handle` for
+async host calls. See
+[docs/concurrency.md](docs/concurrency.md#embedding-inside-a-tokio-host)
+and the runnable example at
+[`ion-core/examples/tokio_host.rs`](ion-core/examples/tokio_host.rs).
 
 ## License
 

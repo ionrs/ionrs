@@ -580,7 +580,7 @@ let winner = select {
 };
 ```
 
-### Channels (bounded)
+### Channels (bounded, MPMC)
 
 ```ion
 let (tx, rx) = channel(10);
@@ -588,17 +588,28 @@ let (tx, rx) = channel(10);
 async {
     spawn {
         for item in items {
-            tx.send(item).await;
+            tx.send(item);
         }
+        tx.close();
     };
 
-    for msg in rx {
-        process(msg);
+    let mut val = rx.recv();
+    while val != None {
+        match val {
+            Some(msg) => process(msg),
+            None => break,
+        };
+        val = rx.recv();
     }
 };
 ```
 
 `spawn` is only valid inside `async {}` blocks — no exceptions.
+
+Backed by `crossbeam-channel` for real MPMC semantics (no Mutex
+wrapping). See [`docs/concurrency.md`](docs/concurrency.md) for the
+runtime model, cancellation semantics, and the tokio embedding
+pattern.
 
 ---
 
@@ -651,13 +662,27 @@ engine.set_typed("config", &my_config)?;
 
 ### Registering Rust functions
 
+Two methods, differing only in whether the callback can capture state:
+
 ```rust
+// Plain fn pointer — stateless, zero overhead
 engine.register_fn("fetch_url", |args: &[Value]| -> Result<Value, String> {
     let url = args[0].as_str().ok_or("expected string")?;
     // ... fetch logic ...
     Ok(Value::Str(body))
 });
+
+// Closure — can capture host state (DB pool, tokio Handle, etc.)
+let pool = db_pool.clone();
+engine.register_closure("lookup", move |args| {
+    let id = args[0].as_int().ok_or("id must be int")?;
+    let row = pool.query_one(id).map_err(|e| e.to_string())?;
+    Ok(Value::Str(row.name))
+});
 ```
+
+Both produce values with `type_of(f) == "builtin_fn"` and satisfy
+`let f: fn = ...;` annotations identically.
 
 ### Serde integration — automatic bridging
 
@@ -880,7 +905,9 @@ ionlang/
 │       ├── module.rs         # module system
 │       ├── stdlib.rs         # standard library (math, json, io, string)
 │       ├── host_types.rs     # host struct/enum injection
-│       ├── async_rt.rs       # concurrency traits
+│       ├── async_rt.rs       # concurrency traits + Nursery + wait_any
+│       ├── async_rt_std.rs   # std::thread + crossbeam-channel backend
+│       ├── rewrite.rs        # source rewriter (feature: rewrite)
 │       └── lib.rs
 ├── ion-derive/
 │   └── src/lib.rs            # #[derive(IonType)] proc macro

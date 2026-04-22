@@ -17,12 +17,16 @@
 //!
 //! # Features
 //!
-//! - **`vm`** — Bytecode compiler and stack-based VM
-//! - **`optimize`** — Peephole optimizer, constant folding, DCE, TCO
-//! - **`derive`** — `#[derive(IonType)]` for host type injection
-//! - **`concurrency`** — Structured concurrency primitives
+//! - **`vm`** (default) — Bytecode compiler and stack-based VM
+//! - **`optimize`** (default) — Peephole optimizer, constant folding,
+//!   dead-code elimination, tail-call optimization
+//! - **`derive`** (default) — `#[derive(IonType)]` for host type injection
+//! - **`concurrency`** — Structured concurrency: `async`/`spawn`/`.await`/
+//!   `select`/`channel`, cooperative cancellation, tokio-friendly
+//!   embedding via [`engine::Engine::register_closure`]
+//! - **`msgpack`** — `Value::to_msgpack()` / `from_msgpack()` via `rmpv`
 //! - **`obfuscate`** — String obfuscation via `obfstr`
-//! - **`rewrite`** — Source rewriter for replacing global values
+//! - **`rewrite`** — Source rewriter at [`rewrite::replace_global`]
 
 /// Macro for string obfuscation. Returns a `String`.
 /// When the `obfuscate` feature is enabled, strings are encrypted at compile
