@@ -10,6 +10,7 @@
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#builtins" },
+    { "include": "#methods" },
     { "include": "#constants" },
     { "include": "#operators" },
     { "include": "#function-def" },
@@ -37,8 +38,8 @@
           "begin": "f\"\"\"",
           "end": "\"\"\"",
           "patterns": [
-            { "include": "#string-interpolation" },
-            { "include": "#string-escapes" }
+            { "include": "#string-escapes" },
+            { "include": "#string-interpolation" }
           ]
         },
         {
@@ -54,8 +55,8 @@
           "begin": "f\"",
           "end": "\"",
           "patterns": [
-            { "include": "#string-interpolation" },
-            { "include": "#string-escapes" }
+            { "include": "#string-escapes" },
+            { "include": "#string-interpolation" }
           ]
         },
         {
@@ -73,7 +74,7 @@
       "patterns": [
         {
           "name": "meta.interpolation.ion",
-          "begin": "\\{",
+          "begin": "(?<!\\\\)\\{",
           "end": "\\}",
           "beginCaptures": {
             "0": { "name": "punctuation.definition.interpolation.begin.ion" }
@@ -92,15 +93,24 @@
       "patterns": [
         {
           "name": "constant.character.escape.ion",
+          "match": "\\\\[nrt\\\\\"{}]"
+        },
+        {
+          "name": "constant.character.escape.unicode.ion",
+          "match": "\\\\u\\{[0-9a-fA-F]+\\}"
+        }
+      ]
+    },
+
+    "byte-string-escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.ion",
           "match": "\\\\[nrt\\\\\"0]"
         },
         {
           "name": "constant.character.escape.hex.ion",
           "match": "\\\\x[0-9a-fA-F]{2}"
-        },
-        {
-          "name": "constant.character.escape.unicode.ion",
-          "match": "\\\\u\\{[0-9a-fA-F]+\\}"
         }
       ]
     },
@@ -112,7 +122,7 @@
           "begin": "b\"",
           "end": "\"",
           "patterns": [
-            { "include": "#string-escapes" }
+            { "include": "#byte-string-escapes" }
           ]
         }
       ]
@@ -122,11 +132,11 @@
       "patterns": [
         {
           "name": "constant.numeric.float.ion",
-          "match": "\\b[0-9]+\\.[0-9]+\\b"
+          "match": "\\b[0-9][0-9_]*\\.(?!\\.)[0-9_]*(?![A-Za-z0-9_])"
         },
         {
           "name": "constant.numeric.integer.ion",
-          "match": "\\b[0-9]+\\b"
+          "match": "\\b[0-9][0-9_]*\\b"
         }
       ]
     },
@@ -135,7 +145,7 @@
       "patterns": [
         {
           "name": "keyword.control.ion",
-          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|async|spawn|select|try|catch|use)\\b"
+          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|as|async|spawn|await|select|try|catch|use)\\b"
         },
         {
           "name": "keyword.declaration.ion",
@@ -147,8 +157,8 @@
     "types": {
       "patterns": [
         {
-          "name": "support.type.ion",
-          "match": "\\b(Some|None|Ok|Err)\\b"
+          "name": "support.type.constructor.ion",
+          "match": "\\b(Some|Ok|Err)\\b"
         },
         {
           "match": ":\\s*(int|float|bool|string|bytes|list|dict|tuple|set|fn|any|Option|Result)\\b",
@@ -166,8 +176,24 @@
     "builtins": {
       "patterns": [
         {
+          "name": "support.module.ion",
+          "match": "\\b(math|json|io)\\b(?=\\s*::)"
+        },
+        {
           "name": "support.function.ion",
           "match": "\\b(len|range|enumerate|type_of|str|int|float|bytes|bytes_from_hex|assert|assert_eq|channel|set|cell|sleep|timeout)\\b"
+        }
+      ]
+    },
+
+    "methods": {
+      "patterns": [
+        {
+          "match": "(\\.)(await|await_timeout|len|push|pop|map|filter|fold|flat_map|any|all|first|last|reverse|sort|sort_by|flatten|zip|contains|join|enumerate|is_empty|index|count|slice|dedup|unique|min|max|sum|window|chunk|reduce|add|remove|union|intersection|difference|to_list|get|set|update|starts_with|ends_with|trim|trim_start|trim_end|to_upper|to_lower|split|replace|chars|char_len|repeat|find|to_int|to_float|strip_prefix|strip_suffix|pad_start|pad_end|to_str|to_hex|keys|values|entries|contains_key|insert|merge|keys_of|is_some|is_none|unwrap|unwrap_or|expect|and_then|or_else|unwrap_or_else|is_ok|is_err|map_err|send|recv|try_recv|recv_timeout)\\b",
+          "captures": {
+            "1": { "name": "punctuation.accessor.ion" },
+            "2": { "name": "support.function.method.ion" }
+          }
         }
       ]
     },
@@ -177,6 +203,14 @@
         {
           "name": "constant.language.boolean.ion",
           "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.none.ion",
+          "match": "\\bNone\\b"
+        },
+        {
+          "name": "constant.language.wildcard.ion",
+          "match": "\\b_\\b"
         },
         {
           "name": "constant.language.unit.ion",
@@ -189,7 +223,7 @@
       "patterns": [
         {
           "name": "keyword.operator.range.ion",
-          "match": "\\.\\.\\.|\\.\\.|\\.\\.="
+          "match": "\\.\\.\\.|\\.\\.=|\\.\\."
         },
         {
           "name": "keyword.operator.arrow.ion",

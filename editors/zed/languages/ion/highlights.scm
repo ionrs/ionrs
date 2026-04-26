@@ -48,6 +48,22 @@
 (method_call_expression
   method: (identifier) @function.method)
 
+(field_expression
+  field: (identifier) @property)
+
+((field_expression
+  field: (identifier) @keyword)
+  (#eq? @keyword "await"))
+
+(named_argument
+  name: (identifier) @variable.parameter)
+
+((identifier) @function.builtin
+  (#match? @function.builtin "^(len|range|enumerate|type_of|str|int|float|bytes|bytes_from_hex|assert|assert_eq|channel|set|cell|sleep|timeout)$"))
+
+((identifier) @namespace
+  (#match? @namespace "^(math|json|io)$"))
+
 ; ── Module paths ─────────────────────────────────────────────
 (module_path_expression
   module: (identifier) @namespace
@@ -56,11 +72,17 @@
 (module_path_import
   (identifier) @namespace)
 
+(import_list
+  (identifier) @variable)
+
 ; ── Parameters ───────────────────────────────────────────────
 (parameter
   name: (identifier) @variable.parameter)
 
 (closure_parameters
+  (identifier) @variable.parameter)
+
+(rest_pattern
   (identifier) @variable.parameter)
 
 ; ── Types ────────────────────────────────────────────────────
@@ -89,6 +111,16 @@
 (boolean_literal) @boolean
 (none_literal) @constant.builtin
 (unit_literal) @constant.builtin
+
+; ── Collection Entries ───────────────────────────────────────
+(dict_entry
+  key: (primary_expression (identifier) @property))
+
+(spread_expression
+  "..." @operator)
+
+(rest_pattern
+  "..." @operator)
 
 ; ── Operators ────────────────────────────────────────────────
 [
@@ -137,7 +169,7 @@
 ] @punctuation.delimiter
 
 "::" @punctuation.special
-"#{"@punctuation.special
+"#{" @punctuation.special
 
 ; ── Closure pipes ────────────────────────────────────────────
 (closure_parameters

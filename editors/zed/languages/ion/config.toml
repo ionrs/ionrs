@@ -7,6 +7,7 @@ hard_tabs = false
 
 [brackets]
 pairs = [
+  { start = "#{", end = "}", close = true, newline = true, not_in = ["string", "comment"] },
   { start = "{", end = "}", close = true, newline = true },
   { start = "[", end = "]", close = true, newline = true },
   { start = "(", end = ")", close = true, newline = true },

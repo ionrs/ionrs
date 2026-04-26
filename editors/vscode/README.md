@@ -6,10 +6,11 @@ Syntax highlighting and language server support for [Ion](https://github.com/chu
 
 ### Syntax Highlighting
 - Keywords, control flow, operators
-- Strings, f-strings with interpolation, raw strings
-- Numbers (int, float, hex, binary, octal)
+- Strings, triple-quoted strings, f-strings with interpolation, byte strings
+- Numbers (int and float, including `_` separators)
 - Comments (`//`)
 - Type annotations (`let x: int = 5`)
+- Collections, comprehensions, pattern matching, modules, and async/concurrency syntax
 
 ### Language Server (optional)
 - **Diagnostics** — parse errors shown inline as you type
