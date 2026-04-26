@@ -68,14 +68,18 @@ impl IonError {
         match kind {
             ErrorKind::NameError => {
                 if msg.contains(&*ion_str!("undefined variable")) {
-                    Some(ion_static_str!("check spelling, or ensure the variable is declared with `let` before use"))
+                    Some(ion_static_str!(
+                        "check spelling, or ensure the variable is declared with `let` before use"
+                    ))
                 } else {
                     None
                 }
             }
             ErrorKind::TypeError => {
                 if msg.contains(&*ion_str!("cannot assign to immutable")) {
-                    Some(ion_static_str!("declare with `let mut` to allow reassignment"))
+                    Some(ion_static_str!(
+                        "declare with `let mut` to allow reassignment"
+                    ))
                 } else if msg.contains(&*ion_str!("cannot add"))
                     || msg.contains(&*ion_str!("cannot subtract"))
                 {
@@ -97,11 +101,17 @@ impl IonError {
             }
             ErrorKind::RuntimeError => {
                 if msg.contains(&*ion_str!("division by zero")) {
-                    Some(ion_static_str!("check the divisor before dividing, or use a try/catch block"))
+                    Some(ion_static_str!(
+                        "check the divisor before dividing, or use a try/catch block"
+                    ))
                 } else if msg.contains(&*ion_str!("stack overflow")) {
-                    Some(ion_static_str!("check for infinite recursion, or increase the stack depth limit"))
+                    Some(ion_static_str!(
+                        "check for infinite recursion, or increase the stack depth limit"
+                    ))
                 } else if msg.contains(&*ion_str!("index out of bounds")) {
-                    Some(ion_static_str!("use `.len()` to check the collection size, or `.get()` for safe access"))
+                    Some(ion_static_str!(
+                        "use `.len()` to check the collection size, or `.get()` for safe access"
+                    ))
                 } else {
                     None
                 }

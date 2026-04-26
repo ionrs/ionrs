@@ -97,13 +97,12 @@ pub type FnChunkCache = HashMap<u64, Chunk>;
 
 /// A built-in function: Rust-side callback.
 pub type BuiltinFn = fn(&[Value]) -> Result<Value, String>;
+pub type BuiltinClosure = dyn Fn(&[Value]) -> Result<Value, String> + Send + Sync;
 
 /// Wrapper around a closure-backed builtin so `Value` can still derive
 /// `Debug`. `dyn Fn` doesn't implement `Debug`; we print a placeholder.
 #[derive(Clone)]
-pub struct BuiltinClosureFn(
-    pub Arc<dyn Fn(&[Value]) -> Result<Value, String> + Send + Sync>,
-);
+pub struct BuiltinClosureFn(pub Arc<BuiltinClosure>);
 
 impl fmt::Debug for BuiltinClosureFn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -578,9 +577,7 @@ impl Value {
                     .map(|v| v.to_msgpack_value())
                     .collect(),
             ),
-            Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => {
-                rmpv::Value::Nil
-            }
+            Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => rmpv::Value::Nil,
         }
     }
 

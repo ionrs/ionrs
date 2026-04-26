@@ -513,7 +513,10 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
         if let Some(idx) = before_cursor.rfind("::") {
             let prefix = before_cursor[..idx].trim();
             // Extract the last word as the module name
-            let mod_name = prefix.rsplit(|c: char| c.is_whitespace() || c == '(' || c == ',' || c == '{').next().unwrap_or(prefix);
+            let mod_name = prefix
+                .rsplit(|c: char| c.is_whitespace() || c == '(' || c == ',' || c == '{')
+                .next()
+                .unwrap_or(prefix);
             if !mod_name.is_empty() {
                 Some(mod_name.to_string())
             } else {
@@ -536,8 +539,16 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
     if let Some(ref mod_name) = module_prefix {
         let members: &[(&str, &str, CompletionItemKind)] = match mod_name.as_str() {
             "math" => &[
-                ("PI", "Pi constant (3.14159...)", CompletionItemKind::CONSTANT),
-                ("E", "Euler's number (2.71828...)", CompletionItemKind::CONSTANT),
+                (
+                    "PI",
+                    "Pi constant (3.14159...)",
+                    CompletionItemKind::CONSTANT,
+                ),
+                (
+                    "E",
+                    "Euler's number (2.71828...)",
+                    CompletionItemKind::CONSTANT,
+                ),
                 ("TAU", "Tau (2π)", CompletionItemKind::CONSTANT),
                 ("INF", "Positive infinity", CompletionItemKind::CONSTANT),
                 ("NAN", "Not-a-number", CompletionItemKind::CONSTANT),
@@ -549,11 +560,19 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
                 ("round", "Round to nearest", CompletionItemKind::FUNCTION),
                 ("sqrt", "Square root", CompletionItemKind::FUNCTION),
                 ("pow", "Exponentiation", CompletionItemKind::FUNCTION),
-                ("clamp", "Clamp value to range", CompletionItemKind::FUNCTION),
+                (
+                    "clamp",
+                    "Clamp value to range",
+                    CompletionItemKind::FUNCTION,
+                ),
                 ("sin", "Sine", CompletionItemKind::FUNCTION),
                 ("cos", "Cosine", CompletionItemKind::FUNCTION),
                 ("tan", "Tangent", CompletionItemKind::FUNCTION),
-                ("atan2", "Two-argument arctangent", CompletionItemKind::FUNCTION),
+                (
+                    "atan2",
+                    "Two-argument arctangent",
+                    CompletionItemKind::FUNCTION,
+                ),
                 ("log", "Natural logarithm", CompletionItemKind::FUNCTION),
                 ("log2", "Base-2 logarithm", CompletionItemKind::FUNCTION),
                 ("log10", "Base-10 logarithm", CompletionItemKind::FUNCTION),
@@ -561,18 +580,44 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
                 ("is_inf", "Check if infinite", CompletionItemKind::FUNCTION),
             ],
             "json" => &[
-                ("encode", "Value to JSON string", CompletionItemKind::FUNCTION),
-                ("decode", "JSON string to value", CompletionItemKind::FUNCTION),
-                ("pretty", "Pretty-printed JSON string", CompletionItemKind::FUNCTION),
+                (
+                    "encode",
+                    "Value to JSON string",
+                    CompletionItemKind::FUNCTION,
+                ),
+                (
+                    "decode",
+                    "JSON string to value",
+                    CompletionItemKind::FUNCTION,
+                ),
+                (
+                    "pretty",
+                    "Pretty-printed JSON string",
+                    CompletionItemKind::FUNCTION,
+                ),
             ],
             "io" => &[
-                ("print", "Print without newline", CompletionItemKind::FUNCTION),
-                ("println", "Print with newline", CompletionItemKind::FUNCTION),
-                ("eprintln", "Print to stderr with newline", CompletionItemKind::FUNCTION),
+                (
+                    "print",
+                    "Print without newline",
+                    CompletionItemKind::FUNCTION,
+                ),
+                (
+                    "println",
+                    "Print with newline",
+                    CompletionItemKind::FUNCTION,
+                ),
+                (
+                    "eprintln",
+                    "Print to stderr with newline",
+                    CompletionItemKind::FUNCTION,
+                ),
             ],
-            "string" => &[
-                ("join", "Join list elements into string with optional separator", CompletionItemKind::FUNCTION),
-            ],
+            "string" => &[(
+                "join",
+                "Join list elements into string with optional separator",
+                CompletionItemKind::FUNCTION,
+            )],
             _ => &[],
         };
         for (label, doc, kind) in members {

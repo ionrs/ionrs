@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::error::IonError;
 use crate::host_types::{HostEnumDef, HostStructDef, IonType, IonTypeDef};
@@ -6,17 +7,37 @@ use crate::interpreter::{Interpreter, Limits};
 use crate::lexer::Lexer;
 use crate::module::Module;
 use crate::parser::Parser;
+use crate::stdlib::OutputHandler;
 use crate::value::Value;
 
 /// The public embedding API for the Ion interpreter.
 pub struct Engine {
     interpreter: Interpreter,
+    output: Arc<dyn OutputHandler>,
 }
 
 impl Engine {
     pub fn new() -> Self {
+        let output = crate::stdlib::missing_output_handler();
         Self {
-            interpreter: Interpreter::new(),
+            interpreter: Interpreter::with_output(Arc::clone(&output)),
+            output,
+        }
+    }
+
+    /// Create an engine with a host-provided output handler for `io::print*`.
+    pub fn with_output<H>(output: H) -> Self
+    where
+        H: OutputHandler + 'static,
+    {
+        Self::with_output_handler(Arc::new(output))
+    }
+
+    /// Create an engine with a shared host-provided output handler.
+    pub fn with_output_handler(output: Arc<dyn OutputHandler>) -> Self {
+        Self {
+            interpreter: Interpreter::with_output(Arc::clone(&output)),
+            output,
         }
     }
 
@@ -39,7 +60,6 @@ impl Engine {
         self.interpreter.env.get(name).cloned()
     }
 
-
     /// Get all top-level bindings.
     pub fn get_all(&self) -> HashMap<String, Value> {
         self.interpreter.env.top_level()
@@ -48,6 +68,24 @@ impl Engine {
     /// Set execution limits.
     pub fn set_limits(&mut self, limits: Limits) {
         self.interpreter.limits = limits;
+    }
+
+    /// Set the host output handler used by `io::print`, `io::println`, and
+    /// `io::eprintln`.
+    pub fn set_output<H>(&mut self, output: H)
+    where
+        H: OutputHandler + 'static,
+    {
+        self.set_output_handler(Arc::new(output));
+    }
+
+    /// Set a shared host output handler used by `io::print*`.
+    pub fn set_output_handler(&mut self, output: Arc<dyn OutputHandler>) {
+        self.output = Arc::clone(&output);
+        let io = crate::stdlib::io_module_with_output(output);
+        self.interpreter
+            .env
+            .define(io.name.clone(), io.to_value(), false);
     }
 
     /// Register a built-in function.
@@ -70,10 +108,7 @@ impl Engine {
     {
         self.interpreter.env.define(
             name.to_string(),
-            Value::BuiltinClosure(
-                name.to_string(),
-                crate::value::BuiltinClosureFn::new(func),
-            ),
+            Value::BuiltinClosure(name.to_string(), crate::value::BuiltinClosureFn::new(func)),
             false,
         );
     }
@@ -112,11 +147,14 @@ impl Engine {
 
     /// Extract a typed Rust value from the script scope.
     pub fn get_typed<T: IonType>(&self, name: &str) -> Result<T, String> {
-        let val = self
-            .interpreter
-            .env
-            .get(name)
-            .ok_or_else(|| format!("{}{}{}", ion_str!("variable '"), name, ion_str!("' not found")))?;
+        let val = self.interpreter.env.get(name).ok_or_else(|| {
+            format!(
+                "{}{}{}",
+                ion_str!("variable '"),
+                name,
+                ion_str!("' not found")
+            )
+        })?;
         T::from_ion(val)
     }
 
@@ -133,13 +171,14 @@ impl Engine {
         let compiler = crate::compiler::Compiler::new();
         match compiler.compile_program(&program) {
             Ok((chunk, fn_chunks)) => {
-                let mut vm = crate::vm::Vm::with_env(std::mem::take(&mut self.interpreter.env));
+                let mut vm = crate::vm::Vm::with_env_and_output(
+                    std::mem::take(&mut self.interpreter.env),
+                    Arc::clone(&self.output),
+                );
                 // Pre-populate the VM's function cache with compiled chunks
                 vm.preload_fn_chunks(fn_chunks);
                 // Pass host type registry to VM
                 vm.set_types(self.interpreter.types.clone());
-                // Register builtins in VM env
-                crate::interpreter::register_builtins(vm.env_mut());
                 let result = vm.execute(&chunk);
                 // Restore env back to interpreter
                 self.interpreter.env = std::mem::take(vm.env_mut());

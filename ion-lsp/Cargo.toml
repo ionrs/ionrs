@@ -1,6 +1,6 @@
 [package]
 name = "ion-lsp"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2021"
 description = "Language server for the Ion scripting language"
 license = "MIT"
@@ -14,7 +14,7 @@ name = "ion-lsp"
 path = "src/main.rs"
 
 [dependencies]
-ion-core = { version = "0.2.0", path = "../ion-core", default-features = false, features = [] }
+ion-core = { version = "0.2.2", path = "../ion-core", default-features = false, features = [] }
 lsp-server = "0.7"
 lsp-types = "0.95"
 serde_json = "1"

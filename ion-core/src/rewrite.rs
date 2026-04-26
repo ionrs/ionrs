@@ -70,9 +70,7 @@ pub fn replace_global(
     name: &str,
     new_value_src: &str,
 ) -> Result<String, RewriteError> {
-    let tokens = Lexer::new(source)
-        .tokenize()
-        .map_err(RewriteError::Lex)?;
+    let tokens = Lexer::new(source).tokenize().map_err(RewriteError::Lex)?;
     let line_starts = line_start_offsets(source);
 
     let (value_start, value_end) = find_global_value_span(&tokens, name)?;

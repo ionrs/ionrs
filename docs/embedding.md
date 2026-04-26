@@ -49,6 +49,38 @@ engine.register_enum(def);                 // manual HostEnumDef
 engine.set_limits(Limits { max_depth: 100, max_iterations: 10000 });
 ```
 
+## Handling `io::print*` output
+
+Ion does not write script output directly to the host process. To use
+`io::print`, `io::println`, or `io::eprintln`, install an output handler:
+
+```rust
+use ion_core::engine::Engine;
+use ion_core::stdlib::{OutputHandler, OutputStream};
+
+struct MyOutput;
+
+impl OutputHandler for MyOutput {
+    fn write(&self, stream: OutputStream, text: &str) -> Result<(), String> {
+        match stream {
+            OutputStream::Stdout => {
+                // send `text` to your app's stdout, log buffer, UI, etc.
+            }
+            OutputStream::Stderr => {
+                // send `text` to your app's stderr/error channel.
+            }
+        }
+        Ok(())
+    }
+}
+
+let mut engine = Engine::with_output(MyOutput);
+engine.eval(r#"io::println("hello")"#)?;
+```
+
+The CLI uses `StdOutput`; embedded hosts can capture, redirect, reject,
+or otherwise handle output however they need.
+
 ## Registering Rust callbacks
 
 Two registration methods, picked by whether the callback needs to

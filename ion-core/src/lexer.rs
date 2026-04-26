@@ -798,8 +798,8 @@ mod tests {
 
     #[test]
     fn test_float() {
-        let tokens = lex("3.14");
-        assert_eq!(tokens[0], Token::Float(3.14));
+        let tokens = lex("3.5");
+        assert_eq!(tokens[0], Token::Float(3.5));
     }
 
     #[test]

@@ -1923,7 +1923,8 @@ impl Compiler {
             }
             _ => {
                 return Err(IonError::runtime(
-                    ion_str!("complex pattern binding not yet supported in bytecode VM").to_string(),
+                    ion_str!("complex pattern binding not yet supported in bytecode VM")
+                        .to_string(),
                     line,
                     0,
                 ));

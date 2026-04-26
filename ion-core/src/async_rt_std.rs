@@ -239,6 +239,8 @@ pub fn create_channel(buffer: usize) -> (Value, Value) {
         Value::Channel(ChannelEnd::Sender(Arc::new(StdChannelSender {
             inner: Mutex::new(Some(tx)),
         }))),
-        Value::Channel(ChannelEnd::Receiver(Arc::new(StdChannelReceiver { inner: rx }))),
+        Value::Channel(ChannelEnd::Receiver(Arc::new(StdChannelReceiver {
+            inner: rx,
+        }))),
     )
 }

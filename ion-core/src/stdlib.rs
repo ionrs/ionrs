@@ -5,8 +5,61 @@
 //! The same functions remain available as top-level builtins for
 //! backwards compatibility.
 
+use std::sync::Arc;
+
 use crate::module::Module;
 use crate::value::Value;
+
+/// Output stream requested by Ion's `io` stdlib module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputStream {
+    Stdout,
+    Stderr,
+}
+
+/// Host-side output handler for Ion's `io::print*` functions.
+///
+/// Embedders install an implementation with `Engine::set_output` or
+/// `Engine::with_output`. The core runtime never writes directly to process
+/// stdout/stderr through `io::print*`.
+pub trait OutputHandler: Send + Sync {
+    fn write(&self, stream: OutputStream, text: &str) -> Result<(), String>;
+}
+
+/// Output handler that writes to the process stdout/stderr streams.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StdOutput;
+
+impl OutputHandler for StdOutput {
+    fn write(&self, stream: OutputStream, text: &str) -> Result<(), String> {
+        use std::io::Write;
+
+        match stream {
+            OutputStream::Stdout => {
+                let mut stdout = std::io::stdout().lock();
+                stdout.write_all(text.as_bytes()).map_err(|e| e.to_string())
+            }
+            OutputStream::Stderr => {
+                let mut stderr = std::io::stderr().lock();
+                stderr.write_all(text.as_bytes()).map_err(|e| e.to_string())
+            }
+        }
+    }
+}
+
+struct MissingOutputHandler;
+
+impl OutputHandler for MissingOutputHandler {
+    fn write(&self, _stream: OutputStream, _text: &str) -> Result<(), String> {
+        Err(ion_str!(
+            "io output handler is not configured; call Engine::set_output"
+        ))
+    }
+}
+
+pub(crate) fn missing_output_handler() -> Arc<dyn OutputHandler> {
+    Arc::new(MissingOutputHandler)
+}
 
 /// Build the `math` stdlib module.
 ///
@@ -142,7 +195,9 @@ pub fn math_module() -> Module {
 
     m.register_fn("clamp", |args: &[Value]| {
         if args.len() != 3 {
-            return Err(ion_str!("math::clamp requires 3 arguments: value, min, max"));
+            return Err(ion_str!(
+                "math::clamp requires 3 arguments: value, min, max"
+            ));
         }
         match (&args[0], &args[1], &args[2]) {
             (Value::Int(v), Value::Int(lo), Value::Int(hi)) => Ok(Value::Int(*v.max(lo).min(hi))),
@@ -304,27 +359,42 @@ pub fn json_module() -> Module {
     m
 }
 
+fn format_output_args(args: &[Value]) -> String {
+    args.iter()
+        .map(|arg| arg.to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Build the `io` stdlib module.
 ///
-/// Functions: print, println, input (placeholder)
+/// Functions: print, println, eprintln
 pub fn io_module() -> Module {
+    io_module_with_output(missing_output_handler())
+}
+
+/// Build the `io` stdlib module with a host-provided output handler.
+pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
     let mut m = Module::new("io");
 
-    m.register_fn("print", |args: &[Value]| {
-        let parts: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-        print!("{}", parts.join(" "));
+    let stdout = Arc::clone(&output);
+    m.register_closure("print", move |args: &[Value]| {
+        stdout.write(OutputStream::Stdout, &format_output_args(args))?;
         Ok(Value::Unit)
     });
 
-    m.register_fn("println", |args: &[Value]| {
-        let parts: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-        println!("{}", parts.join(" "));
+    let stdout = Arc::clone(&output);
+    m.register_closure("println", move |args: &[Value]| {
+        let mut text = format_output_args(args);
+        text.push('\n');
+        stdout.write(OutputStream::Stdout, &text)?;
         Ok(Value::Unit)
     });
 
-    m.register_fn("eprintln", |args: &[Value]| {
-        let parts: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-        eprintln!("{}", parts.join(" "));
+    m.register_closure("eprintln", move |args: &[Value]| {
+        let mut text = format_output_args(args);
+        text.push('\n');
+        output.write(OutputStream::Stderr, &text)?;
         Ok(Value::Unit)
     });
 
@@ -339,7 +409,9 @@ pub fn string_module() -> Module {
 
     m.register_fn("join", |args: &[Value]| {
         if args.is_empty() || args.len() > 2 {
-            return Err(ion_str!("string::join requires 1-2 arguments: list, [separator]"));
+            return Err(ion_str!(
+                "string::join requires 1-2 arguments: list, [separator]"
+            ));
         }
         let items = match &args[0] {
             Value::List(items) => items,
@@ -359,13 +431,18 @@ pub fn string_module() -> Module {
 
 /// Register all stdlib modules in the given environment.
 pub fn register_stdlib(env: &mut crate::env::Env) {
+    register_stdlib_with_output(env, missing_output_handler());
+}
+
+/// Register all stdlib modules with a host-provided output handler.
+pub fn register_stdlib_with_output(env: &mut crate::env::Env, output: Arc<dyn OutputHandler>) {
     let math = math_module();
     env.define(math.name.clone(), math.to_value(), false);
 
     let json = json_module();
     env.define(json.name.clone(), json.to_value(), false);
 
-    let io = io_module();
+    let io = io_module_with_output(output);
     env.define(io.name.clone(), io.to_value(), false);
 
     let string_mod = string_module();

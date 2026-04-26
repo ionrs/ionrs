@@ -96,6 +96,16 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
 
 fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> TokenStream {
     let variants = &data.variants;
+    for variant in variants {
+        if matches!(variant.fields, Fields::Named(_)) {
+            return syn::Error::new_spanned(
+                &variant.ident,
+                "IonType does not support enum variants with named fields",
+            )
+            .to_compile_error()
+            .into();
+        }
+    }
 
     // ion_type_def: variant definitions
     let variant_defs = variants.iter().map(|v| {
@@ -103,7 +113,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
         let arity = match &v.fields {
             Fields::Unit => 0usize,
             Fields::Unnamed(f) => f.unnamed.len(),
-            Fields::Named(f) => f.named.len(),
+            Fields::Named(_) => unreachable!("named enum fields rejected above"),
         };
         quote! {
             ion_core::host_types::HostVariantDef {
@@ -142,11 +152,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                     },
                 }
             }
-            Fields::Named(_) => {
-                quote! {
-                    _ => unimplemented!("named enum fields not yet supported"),
-                }
-            }
+            Fields::Named(_) => unreachable!("named enum fields rejected above"),
         }
     });
 
@@ -183,11 +189,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                     }
                 }
             }
-            Fields::Named(_) => {
-                quote! {
-                    _ => Err(format!("named enum fields not yet supported"))
-                }
-            }
+            Fields::Named(_) => unreachable!("named enum fields rejected above"),
         }
     });
 

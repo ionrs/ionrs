@@ -1,12 +1,17 @@
 use indexmap::IndexMap;
 
-use crate::value::{BuiltinFn, Value};
+use crate::value::{BuiltinClosureFn, BuiltinFn, Value};
+
+enum ModuleFn {
+    Function(BuiltinFn),
+    Closure(BuiltinClosureFn),
+}
 
 /// A named collection of functions and values that can be registered
 /// with an Engine and accessed via `module::name` syntax in Ion scripts.
 pub struct Module {
     pub name: String,
-    functions: IndexMap<String, (String, BuiltinFn)>,
+    functions: IndexMap<String, (String, ModuleFn)>,
     values: IndexMap<String, Value>,
     submodules: IndexMap<String, Module>,
 }
@@ -25,7 +30,19 @@ impl Module {
     pub fn register_fn(&mut self, name: &str, func: BuiltinFn) {
         let qualified = format!("{}::{}", self.name, name);
         self.functions
-            .insert(name.to_string(), (qualified, func));
+            .insert(name.to_string(), (qualified, ModuleFn::Function(func)));
+    }
+
+    /// Register a closure-backed builtin function in this module.
+    pub fn register_closure<F>(&mut self, name: &str, func: F)
+    where
+        F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
+    {
+        let qualified = format!("{}::{}", self.name, name);
+        self.functions.insert(
+            name.to_string(),
+            (qualified, ModuleFn::Closure(BuiltinClosureFn::new(func))),
+        );
     }
 
     /// Register a constant value in this module.
@@ -44,7 +61,11 @@ impl Module {
         let mut map = IndexMap::new();
 
         for (name, (qualified, func)) in &self.functions {
-            map.insert(name.clone(), Value::BuiltinFn(qualified.clone(), *func));
+            let value = match func {
+                ModuleFn::Function(func) => Value::BuiltinFn(qualified.clone(), *func),
+                ModuleFn::Closure(func) => Value::BuiltinClosure(qualified.clone(), func.clone()),
+            };
+            map.insert(name.clone(), value);
         }
 
         for (name, value) in &self.values {

@@ -1,9 +1,30 @@
+#![allow(clippy::approx_constant)]
+
 use ion_core::engine::Engine;
 use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef, IonType};
 use ion_core::interpreter::Limits;
 use ion_core::module::Module;
+use ion_core::stdlib::{OutputHandler, OutputStream};
 use ion_core::value::Value;
 use ion_core::IonType;
+use std::sync::{Arc, Mutex};
+
+#[derive(Default)]
+struct CaptureOutput {
+    stdout: Mutex<String>,
+    stderr: Mutex<String>,
+}
+
+impl OutputHandler for CaptureOutput {
+    fn write(&self, stream: OutputStream, text: &str) -> Result<(), String> {
+        let buffer = match stream {
+            OutputStream::Stdout => &self.stdout,
+            OutputStream::Stderr => &self.stderr,
+        };
+        buffer.lock().unwrap().push_str(text);
+        Ok(())
+    }
+}
 
 fn eval(src: &str) -> Value {
     let mut engine = Engine::new();
@@ -1011,6 +1032,16 @@ fn test_fstring_expr() {
 }
 
 #[test]
+fn test_fstring_rejects_trailing_tokens_in_expr() {
+    let msg = eval_err(r#"f"{1 2}""#);
+    assert!(
+        msg.contains("unexpected token in f-string expression"),
+        "got: {}",
+        msg
+    );
+}
+
+#[test]
 fn test_fstring_nested_quotes() {
     // Nested double quotes inside f-string interpolation
     assert_eq!(
@@ -1626,7 +1657,10 @@ fn test_json_encode_dict() {
 
 #[test]
 fn test_json_encode_list() {
-    assert_eq!(eval("json::encode([1, 2, 3])"), Value::Str("[1,2,3]".into()));
+    assert_eq!(
+        eval("json::encode([1, 2, 3])"),
+        Value::Str("[1,2,3]".into())
+    );
 }
 
 #[test]
@@ -3281,7 +3315,10 @@ fn test_join_builtin() {
         eval(r#"string::join([1, 2, 3], " ")"#),
         Value::Str("1 2 3".to_string())
     );
-    assert_eq!(eval(r#"string::join(["x"], "-")"#), Value::Str("x".to_string()));
+    assert_eq!(
+        eval(r#"string::join(["x"], "-")"#),
+        Value::Str("x".to_string())
+    );
 }
 
 #[test]
@@ -3516,7 +3553,10 @@ fn test_dict_keys_of() {
 #[cfg(feature = "msgpack")]
 #[test]
 fn test_msgpack_round_trip_int() {
-    assert_eq!(eval("json::msgpack_decode(json::msgpack_encode(42))"), Value::Int(42));
+    assert_eq!(
+        eval("json::msgpack_decode(json::msgpack_encode(42))"),
+        Value::Int(42)
+    );
 }
 
 #[cfg(feature = "msgpack")]
@@ -3960,11 +4000,9 @@ fn test_cell_update_returns_new_value() {
 fn engine_with_math_module() -> Engine {
     let mut engine = Engine::new();
     let mut math = Module::new("math");
-    math.register_fn("add", |args: &[Value]| {
-        match (&args[0], &args[1]) {
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
-            _ => Err("expected two ints".to_string()),
-        }
+    math.register_fn("add", |args: &[Value]| match (&args[0], &args[1]) {
+        (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+        _ => Err("expected two ints".to_string()),
     });
     math.set("PI", Value::Float(std::f64::consts::PI));
     engine.register_module(math);
@@ -3974,10 +4012,7 @@ fn engine_with_math_module() -> Engine {
 #[test]
 fn test_module_path_access() {
     let mut engine = engine_with_math_module();
-    assert_eq!(
-        engine.eval("math::add(1, 2)").unwrap(),
-        Value::Int(3)
-    );
+    assert_eq!(engine.eval("math::add(1, 2)").unwrap(), Value::Int(3));
 }
 
 #[test]
@@ -4046,9 +4081,7 @@ fn test_use_from_submodule() {
     let mut engine = Engine::new();
     let mut net = Module::new("net");
     let mut http = Module::new("http");
-    http.register_fn("get", |_args: &[Value]| {
-        Ok(Value::Str("ok".to_string()))
-    });
+    http.register_fn("get", |_args: &[Value]| Ok(Value::Str("ok".to_string())));
     net.register_submodule(http);
     engine.register_module(net);
     assert_eq!(
@@ -4062,9 +4095,7 @@ fn test_use_glob_from_submodule() {
     let mut engine = Engine::new();
     let mut net = Module::new("net");
     let mut http = Module::new("http");
-    http.register_fn("get", |_args: &[Value]| {
-        Ok(Value::Str("ok".to_string()))
-    });
+    http.register_fn("get", |_args: &[Value]| Ok(Value::Str("ok".to_string())));
     http.set("PORT", Value::Int(8080));
     net.register_submodule(http);
     engine.register_module(net);
@@ -4082,7 +4113,10 @@ fn test_use_glob_from_submodule() {
 fn test_module_undefined_error() {
     let engine_result = Engine::new().eval("foo::bar");
     assert!(engine_result.is_err());
-    assert!(engine_result.unwrap_err().message.contains("undefined module"));
+    assert!(engine_result
+        .unwrap_err()
+        .message
+        .contains("undefined module"));
 }
 
 #[test]
@@ -4176,7 +4210,10 @@ fn test_stdlib_math_checks() {
 
 #[test]
 fn test_stdlib_math_use_import() {
-    assert_eq!(eval("use math::{sin, PI}; sin(PI)"), Value::Float(std::f64::consts::PI.sin()));
+    assert_eq!(
+        eval("use math::{sin, PI}; sin(PI)"),
+        Value::Float(std::f64::consts::PI.sin())
+    );
     assert_eq!(eval("use math::*; abs(-42)"), Value::Int(42));
 }
 
@@ -4211,13 +4248,42 @@ fn test_stdlib_json_use_import() {
 
 #[test]
 fn test_stdlib_io_eprintln() {
-    // Just verify it doesn't error
-    assert_eq!(eval(r#"io::eprintln("test")"#), Value::Unit);
+    let output = Arc::new(CaptureOutput::default());
+    let mut engine = Engine::with_output_handler(output.clone());
+
+    assert_eq!(engine.eval(r#"io::eprintln("test")"#).unwrap(), Value::Unit);
+    assert_eq!(output.stderr.lock().unwrap().as_str(), "test\n");
 }
 
 #[test]
 fn test_stdlib_io_use_import() {
-    assert_eq!(eval(r#"use io::println; println("hello")"#), Value::Unit);
+    let output = Arc::new(CaptureOutput::default());
+    let mut engine = Engine::with_output_handler(output.clone());
+
+    assert_eq!(
+        engine
+            .eval(r#"use io::println; println("hello", 42)"#)
+            .unwrap(),
+        Value::Unit
+    );
+    assert_eq!(output.stdout.lock().unwrap().as_str(), "hello 42\n");
+}
+
+#[test]
+fn test_stdlib_io_print_requires_output_handler() {
+    let mut engine = Engine::new();
+    let err = engine.eval(r#"io::println("hello")"#).unwrap_err();
+    assert!(err.message.contains("output handler is not configured"));
+}
+
+#[cfg(feature = "vm")]
+#[test]
+fn test_stdlib_io_vm_uses_output_handler() {
+    let output = Arc::new(CaptureOutput::default());
+    let mut engine = Engine::with_output_handler(output.clone());
+
+    assert_eq!(engine.vm_eval(r#"io::println("vm")"#).unwrap(), Value::Unit);
+    assert_eq!(output.stdout.lock().unwrap().as_str(), "vm\n");
 }
 
 // ============================================================
@@ -4255,8 +4321,26 @@ fn test_register_closure_type_matches_fn() {
     // exactly like a plain BuiltinFn does.
     let mut engine = Engine::new();
     engine.register_closure("noop", |_| Ok(Value::Unit));
-    assert_eq!(
-        engine.eval("let f: fn = noop; f()").unwrap(),
-        Value::Unit
+    assert_eq!(engine.eval("let f: fn = noop; f()").unwrap(), Value::Unit);
+}
+
+#[test]
+fn test_failed_call_does_not_leak_function_scope() {
+    let mut engine = Engine::new();
+    engine.eval("fn f(a, b) { 1 }").unwrap();
+    assert!(engine.eval("f(1)").is_err());
+    let err = engine.eval("a").unwrap_err();
+    assert!(
+        err.message.contains("undefined variable"),
+        "got: {}",
+        err.message
     );
+}
+
+#[cfg(feature = "vm")]
+#[test]
+fn test_vm_preserves_host_builtin_shadowing() {
+    let mut engine = Engine::new();
+    engine.register_fn("len", |_args| Ok(Value::Int(99)));
+    assert_eq!(engine.vm_eval("len([1, 2, 3])").unwrap(), Value::Int(99));
 }

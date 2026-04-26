@@ -1,4 +1,5 @@
 use ion_core::engine::Engine;
+use ion_core::stdlib::StdOutput;
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -45,7 +46,7 @@ fn run_file(path: &str, use_vm: bool) {
         }
     };
 
-    let mut engine = Engine::new();
+    let mut engine = Engine::with_output(StdOutput);
     let result = if use_vm {
         #[cfg(feature = "vm")]
         {
@@ -75,7 +76,7 @@ fn run_file(path: &str, use_vm: bool) {
 fn run_repl(use_vm: bool) {
     println!("Ion v0.1.0 \u{2014} type :quit to exit");
 
-    let mut engine = Engine::new();
+    let mut engine = Engine::with_output(StdOutput);
     let mut vm_mode = use_vm;
     let stdin = io::stdin();
     let mut input_buf = String::new();

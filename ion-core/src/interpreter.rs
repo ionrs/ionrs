@@ -2,8 +2,10 @@ use crate::ast::*;
 use crate::env::Env;
 use crate::error::{ErrorKind, IonError};
 use crate::host_types::TypeRegistry;
+use crate::stdlib::OutputHandler;
 use crate::value::{IonFn, Value};
 use indexmap::IndexMap;
+use std::sync::Arc;
 
 /// Control flow signals that escape normal evaluation.
 enum Signal {
@@ -66,8 +68,12 @@ impl Default for Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+        Self::with_output(crate::stdlib::missing_output_handler())
+    }
+
+    pub fn with_output(output: Arc<dyn OutputHandler>) -> Self {
         let mut env = Env::new();
-        register_builtins(&mut env);
+        register_builtins(&mut env, output);
         Self {
             env,
             limits: Limits::default(),
@@ -432,7 +438,12 @@ impl Interpreter {
                                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                                 if idx >= items.len() {
                                     return Err(IonError::runtime(
-                                        format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
+                                        format!(
+                                            "{}{}{}",
+                                            ion_str!("index "),
+                                            i,
+                                            ion_str!(" out of range")
+                                        ),
                                         stmt.span.line,
                                         stmt.span.col,
                                     )
@@ -445,7 +456,11 @@ impl Interpreter {
                             }
                             _ => {
                                 return Err(IonError::type_err(
-                                    format!("{}{}", ion_str!("cannot set index on "), container.type_name()),
+                                    format!(
+                                        "{}{}",
+                                        ion_str!("cannot set index on "),
+                                        container.type_name()
+                                    ),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -495,7 +510,12 @@ impl Interpreter {
                                     fields.insert(field.clone(), final_val);
                                 } else {
                                     return Err(IonError::runtime(
-                                        format!("{}{}{}", ion_str!("field '"), field, ion_str!("' not found")),
+                                        format!(
+                                            "{}{}{}",
+                                            ion_str!("field '"),
+                                            field,
+                                            ion_str!("' not found")
+                                        ),
                                         stmt.span.line,
                                         stmt.span.col,
                                     )
@@ -504,7 +524,11 @@ impl Interpreter {
                             }
                             _ => {
                                 return Err(IonError::type_err(
-                                    format!("{}{}", ion_str!("cannot set field on "), container.type_name()),
+                                    format!(
+                                        "{}{}",
+                                        ion_str!("cannot set field on "),
+                                        container.type_name()
+                                    ),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -1345,25 +1369,23 @@ impl Interpreter {
                 _ => Err(self.type_mismatch_err(ion_str!("^"), l, r, span)),
             },
             BinOp::Shl => match (l, r) {
-                (Value::Int(a), Value::Int(b)) if (0..64).contains(b) => {
-                    Ok(Value::Int(a << b))
-                }
+                (Value::Int(a), Value::Int(b)) if (0..64).contains(b) => Ok(Value::Int(a << b)),
                 (Value::Int(_), Value::Int(b)) => Err(IonError::runtime(
                     format!("shift count {} is out of range 0..64", b),
                     span.line,
                     span.col,
-                ).into()),
+                )
+                .into()),
                 _ => Err(self.type_mismatch_err(ion_str!("<<"), l, r, span)),
             },
             BinOp::Shr => match (l, r) {
-                (Value::Int(a), Value::Int(b)) if (0..64).contains(b) => {
-                    Ok(Value::Int(a >> b))
-                }
+                (Value::Int(a), Value::Int(b)) if (0..64).contains(b) => Ok(Value::Int(a >> b)),
                 (Value::Int(_), Value::Int(b)) => Err(IonError::runtime(
                     format!("shift count {} is out of range 0..64", b),
                     span.line,
                     span.col,
-                ).into()),
+                )
+                .into()),
                 _ => Err(self.type_mismatch_err(ion_str!(">>"), l, r, span)),
             },
         }
@@ -1664,7 +1686,11 @@ impl Interpreter {
                     let val = args[0]
                         .as_int()
                         .ok_or_else(|| {
-                            IonError::type_err(ion_str!("range.contains requires int"), span.line, span.col)
+                            IonError::type_err(
+                                ion_str!("range.contains requires int"),
+                                span.line,
+                                span.col,
+                            )
                         })
                         .map_err(SignalOrError::from)?;
                     let in_range = if *inclusive {
@@ -2931,35 +2957,37 @@ impl Interpreter {
                 }
                 self.call_depth += 1;
                 self.env.push_scope();
-                // Load captures
-                for (name, val) in &ion_fn.captures {
-                    self.env.define(name.clone(), val.clone(), false);
-                }
-                // Bind parameters
-                for (i, param) in ion_fn.params.iter().enumerate() {
-                    let val = if i < args.len() {
-                        args[i].clone()
-                    } else if let Some(default) = &param.default {
-                        self.eval_expr(default)?
-                    } else {
-                        return Err(IonError::runtime(
-                            format!(
-                                "{}{}{}{}{}{}",
-                                ion_str!("function '"),
-                                ion_fn.name,
-                                ion_str!("' expected "),
-                                ion_fn.params.len(),
-                                ion_str!(" arguments, got "),
-                                args.len(),
-                            ),
-                            span.line,
-                            span.col,
-                        )
-                        .into());
-                    };
-                    self.env.define(param.name.clone(), val, false);
-                }
-                let result = self.eval_stmts(&ion_fn.body);
+                let result = (|| {
+                    // Load captures
+                    for (name, val) in &ion_fn.captures {
+                        self.env.define(name.clone(), val.clone(), false);
+                    }
+                    // Bind parameters
+                    for (i, param) in ion_fn.params.iter().enumerate() {
+                        let val = if i < args.len() {
+                            args[i].clone()
+                        } else if let Some(default) = &param.default {
+                            self.eval_expr(default)?
+                        } else {
+                            return Err(IonError::runtime(
+                                format!(
+                                    "{}{}{}{}{}{}",
+                                    ion_str!("function '"),
+                                    ion_fn.name,
+                                    ion_str!("' expected "),
+                                    ion_fn.params.len(),
+                                    ion_str!(" arguments, got "),
+                                    args.len(),
+                                ),
+                                span.line,
+                                span.col,
+                            )
+                            .into());
+                        };
+                        self.env.define(param.name.clone(), val, false);
+                    }
+                    self.eval_stmts(&ion_fn.body)
+                })();
                 self.env.pop_scope();
                 self.call_depth -= 1;
                 match result {
@@ -2994,9 +3022,9 @@ impl Interpreter {
             Value::BuiltinFn(_, func) => {
                 func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
-            Value::BuiltinClosure(_, func) => {
-                func.call(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
-            }
+            Value::BuiltinClosure(_, func) => func
+                .call(args)
+                .map_err(|msg| IonError::runtime(msg, span.line, span.col).into()),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("not callable: "), func.type_name()),
                 span.line,
@@ -3114,30 +3142,32 @@ impl Interpreter {
                 }
                 self.call_depth += 1;
                 self.env.push_scope();
-                for (name, val) in &ion_fn.captures {
-                    self.env.define(name.clone(), val.clone(), false);
-                }
-                for (i, param) in ion_fn.params.iter().enumerate() {
-                    let val = if i < opt_args.len() && opt_args[i].is_some() {
-                        opt_args[i].clone().unwrap()
-                    } else if let Some(default) = &param.default {
-                        self.eval_expr(default)?
-                    } else {
-                        return Err(IonError::runtime(
-                            format!(
-                                "{}{}{}",
-                                ion_str!("missing argument '"),
-                                param.name,
-                                ion_str!("'"),
-                            ),
-                            span.line,
-                            span.col,
-                        )
-                        .into());
-                    };
-                    self.env.define(param.name.clone(), val, false);
-                }
-                let result = self.eval_stmts(&ion_fn.body);
+                let result = (|| {
+                    for (name, val) in &ion_fn.captures {
+                        self.env.define(name.clone(), val.clone(), false);
+                    }
+                    for (i, param) in ion_fn.params.iter().enumerate() {
+                        let val = if i < opt_args.len() && opt_args[i].is_some() {
+                            opt_args[i].clone().unwrap()
+                        } else if let Some(default) = &param.default {
+                            self.eval_expr(default)?
+                        } else {
+                            return Err(IonError::runtime(
+                                format!(
+                                    "{}{}{}",
+                                    ion_str!("missing argument '"),
+                                    param.name,
+                                    ion_str!("'"),
+                                ),
+                                span.line,
+                                span.col,
+                            )
+                            .into());
+                        };
+                        self.env.define(param.name.clone(), val, false);
+                    }
+                    self.eval_stmts(&ion_fn.body)
+                })();
                 self.env.pop_scope();
                 self.call_depth -= 1;
                 match result {
@@ -3514,26 +3544,25 @@ impl Interpreter {
             let types = self.types.clone();
 
             let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let handle =
-                crate::async_rt::spawn_task_with_cancel(cancel_flag, move |flag| {
-                    let mut child = Interpreter::new();
-                    child.limits = limits;
-                    child.types = types;
-                    child.cancel_flag = Some(flag);
-                    for (name, val) in captured_env {
-                        child.env.define(name, val, false);
-                    }
-                    let program = crate::ast::Program {
-                        stmts: vec![crate::ast::Stmt {
-                            kind: crate::ast::StmtKind::ExprStmt {
-                                expr: expr_clone,
-                                has_semi: false,
-                            },
-                            span: crate::ast::Span { line: 0, col: 0 },
-                        }],
-                    };
-                    child.eval_program(&program)
-                });
+            let handle = crate::async_rt::spawn_task_with_cancel(cancel_flag, move |flag| {
+                let mut child = Interpreter::new();
+                child.limits = limits;
+                child.types = types;
+                child.cancel_flag = Some(flag);
+                for (name, val) in captured_env {
+                    child.env.define(name, val, false);
+                }
+                let program = crate::ast::Program {
+                    stmts: vec![crate::ast::Stmt {
+                        kind: crate::ast::StmtKind::ExprStmt {
+                            expr: expr_clone,
+                            has_semi: false,
+                        },
+                        span: crate::ast::Span { line: 0, col: 0 },
+                    }],
+                };
+                child.eval_program(&program)
+            });
             tasks.push((i, handle));
         }
 
@@ -3677,7 +3706,7 @@ impl Interpreter {
     }
 }
 
-pub fn register_builtins(env: &mut Env) {
+pub fn register_builtins(env: &mut Env, output: Arc<dyn OutputHandler>) {
     // I/O: moved to io:: module
     // Math: moved to math:: module
     // JSON/Msgpack: moved to json:: module
@@ -3900,7 +3929,8 @@ pub fn register_builtins(env: &mut Env) {
                 Ok(Value::Bytes(vec![0u8; *n as usize]))
             }
             Some(Value::Int(n)) => Err(format!(
-                "bytes(n): size {} is out of range (0..10_000_000)", n
+                "bytes(n): size {} is out of range (0..10_000_000)",
+                n
             )),
             None => Ok(Value::Bytes(Vec::new())),
             _ => Err(format!(
@@ -3974,9 +4004,22 @@ pub fn register_builtins(env: &mut Env) {
             }
             if args[0] != args[1] {
                 let msg = if args.len() > 2 {
-                    format!("{}{}{}{}{}", args[2], ion_str!(": expected "), args[0], ion_str!(", got "), args[1])
+                    format!(
+                        "{}{}{}{}{}",
+                        args[2],
+                        ion_str!(": expected "),
+                        args[0],
+                        ion_str!(", got "),
+                        args[1]
+                    )
                 } else {
-                    format!("{}{}{}{}", ion_str!("assertion failed: expected "), args[0], ion_str!(", got "), args[1])
+                    format!(
+                        "{}{}{}{}",
+                        ion_str!("assertion failed: expected "),
+                        args[0],
+                        ion_str!(", got "),
+                        args[1]
+                    )
                 };
                 return Err(msg);
             }
@@ -4026,5 +4069,5 @@ pub fn register_builtins(env: &mut Env) {
     }
 
     // Register stdlib modules (math, json, io)
-    crate::stdlib::register_stdlib(env);
+    crate::stdlib::register_stdlib_with_output(env, output);
 }

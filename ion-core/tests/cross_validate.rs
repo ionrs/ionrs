@@ -1,6 +1,7 @@
 //! Cross-validation: run scripts through both tree-walk and VM,
 //! assert identical results. Catches divergence between execution paths.
 #![cfg(feature = "vm")]
+#![allow(clippy::approx_constant)]
 
 use ion_core::engine::Engine;
 use ion_core::value::Value;
@@ -206,6 +207,32 @@ fn cross_fn_default_params() {
     assert_both_eq(
         r#"fn greet(name = "world") { name } greet()"#,
         Value::Str("world".to_string()),
+    );
+}
+
+#[test]
+fn cross_fn_missing_required_arg_errors() {
+    assert_both("fn f(a, b) { [a, b] } f(1)");
+}
+
+#[test]
+fn cross_fn_default_uses_outer_binding() {
+    assert_both_eq(
+        r#"let suffix = "!"; fn greet(name, mark = suffix) { name + mark } greet("ion")"#,
+        Value::Str("ion!".to_string()),
+    );
+}
+
+#[test]
+fn cross_fn_default_uses_prior_param() {
+    assert_both_eq("fn f(a, b = a) { b } f(7)", Value::Int(7));
+}
+
+#[test]
+fn cross_fn_named_default_uses_outer_binding() {
+    assert_both_eq(
+        r#"let suffix = "!"; fn greet(name, mark = suffix) { name + mark } greet(name: "ion")"#,
+        Value::Str("ion!".to_string()),
     );
 }
 
@@ -890,7 +917,10 @@ fn cross_dict_zip() {
 
 #[test]
 fn cross_join_builtin() {
-    assert_both_eq(r#"string::join(["a", "b"], ",")"#, Value::Str("a,b".to_string()));
+    assert_both_eq(
+        r#"string::join(["a", "b"], ",")"#,
+        Value::Str("a,b".to_string()),
+    );
 }
 
 #[test]
@@ -1150,7 +1180,10 @@ fn cross_result_methods() {
 #[cfg(feature = "msgpack")]
 #[test]
 fn cross_msgpack_int() {
-    assert_both_eq("json::msgpack_decode(json::msgpack_encode(42))", Value::Int(42));
+    assert_both_eq(
+        "json::msgpack_decode(json::msgpack_encode(42))",
+        Value::Int(42),
+    );
 }
 
 #[cfg(feature = "msgpack")]
@@ -1485,7 +1518,6 @@ fn cross_pipe_chain() {
     );
 }
 
-
 // ============================================================
 // Range (expanded)
 // ============================================================
@@ -1681,10 +1713,7 @@ fn cross_while_let() {
 
 #[test]
 fn cross_nested_dict_access() {
-    assert_both_eq(
-        r#"let d = #{a: #{b: 42}}; d.a.b"#,
-        Value::Int(42),
-    );
+    assert_both_eq(r#"let d = #{a: #{b: 42}}; d.a.b"#, Value::Int(42));
 }
 
 #[test]

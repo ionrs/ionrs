@@ -309,7 +309,6 @@ impl Chunk {
         self.code[offset]
     }
 
-
     /// Return the total size (opcode + operands) of the instruction at `offset`.
     pub fn instruction_size(code: &[u8], offset: usize) -> usize {
         if offset >= code.len() {

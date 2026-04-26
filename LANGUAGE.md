@@ -926,6 +926,9 @@ The following modules are available by default in every Engine:
 | `io::println(args...)` | Print with newline |
 | `io::eprintln(args...)` | Print to stderr with newline |
 
+Embedding hosts must install an `OutputHandler` on the engine before
+scripts can use `io::print`, `io::println`, or `io::eprintln`.
+
 #### `string`
 
 | Name | Description |

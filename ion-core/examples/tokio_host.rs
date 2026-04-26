@@ -71,7 +71,8 @@ async fn main() {
         // which calls a tokio-backed builtin. The `async {}` nursery
         // waits for all three to finish; results are collected via
         // channels.
-        engine.eval(r#"
+        engine.eval(
+            r#"
             async {
                 let (tx, rx) = channel(3);
 
@@ -98,7 +99,8 @@ async fn main() {
                 }
                 results
             }
-        "#)
+        "#,
+        )
     })
     .await
     .expect("spawn_blocking panicked")

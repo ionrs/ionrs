@@ -88,9 +88,18 @@ impl Parser {
                     }
                 }
                 // Stop at tokens that typically begin a new statement (if at top level)
-                Token::Let | Token::Fn | Token::For | Token::While | Token::If
-                | Token::Return | Token::Match | Token::Loop | Token::Try
-                | Token::Break | Token::Continue | Token::Use
+                Token::Let
+                | Token::Fn
+                | Token::For
+                | Token::While
+                | Token::If
+                | Token::Return
+                | Token::Match
+                | Token::Loop
+                | Token::Try
+                | Token::Break
+                | Token::Continue
+                | Token::Use
                     if brace_depth == 0 =>
                 {
                     return;
@@ -1852,6 +1861,18 @@ impl Parser {
                 let tokens = lexer.tokenize()?;
                 let mut parser = Parser::new(tokens);
                 let expr = parser.parse_expr()?;
+                if !parser.is_at_end() {
+                    let s = parser.span();
+                    return Err(IonError::parse(
+                        format!(
+                            "{}{:?}",
+                            ion_str!("unexpected token in f-string expression: "),
+                            parser.peek()
+                        ),
+                        span.line,
+                        span.col + s.col.saturating_sub(1),
+                    ));
+                }
                 parts.push(FStrPart::Expr(expr));
             } else {
                 current.push(ch);

@@ -1,5 +1,6 @@
 //! Tests for the bytecode VM execution path.
 #![cfg(feature = "vm")]
+#![allow(clippy::approx_constant)]
 
 use ion_core::engine::Engine;
 use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef};

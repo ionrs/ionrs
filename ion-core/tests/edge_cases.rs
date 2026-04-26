@@ -407,19 +407,31 @@ fn edge_shift_left_negative() {
 #[test]
 fn edge_len_no_args() {
     let msg = eval_err("len()");
-    assert!(msg.contains("requires 1 argument") || msg.contains("arity"), "got: {}", msg);
+    assert!(
+        msg.contains("requires 1 argument") || msg.contains("arity"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
 fn edge_type_of_no_args() {
     let msg = eval_err("type_of()");
-    assert!(msg.contains("requires 1 argument") || msg.contains("arity"), "got: {}", msg);
+    assert!(
+        msg.contains("requires 1 argument") || msg.contains("arity"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
 fn edge_dict_insert_arity() {
     let msg = eval_err(r#"let d = #{"a": 1}; d.insert("b")"#);
-    assert!(msg.contains("insert") || msg.contains("argument"), "got: {}", msg);
+    assert!(
+        msg.contains("insert") || msg.contains("argument"),
+        "got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -441,13 +453,21 @@ fn edge_bytes_negative() {
 #[test]
 fn edge_bytes_from_hex_non_ascii() {
     let msg = eval_err(r#"bytes_from_hex("café")"#);
-    assert!(msg.contains("ASCII") || msg.contains("invalid"), "got: {}", msg);
+    assert!(
+        msg.contains("ASCII") || msg.contains("invalid"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
 fn edge_bytes_from_hex_odd_length() {
     let msg = eval_err(r#"bytes_from_hex("abc")"#);
-    assert!(msg.contains("length") || msg.contains("odd") || msg.contains("invalid"), "got: {}", msg);
+    assert!(
+        msg.contains("length") || msg.contains("odd") || msg.contains("invalid"),
+        "got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -457,7 +477,11 @@ fn edge_bytes_from_hex_odd_length() {
 #[test]
 fn edge_window_zero() {
     let msg = eval_err("[1, 2, 3].window(0)");
-    assert!(msg.contains("must be > 0") || msg.contains("window"), "got: {}", msg);
+    assert!(
+        msg.contains("must be > 0") || msg.contains("window"),
+        "got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -467,7 +491,11 @@ fn edge_window_zero() {
 #[test]
 fn edge_reduce_empty_list() {
     let msg = eval_err("[].reduce(|a, b| a + b)");
-    assert!(msg.contains("empty") || msg.contains("reduce"), "got: {}", msg);
+    assert!(
+        msg.contains("empty") || msg.contains("reduce"),
+        "got: {}",
+        msg
+    );
 }
 
 // ============================================================
@@ -499,11 +527,19 @@ fn edge_float_zero_div_zero() {
 #[test]
 fn edge_break_outside_loop() {
     let msg = eval_err("break;");
-    assert!(msg.contains("outside") || msg.contains("loop") || msg.contains("break"), "got: {}", msg);
+    assert!(
+        msg.contains("outside") || msg.contains("loop") || msg.contains("break"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
 fn edge_continue_outside_loop() {
     let msg = eval_err("continue;");
-    assert!(msg.contains("outside") || msg.contains("loop") || msg.contains("continue"), "got: {}", msg);
+    assert!(
+        msg.contains("outside") || msg.contains("loop") || msg.contains("continue"),
+        "got: {}",
+        msg
+    );
 }
