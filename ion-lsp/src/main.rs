@@ -93,7 +93,7 @@ fn collect_defs_from_stmts(stmts: &[ion_core::ast::Stmt], defs: &mut Vec<Definit
             StmtKind::For { body, .. } => collect_defs_from_stmts(body, defs),
             StmtKind::While { body, .. } => collect_defs_from_stmts(body, defs),
             StmtKind::WhileLet { body, .. } => collect_defs_from_stmts(body, defs),
-            StmtKind::Loop { body } => collect_defs_from_stmts(body, defs),
+            StmtKind::Loop { body, .. } => collect_defs_from_stmts(body, defs),
             StmtKind::ExprStmt { expr, .. } => collect_defs_from_expr(expr, defs),
             StmtKind::Use { path, imports } => {
                 let module_path = path.join("::");

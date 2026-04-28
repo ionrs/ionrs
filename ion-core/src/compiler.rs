@@ -12,6 +12,29 @@ struct Local {
     depth: usize,
 }
 
+fn unmatched_label_msg(keyword: &str, label: Option<&str>) -> String {
+    match label {
+        Some(name) => format!("{keyword} with unknown label '{name}"),
+        None => format!("{keyword} outside of loop"),
+    }
+}
+
+/// One enclosing loop's compile-time bookkeeping. The compiler maintains a
+/// stack of these so labeled break/continue can target outer frames by name.
+#[derive(Debug)]
+struct LoopFrame {
+    label: Option<String>,
+    /// Pending break jumps to patch when this loop ends.
+    break_jumps: Vec<usize>,
+    /// Bytecode offset of the loop's continue target.
+    continue_target: usize,
+    /// True when the frame represents a `for` loop (needs IterDrop on break /
+    /// Unit placeholder on continue).
+    is_for_loop: bool,
+    /// Scope depth at the start of this loop (for scope cleanup on break/continue).
+    scope_depth: usize,
+}
+
 pub struct Compiler {
     chunk: Chunk,
     /// Precompiled function body chunks, keyed by fn_id.
@@ -24,14 +47,8 @@ pub struct Compiler {
     scope_depth: usize,
     /// Whether locals must also be defined in env (needed when closures exist).
     needs_env_locals: bool,
-    /// Pending break jump offsets to patch when loop ends.
-    break_jumps: Vec<usize>,
-    /// Loop start offset for continue jumps (used by while/loop).
-    continue_target: Option<usize>,
-    /// Whether we're inside a for-loop (break needs iterator cleanup, continue needs scope cleanup).
-    in_for_loop: bool,
-    /// Scope depth at the start of the current loop (for break/continue scope cleanup).
-    loop_scope_depth: usize,
+    /// Stack of enclosing loops for break/continue resolution.
+    loop_stack: Vec<LoopFrame>,
 }
 
 impl Default for Compiler {
@@ -49,10 +66,20 @@ impl Compiler {
             locals: Vec::new(),
             scope_depth: 0,
             needs_env_locals: true, // conservative default for top-level
-            break_jumps: Vec::new(),
-            continue_target: None,
-            in_for_loop: false,
-            loop_scope_depth: 0,
+            loop_stack: Vec::new(),
+        }
+    }
+
+    /// Find the index of the loop frame in `loop_stack` that a labeled (or
+    /// unlabeled) break/continue should target. Returns `None` if no enclosing
+    /// loop matches.
+    fn resolve_loop_target(&self, label: Option<&str>) -> Option<usize> {
+        match label {
+            None => self.loop_stack.len().checked_sub(1),
+            Some(want) => self
+                .loop_stack
+                .iter()
+                .rposition(|f| f.label.as_deref() == Some(want)),
         }
     }
 
@@ -80,7 +107,7 @@ impl Compiler {
                         return true;
                     }
                 }
-                StmtKind::While { cond, body } => {
+                StmtKind::While { cond, body, .. } => {
                     if Self::expr_has_closures(cond) {
                         return true;
                     }
@@ -88,7 +115,7 @@ impl Compiler {
                         return true;
                     }
                 }
-                StmtKind::Loop { body } if Self::stmts_have_closures(body) => {
+                StmtKind::Loop { body, .. } if Self::stmts_have_closures(body) => {
                     return true;
                 }
                 StmtKind::Return { value: Some(e) } if Self::expr_has_closures(e) => {
@@ -297,7 +324,7 @@ impl Compiler {
     fn stmt_is_terminal(stmt: &Stmt) -> bool {
         matches!(
             &stmt.kind,
-            StmtKind::Return { .. } | StmtKind::Break { .. } | StmtKind::Continue
+            StmtKind::Return { .. } | StmtKind::Break { .. } | StmtKind::Continue { .. }
         )
     }
 
@@ -432,60 +459,78 @@ impl Compiler {
                 self.compile_fn_decl(name, params, body, line)?;
             }
             StmtKind::For {
+                label,
                 pattern,
                 iter,
                 body,
             } => {
-                self.compile_for(pattern, iter, body, line)?;
+                self.compile_for(label.clone(), pattern, iter, body, line)?;
             }
-            StmtKind::While { cond, body } => {
-                self.compile_while(cond, body, line)?;
+            StmtKind::While { label, cond, body } => {
+                self.compile_while(label.clone(), cond, body, line)?;
             }
-            StmtKind::Loop { body } => {
-                self.compile_loop(body, line)?;
+            StmtKind::Loop { label, body } => {
+                self.compile_loop(label.clone(), body, line)?;
             }
-            StmtKind::Break { value } => {
-                if self.continue_target.is_none() {
-                    return Err(IonError::runtime(
-                        ion_str!("break outside of loop").to_string(),
-                        line,
-                        0,
-                    ));
-                }
+            StmtKind::Break { label, value } => {
+                let target_idx = match self.resolve_loop_target(label.as_deref()) {
+                    Some(idx) => idx,
+                    None => {
+                        return Err(IonError::runtime(
+                            unmatched_label_msg("break", label.as_deref()),
+                            line,
+                            0,
+                        ));
+                    }
+                };
                 if let Some(expr) = value {
                     self.compile_expr(expr)?;
                 } else {
                     self.chunk.emit_op(Op::Unit, line);
                 }
-                // Pop all scopes back to the loop's scope level
-                for _ in self.loop_scope_depth..self.scope_depth {
+                let target_scope = self.loop_stack[target_idx].scope_depth;
+                for _ in target_scope..self.scope_depth {
                     self.chunk.emit_op(Op::PopScope, line);
                 }
-                if self.in_for_loop {
-                    self.chunk.emit_op(Op::IterDrop, line);
+                // Drop iterators of every for-loop frame from innermost down to
+                // and including the target (we're exiting all of them).
+                for frame in self.loop_stack[target_idx..].iter().rev() {
+                    if frame.is_for_loop {
+                        self.chunk.emit_op(Op::IterDrop, line);
+                    }
                 }
                 let jump = self.chunk.emit_jump(Op::Jump, line);
-                self.break_jumps.push(jump);
+                self.loop_stack[target_idx].break_jumps.push(jump);
             }
-            StmtKind::Continue => {
-                if let Some(target) = self.continue_target {
-                    // Pop all scopes back to the loop's scope level
-                    for _ in self.loop_scope_depth..self.scope_depth {
-                        self.chunk.emit_op(Op::PopScope, line);
+            StmtKind::Continue { label } => {
+                let target_idx = match self.resolve_loop_target(label.as_deref()) {
+                    Some(idx) => idx,
+                    None => {
+                        return Err(IonError::runtime(
+                            unmatched_label_msg("continue", label.as_deref()),
+                            line,
+                            0,
+                        ));
                     }
-                    if self.in_for_loop {
-                        // For-loop: push Unit placeholder for IterNext
-                        self.chunk.emit_op(Op::Unit, line);
-                    }
-                    let offset = self.chunk.len() - target + 3;
-                    self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
-                } else {
-                    return Err(IonError::runtime(
-                        ion_str!("continue outside of loop").to_string(),
-                        line,
-                        0,
-                    ));
+                };
+                let target_scope = self.loop_stack[target_idx].scope_depth;
+                for _ in target_scope..self.scope_depth {
+                    self.chunk.emit_op(Op::PopScope, line);
                 }
+                // Drop iterators of inner for-loops we're exiting (everything
+                // strictly above the target frame).
+                for frame in self.loop_stack[target_idx + 1..].iter().rev() {
+                    if frame.is_for_loop {
+                        self.chunk.emit_op(Op::IterDrop, line);
+                    }
+                }
+                let target_frame = &self.loop_stack[target_idx];
+                if target_frame.is_for_loop {
+                    // Push Unit placeholder consumed by IterNext on the next iteration.
+                    self.chunk.emit_op(Op::Unit, line);
+                }
+                let offset = self.chunk.len() - target_frame.continue_target + 3;
+                self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
             }
             StmtKind::Return { value } => {
                 if let Some(expr) = value {
@@ -511,19 +556,19 @@ impl Compiler {
                 ));
             }
             StmtKind::WhileLet {
+                label,
                 pattern,
                 expr,
                 body,
             } => {
-                let saved_breaks = std::mem::take(&mut self.break_jumps);
-                let saved_in_for = self.in_for_loop;
-                let saved_loop_depth = self.loop_scope_depth;
-                self.in_for_loop = false;
-                self.loop_scope_depth = self.scope_depth;
-                let saved_continue = self.continue_target.take();
-
                 let loop_start = self.chunk.len();
-                self.continue_target = Some(loop_start);
+                self.loop_stack.push(LoopFrame {
+                    label: label.clone(),
+                    break_jumps: Vec::new(),
+                    continue_target: loop_start,
+                    is_for_loop: false,
+                    scope_depth: self.scope_depth,
+                });
 
                 // Evaluate expression
                 self.compile_expr(expr)?;
@@ -554,13 +599,10 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // pop false
                 self.chunk.emit_op(Op::Pop, line); // pop the duped value
 
-                for jump in &self.break_jumps {
+                let frame = self.loop_stack.pop().expect("loop frame");
+                for jump in &frame.break_jumps {
                     self.chunk.patch_jump(*jump);
                 }
-                self.break_jumps = saved_breaks;
-                self.continue_target = saved_continue;
-                self.in_for_loop = saved_in_for;
-                self.loop_scope_depth = saved_loop_depth;
             }
         }
         Ok(())
@@ -989,7 +1031,7 @@ impl Compiler {
             }
 
             ExprKind::LoopExpr(body) => {
-                self.compile_loop(body, line)?;
+                self.compile_loop(None, body, line)?;
             }
 
             ExprKind::Match {
@@ -1372,19 +1414,12 @@ impl Compiler {
 
     fn compile_for(
         &mut self,
+        label: Option<String>,
         pattern: &Pattern,
         iter: &Expr,
         body: &[Stmt],
         line: usize,
     ) -> Result<(), IonError> {
-        // Save outer loop context
-        let saved_breaks = std::mem::take(&mut self.break_jumps);
-        let saved_continue = self.continue_target.take();
-        let saved_in_for = self.in_for_loop;
-        let saved_loop_depth = self.loop_scope_depth;
-        self.in_for_loop = true;
-        self.loop_scope_depth = self.scope_depth;
-
         // Evaluate the iterator expression
         self.compile_expr(iter)?;
 
@@ -1392,7 +1427,13 @@ impl Compiler {
         self.chunk.emit_op(Op::IterInit, line);
 
         let loop_start = self.chunk.len();
-        self.continue_target = Some(loop_start);
+        self.loop_stack.push(LoopFrame {
+            label,
+            break_jumps: Vec::new(),
+            continue_target: loop_start,
+            is_for_loop: true,
+            scope_depth: self.scope_depth,
+        });
 
         // Get next item or jump to end
         let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
@@ -1422,29 +1463,28 @@ impl Compiler {
         // Pop the iterator placeholder
         self.chunk.emit_op(Op::Pop, line);
 
-        // Patch all break jumps to after the loop
-        for jump in &self.break_jumps {
+        let frame = self.loop_stack.pop().expect("loop frame");
+        for jump in &frame.break_jumps {
             self.chunk.patch_jump(*jump);
         }
-
-        // Restore outer loop context
-        self.break_jumps = saved_breaks;
-        self.continue_target = saved_continue;
-        self.in_for_loop = saved_in_for;
-        self.loop_scope_depth = saved_loop_depth;
         Ok(())
     }
 
-    fn compile_while(&mut self, cond: &Expr, body: &[Stmt], line: usize) -> Result<(), IonError> {
-        let saved_breaks = std::mem::take(&mut self.break_jumps);
-        let saved_continue = self.continue_target.take();
-        let saved_in_for = self.in_for_loop;
-        let saved_loop_depth = self.loop_scope_depth;
-        self.in_for_loop = false;
-        self.loop_scope_depth = self.scope_depth;
-
+    fn compile_while(
+        &mut self,
+        label: Option<String>,
+        cond: &Expr,
+        body: &[Stmt],
+        line: usize,
+    ) -> Result<(), IonError> {
         let loop_start = self.chunk.len();
-        self.continue_target = Some(loop_start);
+        self.loop_stack.push(LoopFrame {
+            label,
+            break_jumps: Vec::new(),
+            continue_target: loop_start,
+            is_for_loop: false,
+            scope_depth: self.scope_depth,
+        });
 
         self.compile_expr(cond)?;
         let exit_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
@@ -1466,26 +1506,27 @@ impl Compiler {
         self.chunk.patch_jump(exit_jump);
         self.chunk.emit_op(Op::Pop, line); // pop condition
 
-        for jump in &self.break_jumps {
+        let frame = self.loop_stack.pop().expect("loop frame");
+        for jump in &frame.break_jumps {
             self.chunk.patch_jump(*jump);
         }
-        self.break_jumps = saved_breaks;
-        self.continue_target = saved_continue;
-        self.in_for_loop = saved_in_for;
-        self.loop_scope_depth = saved_loop_depth;
         Ok(())
     }
 
-    fn compile_loop(&mut self, body: &[Stmt], line: usize) -> Result<(), IonError> {
-        let saved_breaks = std::mem::take(&mut self.break_jumps);
-        let saved_continue = self.continue_target.take();
-        let saved_in_for = self.in_for_loop;
-        let saved_loop_depth = self.loop_scope_depth;
-        self.in_for_loop = false;
-        self.loop_scope_depth = self.scope_depth;
-
+    fn compile_loop(
+        &mut self,
+        label: Option<String>,
+        body: &[Stmt],
+        line: usize,
+    ) -> Result<(), IonError> {
         let loop_start = self.chunk.len();
-        self.continue_target = Some(loop_start);
+        self.loop_stack.push(LoopFrame {
+            label,
+            break_jumps: Vec::new(),
+            continue_target: loop_start,
+            is_for_loop: false,
+            scope_depth: self.scope_depth,
+        });
 
         self.begin_scope(line);
         for stmt in body {
@@ -1500,13 +1541,10 @@ impl Compiler {
         let offset = self.chunk.len() - loop_start + 3;
         self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
 
-        for jump in &self.break_jumps {
+        let frame = self.loop_stack.pop().expect("loop frame");
+        for jump in &frame.break_jumps {
             self.chunk.patch_jump(*jump);
         }
-        self.break_jumps = saved_breaks;
-        self.continue_target = saved_continue;
-        self.in_for_loop = saved_in_for;
-        self.loop_scope_depth = saved_loop_depth;
         Ok(())
     }
 

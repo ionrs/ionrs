@@ -543,3 +543,154 @@ fn edge_continue_outside_loop() {
         msg
     );
 }
+
+// ============================================================
+// Labeled break / continue
+// ============================================================
+
+#[test]
+fn label_break_outer_for() {
+    let src = r#"
+        let mut hits = 0;
+        'outer: for i in 0..5 {
+            for j in 0..5 {
+                hits += 1;
+                if i == 2 && j == 1 { break 'outer; }
+            }
+        }
+        hits
+    "#;
+    // i=0,1: 5 inner iters each = 10. i=2: j=0 (hits=1) + j=1 (hits=1, then break 'outer) = 2.
+    // Total: 10 + 2 = 12.
+    assert_eq!(eval(src), Value::Int(12));
+}
+
+#[test]
+fn label_break_outer_marks_side_effect() {
+    // We can't observe break-with-value through a statement-position loop
+    // (compile_program emits Unit after the last statement), so instead
+    // verify that the labeled break exits the outer loop by tracking
+    // iteration counts across both loops.
+    let src = r#"
+        let mut outer_iters = 0;
+        let mut inner_iters = 0;
+        'outer: loop {
+            outer_iters += 1;
+            loop {
+                inner_iters += 1;
+                if inner_iters == 3 { break 'outer; }
+            }
+        }
+        outer_iters * 100 + inner_iters
+    "#;
+    // outer=1; inner=1. inner=2. inner=3 → break 'outer. So 1*100+3 = 103.
+    assert_eq!(eval(src), Value::Int(103));
+}
+
+#[test]
+fn label_continue_outer_for() {
+    let src = r#"
+        let mut sum = 0;
+        'outer: for i in 0..3 {
+            for j in 0..3 {
+                if j == 1 { continue 'outer; }
+                sum += 1;
+            }
+            sum += 100;
+        }
+        sum
+    "#;
+    // each outer iter does inner j=0 (sum+=1) then j=1 → continue 'outer.
+    // Outer post-body increment never runs. 3 outer iters × 1 = 3.
+    assert_eq!(eval(src), Value::Int(3));
+}
+
+#[test]
+fn label_inner_break_only_exits_inner() {
+    let src = r#"
+        let mut hits = 0;
+        'outer: for i in 0..2 {
+            for j in 0..3 {
+                hits += 1;
+                if j == 0 { break; }
+            }
+            hits += 100;
+        }
+        hits
+    "#;
+    // Each outer iter: inner j=0 → hits=1 → break inner; hits+=100. ×2 = 202.
+    assert_eq!(eval(src), Value::Int(202));
+}
+
+#[test]
+fn label_break_unknown_errors() {
+    let msg = eval_err("for i in 0..3 { break 'nope; }");
+    assert!(msg.contains("'nope") || msg.contains("nope"), "got: {}", msg);
+}
+
+#[test]
+fn label_continue_unknown_errors() {
+    let msg = eval_err("for i in 0..3 { continue 'nope; }");
+    assert!(msg.contains("'nope") || msg.contains("nope"), "got: {}", msg);
+}
+
+#[test]
+fn label_shadowing_inner_wins() {
+    let src = r#"
+        let mut hits = 0;
+        'a: for i in 0..3 {
+            'a: for j in 0..3 {
+                hits += 1;
+                if j == 1 { break 'a; }
+            }
+            hits += 100;
+        }
+        hits
+    "#;
+    // Inner 'a shadows outer. break 'a exits inner only.
+    // Outer iter: hits 0,1 (j=0,1) then break inner; hits += 100. ×3 outer = (2+100)*3 = 306.
+    assert_eq!(eval(src), Value::Int(306));
+}
+
+#[test]
+fn label_on_while() {
+    let src = r#"
+        let mut i = 0;
+        let mut hits = 0;
+        'outer: while i < 5 {
+            let mut j = 0;
+            while j < 5 {
+                hits += 1;
+                if i == 1 && j == 2 { break 'outer; }
+                j += 1;
+            }
+            i += 1;
+        }
+        hits
+    "#;
+    // i=0 inner runs 5 (5). i=1: j=0,1,2 → break outer at j=2 (3). Total 8.
+    assert_eq!(eval(src), Value::Int(8));
+}
+
+#[test]
+fn label_on_loop_continue() {
+    // 'outer continue should restart outer's loop; we count side-effects to
+    // confirm we re-entered outer rather than continuing the inner loop.
+    let src = r#"
+        let mut outer_hits = 0;
+        let mut inner_hits = 0;
+        'outer: loop {
+            outer_hits += 1;
+            if outer_hits == 3 { break 'outer; }
+            loop {
+                inner_hits += 1;
+                if inner_hits >= 5 { break; }
+                continue 'outer;
+            }
+        }
+        outer_hits * 1000 + inner_hits
+    "#;
+    // Iter1: outer=1, inner=1, continue outer. Iter2: outer=2, inner=2, continue outer.
+    // Iter3: outer=3, break outer. inner_hits=2.
+    assert_eq!(eval(src), Value::Int(3 * 1000 + 2));
+}

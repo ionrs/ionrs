@@ -10,8 +10,30 @@ use std::sync::Arc;
 /// Control flow signals that escape normal evaluation.
 enum Signal {
     Return(Value),
-    Break(Value),
-    Continue,
+    Break {
+        label: Option<String>,
+        value: Value,
+    },
+    Continue {
+        label: Option<String>,
+    },
+}
+
+/// Returns true if a break/continue signal carrying `sig_label` should be
+/// caught by a loop carrying `loop_label`. Unlabeled signals are caught by
+/// the innermost loop regardless of that loop's own label (Rust semantics).
+fn signal_targets_loop(sig_label: &Option<String>, loop_label: &Option<String>) -> bool {
+    match sig_label {
+        None => true,
+        Some(want) => loop_label.as_deref() == Some(want.as_str()),
+    }
+}
+
+fn unmatched_label_msg(keyword: &str, label: Option<String>) -> String {
+    match label {
+        Some(name) => format!("{keyword} with unknown label '{name}"),
+        None => format!("{keyword} outside of loop"),
+    }
 }
 
 type IonResult = Result<Value, IonError>;
@@ -97,13 +119,11 @@ impl Interpreter {
             }
             Err(SignalOrError::Error(e)) => Err(e),
             Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
-            Err(SignalOrError::Signal(Signal::Break(_))) => Err(IonError::runtime(
-                ion_str!("break outside of loop").to_string(),
-                0,
-                0,
-            )),
-            Err(SignalOrError::Signal(Signal::Continue)) => Err(IonError::runtime(
-                ion_str!("continue outside of loop").to_string(),
+            Err(SignalOrError::Signal(Signal::Break { label, .. })) => {
+                Err(IonError::runtime(unmatched_label_msg("break", label), 0, 0))
+            }
+            Err(SignalOrError::Signal(Signal::Continue { label })) => Err(IonError::runtime(
+                unmatched_label_msg("continue", label),
                 0,
                 0,
             )),
@@ -135,8 +155,8 @@ impl Interpreter {
             Ok(v) => Ok(v),
             Err(SignalOrError::Error(e)) => Err(e),
             Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
-            Err(SignalOrError::Signal(Signal::Break(v))) => Ok(v),
-            Err(SignalOrError::Signal(Signal::Continue)) => Ok(Value::Unit),
+            Err(SignalOrError::Signal(Signal::Break { value, .. })) => Ok(value),
+            Err(SignalOrError::Signal(Signal::Continue { .. })) => Ok(Value::Unit),
         }
     }
 
@@ -146,8 +166,8 @@ impl Interpreter {
             Ok(v) => Ok(v),
             Err(SignalOrError::Error(e)) => Err(e),
             Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
-            Err(SignalOrError::Signal(Signal::Break(v))) => Ok(v),
-            Err(SignalOrError::Signal(Signal::Continue)) => Ok(Value::Unit),
+            Err(SignalOrError::Signal(Signal::Break { value, .. })) => Ok(value),
+            Err(SignalOrError::Signal(Signal::Continue { .. })) => Ok(Value::Unit),
         }
     }
 
@@ -214,6 +234,7 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             StmtKind::For {
+                label,
                 pattern,
                 iter,
                 body,
@@ -227,13 +248,26 @@ impl Interpreter {
                     self.bind_pattern(pattern, &item, false, iter.span)?;
                     match self.eval_stmts(body) {
                         Ok(_) => {}
-                        Err(SignalOrError::Signal(Signal::Break(_))) => {
+                        Err(SignalOrError::Signal(Signal::Break {
+                            label: sig_label,
+                            value,
+                        })) => {
                             self.env.pop_scope();
-                            break;
+                            if signal_targets_loop(&sig_label, label) {
+                                break;
+                            }
+                            return Err(Signal::Break {
+                                label: sig_label,
+                                value,
+                            }
+                            .into());
                         }
-                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                        Err(SignalOrError::Signal(Signal::Continue { label: sig_label })) => {
                             self.env.pop_scope();
-                            continue;
+                            if signal_targets_loop(&sig_label, label) {
+                                continue;
+                            }
+                            return Err(Signal::Continue { label: sig_label }.into());
                         }
                         Err(e) => {
                             self.env.pop_scope();
@@ -244,7 +278,7 @@ impl Interpreter {
                 }
                 Ok(Value::Unit)
             }
-            StmtKind::While { cond, body } => {
+            StmtKind::While { label, cond, body } => {
                 let mut iters = 0usize;
                 loop {
                     #[cfg(feature = "concurrency")]
@@ -265,13 +299,26 @@ impl Interpreter {
                     self.env.push_scope();
                     match self.eval_stmts(body) {
                         Ok(_) => {}
-                        Err(SignalOrError::Signal(Signal::Break(_))) => {
+                        Err(SignalOrError::Signal(Signal::Break {
+                            label: sig_label,
+                            value,
+                        })) => {
                             self.env.pop_scope();
-                            break;
+                            if signal_targets_loop(&sig_label, label) {
+                                break;
+                            }
+                            return Err(Signal::Break {
+                                label: sig_label,
+                                value,
+                            }
+                            .into());
                         }
-                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                        Err(SignalOrError::Signal(Signal::Continue { label: sig_label })) => {
                             self.env.pop_scope();
-                            continue;
+                            if signal_targets_loop(&sig_label, label) {
+                                continue;
+                            }
+                            return Err(Signal::Continue { label: sig_label }.into());
                         }
                         Err(e) => {
                             self.env.pop_scope();
@@ -283,6 +330,7 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             StmtKind::WhileLet {
+                label,
                 pattern,
                 expr,
                 body,
@@ -308,13 +356,26 @@ impl Interpreter {
                     self.bind_pattern(pattern, &val, false, expr.span)?;
                     match self.eval_stmts(body) {
                         Ok(_) => {}
-                        Err(SignalOrError::Signal(Signal::Break(_))) => {
+                        Err(SignalOrError::Signal(Signal::Break {
+                            label: sig_label,
+                            value,
+                        })) => {
                             self.env.pop_scope();
-                            break;
+                            if signal_targets_loop(&sig_label, label) {
+                                break;
+                            }
+                            return Err(Signal::Break {
+                                label: sig_label,
+                                value,
+                            }
+                            .into());
                         }
-                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                        Err(SignalOrError::Signal(Signal::Continue { label: sig_label })) => {
                             self.env.pop_scope();
-                            continue;
+                            if signal_targets_loop(&sig_label, label) {
+                                continue;
+                            }
+                            return Err(Signal::Continue { label: sig_label }.into());
                         }
                         Err(e) => {
                             self.env.pop_scope();
@@ -325,7 +386,7 @@ impl Interpreter {
                 }
                 Ok(Value::Unit)
             }
-            StmtKind::Loop { body } => {
+            StmtKind::Loop { label, body } => {
                 let mut iters = 0usize;
                 let result = loop {
                     iters += 1;
@@ -340,13 +401,26 @@ impl Interpreter {
                     self.env.push_scope();
                     match self.eval_stmts(body) {
                         Ok(_) => {}
-                        Err(SignalOrError::Signal(Signal::Break(v))) => {
+                        Err(SignalOrError::Signal(Signal::Break {
+                            label: sig_label,
+                            value,
+                        })) => {
                             self.env.pop_scope();
-                            break v;
+                            if signal_targets_loop(&sig_label, label) {
+                                break value;
+                            }
+                            return Err(Signal::Break {
+                                label: sig_label,
+                                value,
+                            }
+                            .into());
                         }
-                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                        Err(SignalOrError::Signal(Signal::Continue { label: sig_label })) => {
                             self.env.pop_scope();
-                            continue;
+                            if signal_targets_loop(&sig_label, label) {
+                                continue;
+                            }
+                            return Err(Signal::Continue { label: sig_label }.into());
                         }
                         Err(e) => {
                             self.env.pop_scope();
@@ -357,14 +431,21 @@ impl Interpreter {
                 };
                 Ok(result)
             }
-            StmtKind::Break { value } => {
+            StmtKind::Break { label, value } => {
                 let v = match value {
                     Some(expr) => self.eval_expr(expr)?,
                     None => Value::Unit,
                 };
-                Err(Signal::Break(v).into())
+                Err(Signal::Break {
+                    label: label.clone(),
+                    value: v,
+                }
+                .into())
             }
-            StmtKind::Continue => Err(Signal::Continue.into()),
+            StmtKind::Continue { label } => Err(Signal::Continue {
+                label: label.clone(),
+            }
+            .into()),
             StmtKind::Return { value } => {
                 let v = match value {
                     Some(expr) => self.eval_expr(expr)?,
@@ -1141,17 +1222,31 @@ impl Interpreter {
             }
 
             ExprKind::LoopExpr(body) => {
+                let no_label: Option<String> = None;
                 let result = loop {
                     self.env.push_scope();
                     match self.eval_stmts(body) {
                         Ok(_) => {}
-                        Err(SignalOrError::Signal(Signal::Break(v))) => {
+                        Err(SignalOrError::Signal(Signal::Break {
+                            label: sig_label,
+                            value,
+                        })) => {
                             self.env.pop_scope();
-                            break v;
+                            if signal_targets_loop(&sig_label, &no_label) {
+                                break value;
+                            }
+                            return Err(Signal::Break {
+                                label: sig_label,
+                                value,
+                            }
+                            .into());
                         }
-                        Err(SignalOrError::Signal(Signal::Continue)) => {
+                        Err(SignalOrError::Signal(Signal::Continue { label: sig_label })) => {
                             self.env.pop_scope();
-                            continue;
+                            if signal_targets_loop(&sig_label, &no_label) {
+                                continue;
+                            }
+                            return Err(Signal::Continue { label: sig_label }.into());
                         }
                         Err(e) => {
                             self.env.pop_scope();
@@ -2993,18 +3088,18 @@ impl Interpreter {
                 match result {
                     Ok(v) => Ok(v),
                     Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
-                    Err(SignalOrError::Signal(Signal::Break(_))) => Err(IonError::runtime(
-                        ion_str!("break outside of loop").to_string(),
-                        span.line,
-                        span.col,
-                    )
-                    .into()),
-                    Err(SignalOrError::Signal(Signal::Continue)) => Err(IonError::runtime(
-                        ion_str!("continue outside of loop").to_string(),
-                        span.line,
-                        span.col,
-                    )
-                    .into()),
+                    Err(SignalOrError::Signal(Signal::Break { label, .. })) => Err(
+                        IonError::runtime(unmatched_label_msg("break", label), span.line, span.col)
+                            .into(),
+                    ),
+                    Err(SignalOrError::Signal(Signal::Continue { label })) => {
+                        Err(IonError::runtime(
+                            unmatched_label_msg("continue", label),
+                            span.line,
+                            span.col,
+                        )
+                        .into())
+                    }
                     Err(SignalOrError::Error(e)) => {
                         // Convert ? propagation into values at function boundary
                         if e.kind == ErrorKind::PropagatedErr {

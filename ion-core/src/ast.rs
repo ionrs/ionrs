@@ -34,26 +34,38 @@ pub enum StmtKind {
         params: Vec<Param>,
         body: Vec<Stmt>,
     },
-    /// `for pattern in expr { body }`
+    /// `['label:] for pattern in expr { body }`
     For {
+        label: Option<String>,
         pattern: Pattern,
         iter: Expr,
         body: Vec<Stmt>,
     },
-    /// `while cond { body }`
-    While { cond: Expr, body: Vec<Stmt> },
-    /// `while let pattern = expr { body }`
+    /// `['label:] while cond { body }`
+    While {
+        label: Option<String>,
+        cond: Expr,
+        body: Vec<Stmt>,
+    },
+    /// `['label:] while let pattern = expr { body }`
     WhileLet {
+        label: Option<String>,
         pattern: Pattern,
         expr: Expr,
         body: Vec<Stmt>,
     },
-    /// `loop { body }`
-    Loop { body: Vec<Stmt> },
-    /// `break [expr];`
-    Break { value: Option<Expr> },
-    /// `continue;`
-    Continue,
+    /// `['label:] loop { body }`
+    Loop {
+        label: Option<String>,
+        body: Vec<Stmt>,
+    },
+    /// `break ['label] [expr];`
+    Break {
+        label: Option<String>,
+        value: Option<Expr>,
+    },
+    /// `continue ['label];`
+    Continue { label: Option<String> },
     /// `use module::{name1, name2}` or `use module::*`
     Use {
         path: Vec<String>,

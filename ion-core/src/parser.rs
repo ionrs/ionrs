@@ -198,22 +198,55 @@ impl Parser {
         match self.peek().clone() {
             Token::Let => self.parse_let_stmt(),
             Token::Fn => self.parse_fn_decl(),
-            Token::For => self.parse_for_stmt(),
-            Token::While => self.parse_while_stmt(),
-            Token::Loop => self.parse_loop_stmt(),
-            Token::Break => self.parse_break_stmt(),
-            Token::Continue => {
+            Token::For => self.parse_for_stmt(None),
+            Token::While => self.parse_while_stmt(None),
+            Token::Loop => self.parse_loop_stmt(None),
+            Token::Label(name) => {
                 self.advance();
-                self.eat(&Token::Semicolon)?;
-                Ok(Stmt {
-                    kind: StmtKind::Continue,
-                    span,
-                })
+                self.eat(&Token::Colon)?;
+                match self.peek() {
+                    Token::For => self.parse_for_stmt(Some(name)),
+                    Token::While => self.parse_while_stmt(Some(name)),
+                    Token::Loop => self.parse_loop_stmt(Some(name)),
+                    other => {
+                        let s = self.span();
+                        Err(IonError::parse(
+                            format!(
+                                "{}{:?}",
+                                ion_str!("expected loop after label, found "),
+                                other,
+                            ),
+                            s.line,
+                            s.col,
+                        ))
+                    }
+                }
             }
+            Token::Break => self.parse_break_stmt(),
+            Token::Continue => self.parse_continue_stmt(span),
             Token::Return => self.parse_return_stmt(),
             Token::Use => self.parse_use_stmt(),
             _ => self.parse_expr_or_assign_stmt(),
         }
+    }
+
+    fn parse_optional_label(&mut self) -> Option<String> {
+        if let Token::Label(name) = self.peek().clone() {
+            self.advance();
+            Some(name)
+        } else {
+            None
+        }
+    }
+
+    fn parse_continue_stmt(&mut self, span: Span) -> Result<Stmt, IonError> {
+        self.eat(&Token::Continue)?;
+        let label = self.parse_optional_label();
+        self.eat(&Token::Semicolon)?;
+        Ok(Stmt {
+            kind: StmtKind::Continue { label },
+            span,
+        })
     }
 
     fn parse_let_stmt(&mut self) -> Result<Stmt, IonError> {
@@ -328,7 +361,7 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_for_stmt(&mut self) -> Result<Stmt, IonError> {
+    fn parse_for_stmt(&mut self, label: Option<String>) -> Result<Stmt, IonError> {
         let span = self.span();
         self.eat(&Token::For)?;
         let pattern = self.parse_pattern()?;
@@ -339,6 +372,7 @@ impl Parser {
         self.eat(&Token::RBrace)?;
         Ok(Stmt {
             kind: StmtKind::For {
+                label,
                 pattern,
                 iter,
                 body,
@@ -347,7 +381,7 @@ impl Parser {
         })
     }
 
-    fn parse_while_stmt(&mut self) -> Result<Stmt, IonError> {
+    fn parse_while_stmt(&mut self, label: Option<String>) -> Result<Stmt, IonError> {
         let span = self.span();
         self.eat(&Token::While)?;
         // while let ...
@@ -361,6 +395,7 @@ impl Parser {
             self.eat(&Token::RBrace)?;
             return Ok(Stmt {
                 kind: StmtKind::WhileLet {
+                    label,
                     pattern,
                     expr,
                     body,
@@ -373,19 +408,19 @@ impl Parser {
         let body = self.parse_block_stmts()?;
         self.eat(&Token::RBrace)?;
         Ok(Stmt {
-            kind: StmtKind::While { cond, body },
+            kind: StmtKind::While { label, cond, body },
             span,
         })
     }
 
-    fn parse_loop_stmt(&mut self) -> Result<Stmt, IonError> {
+    fn parse_loop_stmt(&mut self, label: Option<String>) -> Result<Stmt, IonError> {
         let span = self.span();
         self.eat(&Token::Loop)?;
         self.eat(&Token::LBrace)?;
         let body = self.parse_block_stmts()?;
         self.eat(&Token::RBrace)?;
         Ok(Stmt {
-            kind: StmtKind::Loop { body },
+            kind: StmtKind::Loop { label, body },
             span,
         })
     }
@@ -393,6 +428,7 @@ impl Parser {
     fn parse_break_stmt(&mut self) -> Result<Stmt, IonError> {
         let span = self.span();
         self.eat(&Token::Break)?;
+        let label = self.parse_optional_label();
         let value = if self.check(&Token::Semicolon) {
             None
         } else {
@@ -400,7 +436,7 @@ impl Parser {
         };
         self.eat(&Token::Semicolon)?;
         Ok(Stmt {
-            kind: StmtKind::Break { value },
+            kind: StmtKind::Break { label, value },
             span,
         })
     }

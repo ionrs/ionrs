@@ -11,6 +11,7 @@ pub enum Token {
 
     // Identifiers
     Ident(String),
+    Label(String), // 'name (loop label)
 
     // Keywords
     Let,

@@ -8,6 +8,7 @@
     { "include": "#bytes" },
     { "include": "#numbers" },
     { "include": "#keywords" },
+    { "include": "#labels" },
     { "include": "#types" },
     { "include": "#builtins" },
     { "include": "#methods" },
@@ -27,6 +28,15 @@
         {
           "name": "comment.line.double-slash.ion",
           "match": "//.*$"
+        }
+      ]
+    },
+
+    "labels": {
+      "patterns": [
+        {
+          "name": "entity.name.label.ion",
+          "match": "'[A-Za-z_][A-Za-z0-9_]*"
         }
       ]
     },

@@ -206,6 +206,11 @@ impl<'a> Lexer<'a> {
             return self.lex_ident(line, col);
         }
 
+        // Loop labels: 'name
+        if ch == b'\'' {
+            return self.lex_label(line, col);
+        }
+
         // Operators and punctuation
         self.advance();
         match ch {
@@ -680,6 +685,23 @@ impl<'a> Lexer<'a> {
         self.advance(); // consume closing "
 
         Ok(self.spanned(Token::Bytes(bytes), line, col))
+    }
+
+    fn lex_label(&mut self, line: usize, col: usize) -> Result<SpannedToken, IonError> {
+        self.advance(); // consume '
+        let start = self.pos;
+        if !(self.peek().is_ascii_alphabetic() || self.peek() == b'_') {
+            return Err(IonError::lex(
+                ion_str!("expected label name after '"),
+                line,
+                col,
+            ));
+        }
+        while self.peek().is_ascii_alphanumeric() || self.peek() == b'_' {
+            self.advance();
+        }
+        let text = std::str::from_utf8(&self.source[start..self.pos]).unwrap();
+        Ok(self.spanned(Token::Label(text.to_string()), line, col))
     }
 
     fn lex_ident(&mut self, line: usize, col: usize) -> Result<SpannedToken, IonError> {
