@@ -50,6 +50,19 @@ cargo install --path ion-lsp
 Adjust the binary path or disable LSP entirely under
 **Settings | Languages & Frameworks | Ion**.
 
+### Windows + WSL
+
+If your IDE runs on Windows and the project lives in WSL
+(`\\wsl.localhost\...`), the IDE process spawns from Windows and won't see
+binaries installed inside WSL. Either:
+
+- install `ion-lsp.exe` on the Windows side, **or**
+- set the LSP path to `wsl` and the binary discovery falls through to the
+  Windows `wsl.exe` shim — pair this with a custom invocation that runs
+  `ion-lsp` inside the distro, **or**
+- turn off "Enable Ion language server" in the Ion settings panel and use the
+  plugin for syntax highlighting only.
+
 ## Updating the syntax grammar
 
 The TextMate grammar is the source of truth in
