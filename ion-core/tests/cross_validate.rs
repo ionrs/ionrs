@@ -1206,6 +1206,19 @@ fn cross_msgpack_bytes() {
 
 #[cfg(feature = "msgpack")]
 #[test]
+fn msgpack_bytes_use_binary_family() {
+    let encoded = Value::Bytes(vec![0xde, 0xad])
+        .to_msgpack()
+        .expect("encode bytes");
+    assert_eq!(encoded, vec![0xc4, 0x02, 0xde, 0xad]);
+    assert_eq!(
+        Value::from_msgpack(&encoded).expect("decode bytes"),
+        Value::Bytes(vec![0xde, 0xad])
+    );
+}
+
+#[cfg(feature = "msgpack")]
+#[test]
 fn cross_msgpack_list() {
     assert_both_eq(
         "json::msgpack_decode(json::msgpack_encode([1, 2, 3]))",
