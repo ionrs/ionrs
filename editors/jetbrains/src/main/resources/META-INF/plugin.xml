@@ -1,0 +1,54 @@
+<idea-plugin>
+    <id>com.ionlang.idea</id>
+    <name>Ion Language</name>
+    <vendor email="support@ionlang.dev" url="https://github.com/paiml/ionlang">ion-lang</vendor>
+
+    <description><![CDATA[
+        Syntax highlighting and LSP support for the Ion scripting language in JetBrains IDEs.
+        <br><br>
+        <b>Features</b>
+        <ul>
+            <li>Recognizes <code>.ion</code> files</li>
+            <li>Syntax highlighting via the upstream TextMate grammar (shared with the VSCode extension)</li>
+            <li>Optional LSP integration through <a href="https://plugins.jetbrains.com/plugin/23257-lsp4ij">LSP4IJ</a> driving an external <code>ion-lsp</code> binary</li>
+            <li>Configurable in <i>Settings | Languages &amp; Frameworks | Ion</i></li>
+        </ul>
+        Install <code>ion-lsp</code> with <code>cargo install --path ion-lsp</code> to enable diagnostics, completion, hover, and go-to-definition.
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>0.1.0</h3>
+        <ul>
+            <li>Initial release: file recognition, TextMate-based highlighting, optional LSP via LSP4IJ.</li>
+        </ul>
+    ]]></change-notes>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.textmate</depends>
+    <depends>com.redhat.devtools.lsp4ij</depends>
+
+    <extensions defaultExtensionNs="org.jetbrains.plugins.textmate">
+        <bundleProvider implementation="com.ionlang.idea.IonTextMateBundleProvider"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+        <server id="ion-lsp"
+                name="Ion Language Server"
+                factoryClass="com.ionlang.idea.lsp.IonLanguageServerFactory">
+            <description><![CDATA[
+                Spawns the external <code>ion-lsp</code> binary configured under
+                <i>Settings | Languages &amp; Frameworks | Ion</i>.
+            ]]></description>
+        </server>
+        <fileNamePatternMapping patterns="*.ion" serverId="ion-lsp" languageId="ion"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.ionlang.idea.settings.IonSettings"/>
+        <applicationConfigurable
+            parentId="language"
+            id="com.ionlang.idea.settings.IonConfigurable"
+            instance="com.ionlang.idea.settings.IonConfigurable"
+            displayName="Ion"/>
+    </extensions>
+</idea-plugin>

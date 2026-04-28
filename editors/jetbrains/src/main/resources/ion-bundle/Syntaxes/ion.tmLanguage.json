@@ -1,0 +1,352 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ion",
+  "scopeName": "source.ion",
+  "fileTypes": ["ion"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#bytes" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#builtins" },
+    { "include": "#methods" },
+    { "include": "#constants" },
+    { "include": "#operators" },
+    { "include": "#function-def" },
+    { "include": "#function-call" },
+    { "include": "#lambda" },
+    { "include": "#dict-literal" },
+    { "include": "#module-path" },
+    { "include": "#punctuation" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.ion",
+          "match": "//.*$"
+        }
+      ]
+    },
+
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.interpolated.ion",
+          "begin": "f\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            { "include": "#string-escapes" },
+            { "include": "#string-interpolation" }
+          ]
+        },
+        {
+          "name": "string.quoted.triple.ion",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            { "include": "#string-escapes" }
+          ]
+        },
+        {
+          "name": "string.quoted.double.interpolated.ion",
+          "begin": "f\"",
+          "end": "\"",
+          "patterns": [
+            { "include": "#string-escapes" },
+            { "include": "#string-interpolation" }
+          ]
+        },
+        {
+          "name": "string.quoted.double.ion",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "include": "#string-escapes" }
+          ]
+        }
+      ]
+    },
+
+    "string-interpolation": {
+      "patterns": [
+        {
+          "name": "meta.interpolation.ion",
+          "begin": "(?<!\\\\)\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.interpolation.begin.ion" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.interpolation.end.ion" }
+          },
+          "patterns": [
+            { "include": "source.ion" }
+          ]
+        }
+      ]
+    },
+
+    "string-escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.ion",
+          "match": "\\\\[nrt\\\\\"{}]"
+        },
+        {
+          "name": "constant.character.escape.unicode.ion",
+          "match": "\\\\u\\{[0-9a-fA-F]+\\}"
+        }
+      ]
+    },
+
+    "byte-string-escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.ion",
+          "match": "\\\\[nrt\\\\\"0]"
+        },
+        {
+          "name": "constant.character.escape.hex.ion",
+          "match": "\\\\x[0-9a-fA-F]{2}"
+        }
+      ]
+    },
+
+    "bytes": {
+      "patterns": [
+        {
+          "name": "string.quoted.byte.ion",
+          "begin": "b\"",
+          "end": "\"",
+          "patterns": [
+            { "include": "#byte-string-escapes" }
+          ]
+        }
+      ]
+    },
+
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.ion",
+          "match": "\\b[0-9][0-9_]*\\.(?!\\.)[0-9_]*(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "constant.numeric.integer.ion",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.ion",
+          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|as|async|spawn|await|select|try|catch|use)\\b"
+        },
+        {
+          "name": "keyword.declaration.ion",
+          "match": "\\b(let|mut|fn)\\b"
+        }
+      ]
+    },
+
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.constructor.ion",
+          "match": "\\b(Some|Ok|Err)\\b"
+        },
+        {
+          "match": ":\\s*(int|float|bool|string|bytes|list|dict|tuple|set|fn|any|Option|Result)\\b",
+          "captures": {
+            "1": { "name": "support.type.annotation.ion" }
+          }
+        },
+        {
+          "name": "support.type.annotation.ion",
+          "match": "(?<=<)(int|float|bool|string|bytes|list|dict|tuple|set|fn|any|Option|Result)(?=[>,])"
+        }
+      ]
+    },
+
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.module.ion",
+          "match": "\\b(math|json|io)\\b(?=\\s*::)"
+        },
+        {
+          "name": "support.function.ion",
+          "match": "\\b(len|range|enumerate|type_of|str|int|float|bytes|bytes_from_hex|assert|assert_eq|channel|set|cell|sleep|timeout)\\b"
+        }
+      ]
+    },
+
+    "methods": {
+      "patterns": [
+        {
+          "match": "(\\.)(await|await_timeout|len|push|pop|map|filter|fold|flat_map|any|all|first|last|reverse|sort|sort_by|flatten|zip|contains|join|enumerate|is_empty|index|count|slice|dedup|unique|min|max|sum|window|chunk|reduce|add|remove|union|intersection|difference|to_list|get|set|update|starts_with|ends_with|trim|trim_start|trim_end|to_upper|to_lower|split|replace|chars|char_len|repeat|find|to_int|to_float|strip_prefix|strip_suffix|pad_start|pad_end|to_str|to_hex|keys|values|entries|contains_key|insert|merge|keys_of|is_some|is_none|unwrap|unwrap_or|expect|and_then|or_else|unwrap_or_else|is_ok|is_err|map_err|send|recv|try_recv|recv_timeout)\\b",
+          "captures": {
+            "1": { "name": "punctuation.accessor.ion" },
+            "2": { "name": "support.function.method.ion" }
+          }
+        }
+      ]
+    },
+
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.ion",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.none.ion",
+          "match": "\\bNone\\b"
+        },
+        {
+          "name": "constant.language.wildcard.ion",
+          "match": "\\b_\\b"
+        },
+        {
+          "name": "constant.language.unit.ion",
+          "match": "\\(\\)"
+        }
+      ]
+    },
+
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.range.ion",
+          "match": "\\.\\.\\.|\\.\\.=|\\.\\."
+        },
+        {
+          "name": "keyword.operator.arrow.ion",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.pipe.ion",
+          "match": "\\|>"
+        },
+        {
+          "name": "keyword.operator.try.ion",
+          "match": "\\?"
+        },
+        {
+          "name": "keyword.operator.comparison.ion",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.ion",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.assignment.ion",
+          "match": "\\+=|-=|\\*=|/=|="
+        },
+        {
+          "name": "keyword.operator.arithmetic.ion",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.bitwise.ion",
+          "match": "<<|>>|&|\\||\\^"
+        }
+      ]
+    },
+
+    "function-def": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+          "captures": {
+            "1": { "name": "keyword.declaration.ion" },
+            "2": { "name": "entity.name.function.ion" }
+          }
+        }
+      ]
+    },
+
+    "function-call": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+          "captures": {
+            "1": { "name": "entity.name.function.call.ion" }
+          }
+        },
+        {
+          "match": "\\.([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+          "captures": {
+            "1": { "name": "entity.name.function.method.ion" }
+          }
+        }
+      ]
+    },
+
+    "lambda": {
+      "patterns": [
+        {
+          "match": "\\|([^|]*)\\|",
+          "captures": {
+            "0": { "name": "meta.lambda.ion" }
+          }
+        }
+      ]
+    },
+
+    "dict-literal": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.dict.ion",
+          "match": "#\\{"
+        }
+      ]
+    },
+
+    "module-path": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(::)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "entity.name.namespace.ion" },
+            "2": { "name": "punctuation.separator.namespace.ion" },
+            "3": { "name": "entity.name.other.ion" }
+          }
+        }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.namespace.ion",
+          "match": "::"
+        },
+        {
+          "name": "punctuation.separator.ion",
+          "match": "[;,]"
+        },
+        {
+          "name": "punctuation.accessor.ion",
+          "match": "\\."
+        }
+      ]
+    },
+
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.ion",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}
