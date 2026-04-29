@@ -27,10 +27,6 @@
     <depends>org.jetbrains.plugins.textmate</depends>
     <depends>com.redhat.devtools.lsp4ij</depends>
 
-    <extensions defaultExtensionNs="org.jetbrains.plugins.textmate">
-        <bundleProvider implementation="com.ionlang.idea.IonTextMateBundleProvider"/>
-    </extensions>
-
     <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
         <server id="ion-lsp"
                 name="Ion Language Server"
@@ -44,6 +40,7 @@
     </extensions>
 
     <extensions defaultExtensionNs="com.intellij">
+        <textmate.bundleProvider implementation="com.ionlang.idea.IonTextMateBundleProvider"/>
         <applicationService serviceImplementation="com.ionlang.idea.settings.IonSettings"/>
         <applicationConfigurable
             parentId="language"
