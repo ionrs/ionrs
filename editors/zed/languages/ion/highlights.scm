@@ -15,6 +15,7 @@
   "continue"
   "return"
   "in"
+  "as"
   "async"
   "spawn"
   "select"
@@ -28,6 +29,20 @@
   "mut"
   "fn"
 ] @keyword
+
+; ── Loop labels ──────────────────────────────────────────────
+; VSCode highlights `'name` labels via the tmLanguage grammar. Zed's
+; highlights are tree-sitter-driven, so this requires the external
+; tree-sitter-ion grammar at github.com/paiml/ionlang to expose a label
+; node (e.g. `(label)` or `(loop_label)`) before it can be highlighted
+; here. Once that lands, add:
+;
+;   (label) @label
+;   (break_statement label: (label) @label)
+;   (continue_statement label: (label) @label)
+;
+; Until then, labels render as plain text — keep this comment as a TODO
+; anchor when bumping the grammar pin in extension.toml.
 
 ; ── Constructors ─────────────────────────────────────────────
 (some_expression "Some" @constructor)

@@ -1,7 +1,7 @@
 id = "ion"
 name = "Ion"
 description = "Ion language support for Zed — syntax highlighting and LSP integration."
-version = "0.1.0"
+version = "0.1.1"
 schema_version = 1
 authors = ["paiml <https://github.com/paiml>"]
 repository = "https://github.com/paiml/ionlang"
