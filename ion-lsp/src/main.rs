@@ -4,24 +4,28 @@ use ion_core::ast::{Param, StmtKind, UseImports};
 use ion_core::error::IonError;
 use ion_core::lexer::Lexer;
 use ion_core::parser::Parser;
+use ion_core::token::Token;
 
 use lsp_server::{
-    Connection, Message, Notification as LspNotification, Request, RequestId, Response,
+    Connection, ErrorCode, Message, Notification as LspNotification, Request, RequestId,
+    Response, ResponseError,
 };
 use lsp_types::notification::{
     self, DidChangeTextDocument, DidOpenTextDocument, DidSaveTextDocument,
     Notification as NotificationTrait,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, Request as RequestTrait,
+    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Rename,
+    Request as RequestTrait,
 };
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionList, CompletionOptions, CompletionParams,
     CompletionResponse, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
     DidOpenTextDocumentParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
     GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
-    HoverProviderCapability, InitializeResult, Location, MarkupContent, MarkupKind, Position,
-    Range, ServerCapabilities, SymbolKind, TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+    HoverProviderCapability, InitializeResult, Location, MarkupContent, MarkupKind,
+    OneOf, Position, Range, ReferenceParams, RenameParams, ServerCapabilities, SymbolKind,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url, WorkspaceEdit,
 };
 
 // ---- Definition tracking ----
@@ -299,8 +303,10 @@ fn main() {
 
     let capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-        document_symbol_provider: Some(lsp_types::OneOf::Left(true)),
-        definition_provider: Some(lsp_types::OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
+        definition_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Left(true)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(vec![".".to_string()]),
@@ -395,6 +401,39 @@ fn handle_request(conn: &Connection, documents: &HashMap<Url, String>, req: Requ
             })
         };
         let resp = Response::new_ok(id, serde_json::to_value(result).unwrap());
+        conn.sender.send(Message::Response(resp)).unwrap();
+    } else if req.method == References::METHOD {
+        let (id, params): (RequestId, ReferenceParams) =
+            req.extract(References::METHOD).unwrap();
+        let uri = params.text_document_position.text_document.uri.clone();
+        let pos = params.text_document_position.position;
+        let include_decl = params.context.include_declaration;
+        let result = documents
+            .get(&uri)
+            .map(|source| handle_references(source, &uri, pos, include_decl))
+            .unwrap_or_default();
+        let resp = Response::new_ok(id, serde_json::to_value(result).unwrap());
+        conn.sender.send(Message::Response(resp)).unwrap();
+    } else if req.method == Rename::METHOD {
+        let (id, params): (RequestId, RenameParams) = req.extract(Rename::METHOD).unwrap();
+        let uri = params.text_document_position.text_document.uri.clone();
+        let pos = params.text_document_position.position;
+        let new_name = params.new_name;
+        let resp = match documents.get(&uri) {
+            Some(source) => match handle_rename(source, &uri, pos, &new_name) {
+                Ok(edit) => Response::new_ok(id, serde_json::to_value(edit).unwrap()),
+                Err(msg) => Response {
+                    id,
+                    result: None,
+                    error: Some(ResponseError {
+                        code: ErrorCode::InvalidParams as i32,
+                        message: msg,
+                        data: None,
+                    }),
+                },
+            },
+            None => Response::new_ok(id, serde_json::Value::Null),
+        };
         conn.sender.send(Message::Response(resp)).unwrap();
     }
 }
@@ -1240,6 +1279,104 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
     })
 }
 
+// ---- References & Rename ----
+
+/// Tokenize the source and return the location of every `Token::Ident` whose
+/// text equals `name`. Range columns and lines are converted to LSP 0-based
+/// coordinates. Tokens inside strings, comments, and other non-identifier
+/// constructs are naturally excluded by the lexer.
+fn find_identifier_occurrences(source: &str, name: &str) -> Vec<Range> {
+    let tokens = match Lexer::new(source).tokenize() {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for tok in tokens {
+        if let Token::Ident(text) = &tok.token {
+            if text == name {
+                let line = tok.line.saturating_sub(1) as u32;
+                let col = tok.col.saturating_sub(1) as u32;
+                out.push(Range {
+                    start: Position::new(line, col),
+                    end: Position::new(line, col + name.len() as u32),
+                });
+            }
+        }
+    }
+    out
+}
+
+fn is_valid_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn handle_references(
+    source: &str,
+    uri: &Url,
+    pos: Position,
+    _include_decl: bool,
+) -> Vec<Location> {
+    // The LSP spec lets us omit the declaration when include_declaration is
+    // false, but our textual scan gives us all occurrences uniformly and most
+    // clients (VSCode, IntelliJ via LSP4IJ) expect the declaration in the
+    // results regardless, so we always return everything.
+    let Some(name) = word_at_position(source, pos.line, pos.character) else {
+        return Vec::new();
+    };
+    if !is_valid_identifier(&name) {
+        return Vec::new();
+    }
+    find_identifier_occurrences(source, &name)
+        .into_iter()
+        .map(|range| Location {
+            uri: uri.clone(),
+            range,
+        })
+        .collect()
+}
+
+fn handle_rename(
+    source: &str,
+    uri: &Url,
+    pos: Position,
+    new_name: &str,
+) -> Result<WorkspaceEdit, String> {
+    if !is_valid_identifier(new_name) {
+        return Err(format!("'{new_name}' is not a valid Ion identifier"));
+    }
+    let Some(old_name) = word_at_position(source, pos.line, pos.character) else {
+        return Err("no identifier under cursor".to_string());
+    };
+    if !is_valid_identifier(&old_name) {
+        return Err(format!("'{old_name}' is not a renameable identifier"));
+    }
+    if new_name == old_name {
+        return Ok(WorkspaceEdit::default());
+    }
+    let occurrences = find_identifier_occurrences(source, &old_name);
+    if occurrences.is_empty() {
+        return Err(format!("no occurrences of '{old_name}' found"));
+    }
+    let edits: Vec<TextEdit> = occurrences
+        .into_iter()
+        .map(|range| TextEdit {
+            range,
+            new_text: new_name.to_string(),
+        })
+        .collect();
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), edits);
+    Ok(WorkspaceEdit {
+        changes: Some(changes),
+        ..Default::default()
+    })
+}
+
 // ---- Notification handling ----
 
 fn handle_notification(
@@ -1356,5 +1493,87 @@ fn def_to_symbol(def: &Definition) -> DocumentSymbol {
             end: Position::new(def.line, def.col + def.name.len() as u32),
         },
         children: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fake_uri() -> Url {
+        Url::parse("file:///tmp/test.ion").unwrap()
+    }
+
+    #[test]
+    fn references_finds_all_occurrences_excluding_strings() {
+        let src = "let count = 0;\ncount += 1;\nlet msg = \"count me out\";\n";
+        // cursor on `count` in line 0
+        let refs = handle_references(src, &fake_uri(), Position::new(0, 6), true);
+        assert_eq!(refs.len(), 2, "expected 2 hits, got: {:?}", refs);
+        assert_eq!(refs[0].range.start, Position::new(0, 4));
+        assert_eq!(refs[1].range.start, Position::new(1, 0));
+    }
+
+    #[test]
+    fn references_skips_comments() {
+        let src = "let x = 1;\n// x is a counter\nx + 1\n";
+        let refs = handle_references(src, &fake_uri(), Position::new(0, 4), true);
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].range.start, Position::new(0, 4));
+        assert_eq!(refs[1].range.start, Position::new(2, 0));
+    }
+
+    #[test]
+    fn references_returns_empty_for_keyword_or_string() {
+        let src = "let x = \"hello\";\n";
+        // cursor on `let` keyword: word_at_position returns "let", but lexer
+        // tokenizes it as Token::Let, not Token::Ident, so no occurrences.
+        let refs = handle_references(src, &fake_uri(), Position::new(0, 1), true);
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn rename_rewrites_every_occurrence() {
+        let src = "let count = 0;\ncount += 1;\n";
+        let edit = handle_rename(src, &fake_uri(), Position::new(0, 6), "tally").unwrap();
+        let changes = edit.changes.expect("changes map");
+        let edits = changes.get(&fake_uri()).expect("edits for uri");
+        assert_eq!(edits.len(), 2);
+        for e in edits {
+            assert_eq!(e.new_text, "tally");
+        }
+    }
+
+    #[test]
+    fn rename_rejects_invalid_new_name() {
+        let src = "let x = 1;\n";
+        let err = handle_rename(src, &fake_uri(), Position::new(0, 4), "1abc").unwrap_err();
+        assert!(err.contains("not a valid"));
+    }
+
+    #[test]
+    fn rename_same_name_is_noop() {
+        let src = "let x = 1;\nx + 1\n";
+        let edit = handle_rename(src, &fake_uri(), Position::new(0, 4), "x").unwrap();
+        assert!(edit.changes.is_none() || edit.changes.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn rename_errors_when_cursor_not_on_identifier() {
+        let src = "let x = 1;\n";
+        // column 14 is past end of line
+        let err = handle_rename(src, &fake_uri(), Position::new(0, 14), "y").unwrap_err();
+        assert!(err.contains("no identifier"));
+    }
+
+    #[test]
+    fn is_valid_identifier_basics() {
+        assert!(is_valid_identifier("foo"));
+        assert!(is_valid_identifier("_bar"));
+        assert!(is_valid_identifier("baz_99"));
+        assert!(!is_valid_identifier(""));
+        assert!(!is_valid_identifier("9foo"));
+        assert!(!is_valid_identifier("foo bar"));
+        assert!(!is_valid_identifier("foo-bar"));
     }
 }
