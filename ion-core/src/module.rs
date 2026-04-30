@@ -1,10 +1,18 @@
 use indexmap::IndexMap;
+#[cfg(feature = "async-runtime")]
+use std::future::Future;
 
+#[cfg(feature = "async-runtime")]
+use crate::error::IonError;
+#[cfg(feature = "async-runtime")]
+use crate::value::AsyncBuiltinClosureFn;
 use crate::value::{BuiltinClosureFn, BuiltinFn, Value};
 
 enum ModuleFn {
     Function(BuiltinFn),
     Closure(BuiltinClosureFn),
+    #[cfg(feature = "async-runtime")]
+    AsyncClosure(AsyncBuiltinClosureFn),
 }
 
 /// A named collection of functions and values that can be registered
@@ -45,6 +53,26 @@ impl Module {
         );
     }
 
+    /// Register an async closure-backed builtin function in this module.
+    ///
+    /// Scripts call async module functions like normal functions under
+    /// `Engine::eval_async`; synchronous evaluation rejects them explicitly.
+    #[cfg(feature = "async-runtime")]
+    pub fn register_async_fn<F, Fut>(&mut self, name: &str, func: F)
+    where
+        F: Fn(Vec<Value>) -> Fut + 'static,
+        Fut: Future<Output = Result<Value, IonError>> + 'static,
+    {
+        let qualified = format!("{}::{}", self.name, name);
+        self.functions.insert(
+            name.to_string(),
+            (
+                qualified,
+                ModuleFn::AsyncClosure(AsyncBuiltinClosureFn::new(func)),
+            ),
+        );
+    }
+
     /// Register a constant value in this module.
     pub fn set(&mut self, name: &str, value: Value) {
         self.values.insert(name.to_string(), value);
@@ -64,6 +92,10 @@ impl Module {
             let value = match func {
                 ModuleFn::Function(func) => Value::BuiltinFn(qualified.clone(), *func),
                 ModuleFn::Closure(func) => Value::BuiltinClosure(qualified.clone(), func.clone()),
+                #[cfg(feature = "async-runtime")]
+                ModuleFn::AsyncClosure(func) => {
+                    Value::AsyncBuiltinClosure(qualified.clone(), func.clone())
+                }
             };
             map.insert(name.clone(), value);
         }

@@ -136,6 +136,18 @@ engine.register_module(math);
 // Scripts can use: math::add(1, 2) or `use math::*;`
 ```
 
+With `async-runtime`, modules can expose native async host functions too:
+
+```rust
+let mut sensor = Module::new("sensor");
+sensor.register_async_fn("call", |args| async move {
+    Ok(Value::Int(args.len() as i64))
+});
+engine.register_module(sensor);
+
+let value = engine.eval_async(r#"sensor::call("jobs.claim", #{})"#).await?;
+```
+
 ### Host Types with Derive
 
 ```rust

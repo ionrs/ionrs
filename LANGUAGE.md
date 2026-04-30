@@ -1002,6 +1002,21 @@ let mut engine = Engine::new();
 engine.register_module(math);
 ```
 
+With the `async-runtime` feature, modules can expose native async host
+functions. Ion code calls them normally, but the host must use `eval_async`:
+
+```rust
+let mut sensor = Module::new("sensor");
+sensor.register_async_fn("call", |args| async move {
+    Ok(Value::Int(args.len() as i64))
+});
+
+let mut engine = Engine::new();
+engine.register_module(sensor);
+
+let value = engine.eval_async(r#"sensor::call("jobs.claim", #{})"#).await?;
+```
+
 Submodules:
 ```rust
 let mut net = Module::new("net");

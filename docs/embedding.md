@@ -47,6 +47,14 @@ math.register_fn("add", |args| { ... });
 math.set("PI", Value::Float(std::f64::consts::PI));
 engine.register_module(math);              // scripts use math::add() or `use math::*;`
 
+// Modules can also expose native async host functions (feature: async-runtime).
+let mut sensor = Module::new("sensor");
+sensor.register_async_fn("call", |args| async move {
+    // async host I/O
+    Ok(Value::Int(args.len() as i64))
+});
+engine.register_module(sensor);            // scripts use sensor::call(...) under eval_async
+
 // Register host types
 engine.register_type::<Player>();          // via #[derive(IonType)]
 engine.register_struct(def);               // manual HostStructDef
@@ -102,6 +110,11 @@ capture host state.
 Sync callbacks appear to Ion scripts as `builtin_fn`; async callbacks are
 called with the same Ion syntax but require `eval_async`. Calling an async host
 function through sync `eval` produces an explicit runtime error.
+
+`Module` mirrors the same callback split: `Module::register_fn`,
+`Module::register_closure`, and, with `async-runtime`, `Module::register_async_fn`.
+Async module callbacks are useful for namespaced Tokio-backed APIs such as
+`sensor::call(...)`, `sensor::upload(...)`, or `net::http::get(...)`.
 
 ## Host Types (`#[derive(IonType)]`)
 - Proc macro in `ion-derive/`

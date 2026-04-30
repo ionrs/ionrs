@@ -67,6 +67,46 @@ fn sync_eval_rejects_async_host_function() {
 }
 
 #[tokio::test]
+async fn async_module_function_runs_under_eval_async() {
+    let mut engine = Engine::new();
+
+    let mut sensor = Module::new("sensor");
+    sensor.register_async_fn(
+        "call",
+        |args| async move { Ok(Value::Int(args.len() as i64)) },
+    );
+    engine.register_module(sensor);
+
+    let value = engine
+        .eval_async(
+            r#"
+            sensor::call("jobs.claim", #{})
+            "#,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(value, Value::Int(2));
+}
+
+#[test]
+fn async_module_function_rejects_sync_eval() {
+    let mut engine = Engine::new();
+
+    let mut sensor = Module::new("sensor");
+    sensor.register_async_fn("call", |_args| async move { Ok(Value::Unit) });
+    engine.register_module(sensor);
+
+    let err = engine.eval("sensor::call()").unwrap_err();
+    assert!(
+        err.message.contains("async host function cannot be called")
+            || err.message.contains("use eval_async"),
+        "unexpected error: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
 async fn eval_async_calls_async_host_function_without_coloring_ion_code() {
     let mut engine = Engine::new();
     engine.register_async_fn("later", |args| async move {
