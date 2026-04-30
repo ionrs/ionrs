@@ -33,7 +33,7 @@
 ; ── Loop labels ──────────────────────────────────────────────
 ; VSCode highlights `'name` labels via the tmLanguage grammar. Zed's
 ; highlights are tree-sitter-driven, so this requires the external
-; tree-sitter-ion grammar at github.com/paiml/ionlang to expose a label
+; tree-sitter-ion grammar at github.com/chutuananh2k/ion-lang to expose a label
 ; node (e.g. `(label)` or `(loop_label)`) before it can be highlighted
 ; here. Once that lands, add:
 ;

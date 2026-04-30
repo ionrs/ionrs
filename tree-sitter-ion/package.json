@@ -2,7 +2,7 @@
   "name": "tree-sitter-ion",
   "version": "0.1.0",
   "description": "Tree-sitter grammar for the Ion programming language",
-  "repository": "https://github.com/paiml/ionlang",
+  "repository": "https://github.com/chutuananh2k/ion-lang",
   "license": "MIT",
   "main": "bindings/node",
   "types": "bindings/node",

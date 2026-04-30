@@ -4,12 +4,13 @@ description = "Ion language support for Zed — syntax highlighting and LSP inte
 version = "0.1.1"
 schema_version = 1
 authors = ["paiml <https://github.com/paiml>"]
-repository = "https://github.com/paiml/ionlang"
+repository = "https://github.com/chutuananh2k/ion-lang"
 
 [language_servers.ion-lsp]
 name = "Ion LSP"
 languages = ["Ion"]
 
 [grammars.ion]
-repository = "https://github.com/paiml/ionlang"
+repository = "https://github.com/chutuananh2k/ion-lang"
+rev = "8ebb5f574a8c26cde0769293e2ae6f23fb81696c"
 path = "tree-sitter-ion"

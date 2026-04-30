@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.ionlang.idea</id>
     <name>Ion Language</name>
-    <vendor email="support@ionlang.dev" url="https://github.com/paiml/ionlang">ion-lang</vendor>
+    <vendor email="support@ionlang.dev" url="https://github.com/chutuananh2k/ion-lang">ion-lang</vendor>
 
     <description><![CDATA[
         Syntax highlighting and LSP support for the Ion scripting language in JetBrains IDEs.

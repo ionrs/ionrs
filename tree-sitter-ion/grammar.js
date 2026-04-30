@@ -1,6 +1,6 @@
 /// <reference types="tree-sitter-cli/dsl" />
 // Tree-sitter grammar for the Ion programming language
-// https://github.com/paiml/ionlang
+// https://github.com/chutuananh2k/ion-lang
 
 const PREC = {
   ASSIGN: 1,
