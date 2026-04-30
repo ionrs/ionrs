@@ -21,9 +21,10 @@
 //! - **`optimize`** (default) — Peephole optimizer, constant folding,
 //!   dead-code elimination, tail-call optimization
 //! - **`derive`** (default) — `#[derive(IonType)]` for host type injection
-//! - **`concurrency`** — Structured concurrency: `async`/`spawn`/`.await`/
-//!   `select`/`channel`, cooperative cancellation, tokio-friendly
-//!   embedding via [`engine::Engine::register_closure`]
+//! - **`async-runtime`** — Native Tokio async evaluation via
+//!   [`engine::Engine::eval_async`], async host functions, `spawn`/`.await`/
+//!   `select`, timers, and channels
+//! - **`concurrency`** — Legacy sync-eval structured concurrency backend
 //! - **`msgpack`** — `Value::to_msgpack()` / `from_msgpack()` via `rmpv`
 //! - **`obfuscate`** — String obfuscation via `obfstr`
 //! - **`rewrite`** — Source rewriter at [`rewrite::replace_global`]
@@ -57,9 +58,9 @@ macro_rules! ion_static_str {
 }
 
 pub mod ast;
-#[cfg(feature = "concurrency")]
+#[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
 pub mod async_rt;
-#[cfg(feature = "concurrency")]
+#[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
 pub mod async_rt_std;
 #[cfg(feature = "async-runtime")]
 pub mod async_runtime;

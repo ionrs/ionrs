@@ -12,12 +12,14 @@
 - Protocol: lsp-server + lsp-types crates
 - Capabilities:
   - **Diagnostics**: parse errors (lexer + parser) on open/change
-  - **Hover**: builtins (27), keywords (19), user-defined fns/vars
+  - **Hover**: builtins, keywords, user-defined fns/vars
   - **Completion**: keywords, builtins, methods (after `.`), user definitions
   - **Go-to-definition**: user-defined functions and variables (same file)
   - **Document symbols**: functions and top-level variables
 - Trigger: `.` for method completions
 - Method completions cover all string/list/dict/option/result/bytes/task/channel methods
+- Syntax and completions include `async`, `spawn`, `.await`, `select`, native
+  async channel methods, `sleep`, and `timeout`.
 
 ## VSCode Extension (`editors/vscode/`)
 - `syntaxes/ion.tmLanguage.json` — TextMate grammar

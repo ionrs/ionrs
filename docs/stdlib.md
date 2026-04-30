@@ -34,6 +34,23 @@ len, to_list, to_str, to_hex, slice, is_empty
 ## Cell Methods (3)
 get, set, update
 
+## Native Async Runtime Builtins
+
+Available under `Engine::eval_async` with the `async-runtime` feature:
+
+- `sleep(ms)` — park on a Tokio timer and return `()`.
+- `timeout(ms, fn)` — run `fn` as a pollable callback; return `Some(value)`
+  if it finishes before the timer or `None` if the timer wins.
+- `channel(size)` — create a bounded Tokio-backed channel `(tx, rx)`.
+
+Channel endpoint methods:
+
+- `tx.send(value)` — send, parking if the channel is full.
+- `tx.close()` — close the sender endpoint.
+- `rx.recv()` — park until a value arrives; return `None` after close.
+- `rx.try_recv()` — immediate receive attempt, returning `Option`.
+- `rx.recv_timeout(ms)` — receive with a Tokio timer, returning `Option`.
+
 ## Global Builtins (30)
 print, println, len, range, enumerate, join, type_of, str, int, float,
 json_encode, json_decode, json_encode_pretty, bytes, bytes_from_hex,

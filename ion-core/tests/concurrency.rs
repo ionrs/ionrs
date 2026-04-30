@@ -1,4 +1,4 @@
-#![cfg(feature = "concurrency")]
+#![cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
 
 use ion_core::engine::Engine;
 use ion_core::value::Value;

@@ -67,10 +67,10 @@ pub enum Value {
         data: Vec<Value>,
     },
     /// Async task handle (concurrency feature)
-    #[cfg(feature = "concurrency")]
+    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
     Task(std::sync::Arc<dyn crate::async_rt::TaskHandle>),
     /// Channel sender/receiver pair
-    #[cfg(feature = "concurrency")]
+    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
     Channel(crate::async_rt::ChannelEnd),
     /// Shared mutable reference cell for closure state
     Cell(Arc<Mutex<Value>>),
@@ -211,9 +211,9 @@ impl Value {
             Value::AsyncChannelReceiver(_) => ion_static_str!("AsyncChannelReceiver"),
             Value::HostStruct { .. } => ion_static_str!("struct"),
             Value::HostEnum { .. } => ion_static_str!("enum"),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Task(_) => ion_static_str!("Task"),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Channel(_) => ion_static_str!("Channel"),
             Value::Cell(_) => ion_static_str!("cell"),
             Value::Range { .. } => ion_static_str!("range"),
@@ -370,9 +370,9 @@ impl fmt::Display for Value {
             Value::AsyncChannelSender(_) => write!(f, "<AsyncChannelTx>"),
             #[cfg(feature = "async-runtime")]
             Value::AsyncChannelReceiver(_) => write!(f, "<AsyncChannelRx>"),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Task(_) => write!(f, "<Task>"),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Channel(ch) => match ch {
                 crate::async_rt::ChannelEnd::Sender(_) => write!(f, "<ChannelTx>"),
                 crate::async_rt::ChannelEnd::Receiver(_) => write!(f, "<ChannelRx>"),
@@ -550,7 +550,7 @@ impl Value {
                 }
                 serde_json::Value::Object(map)
             }
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Task(_) | Value::Channel(_) => serde_json::Value::Null,
             Value::Cell(cell) => cell.lock().unwrap().to_json(),
             Value::Bytes(b) => {
@@ -652,7 +652,7 @@ impl Value {
                 }
                 rmpv::Value::Map(pairs)
             }
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Task(_) | Value::Channel(_) => rmpv::Value::Nil,
             Value::Cell(cell) => cell.lock().unwrap().to_msgpack_value(),
             Value::Range {

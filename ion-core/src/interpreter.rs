@@ -71,9 +71,9 @@ pub struct Interpreter {
     pub limits: Limits,
     pub types: TypeRegistry,
     call_depth: usize,
-    #[cfg(feature = "concurrency")]
+    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
     nursery: Option<crate::async_rt::Nursery>,
-    #[cfg(feature = "concurrency")]
+    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
     pub(crate) cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
@@ -96,9 +96,9 @@ impl Interpreter {
             limits: Limits::default(),
             types: TypeRegistry::new(),
             call_depth: 0,
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             nursery: None,
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             cancel_flag: None,
         }
     }
@@ -132,9 +132,9 @@ impl Interpreter {
             limits: Limits::default(),
             types: TypeRegistry::new(),
             call_depth: 0,
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             nursery: None,
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             cancel_flag: None,
         }
     }
@@ -166,7 +166,7 @@ impl Interpreter {
         }
     }
 
-    #[cfg(feature = "concurrency")]
+    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
     fn check_cancelled(&self, line: usize, col: usize) -> Result<(), SignalOrError> {
         if let Some(flag) = &self.cancel_flag {
             if flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -237,7 +237,7 @@ impl Interpreter {
                 let iter_val = self.eval_expr(iter)?;
                 let items = self.value_to_iter(&iter_val, iter.span)?;
                 for item in items {
-                    #[cfg(feature = "concurrency")]
+                    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
                     self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     self.env.push_scope();
                     self.bind_pattern(pattern, &item, false, iter.span)?;
@@ -276,7 +276,7 @@ impl Interpreter {
             StmtKind::While { label, cond, body } => {
                 let mut iters = 0usize;
                 loop {
-                    #[cfg(feature = "concurrency")]
+                    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
                     self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     let c = self.eval_expr(cond)?;
                     if !c.is_truthy() {
@@ -332,7 +332,7 @@ impl Interpreter {
             } => {
                 let mut iters = 0usize;
                 loop {
-                    #[cfg(feature = "concurrency")]
+                    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
                     self.check_cancelled(stmt.span.line, stmt.span.col)?;
                     let val = self.eval_expr(expr)?;
                     if !self.pattern_matches(pattern, &val) {
@@ -1349,16 +1349,16 @@ impl Interpreter {
             }
 
             // Concurrency
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             ExprKind::AsyncBlock(body) => self.eval_async_block(body, span),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             ExprKind::SpawnExpr(expr) => self.eval_spawn(expr, span),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             ExprKind::AwaitExpr(expr) => self.eval_await(expr, span),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             ExprKind::SelectExpr(branches) => self.eval_select(branches, span),
 
-            #[cfg(not(feature = "concurrency"))]
+            #[cfg(not(all(feature = "concurrency", not(feature = "async-runtime"))))]
             ExprKind::AsyncBlock(_)
             | ExprKind::SpawnExpr(_)
             | ExprKind::AwaitExpr(_)
@@ -1798,9 +1798,9 @@ impl Interpreter {
                 }
             },
             Value::Cell(cell) => self.cell_method(cell, method, args, span),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Task(handle) => self.task_method(handle, method, args, span),
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::Channel(ch) => self.channel_method(ch, method, args, span),
             _ => Err(IonError::type_err(
                 format!(
@@ -3107,7 +3107,7 @@ impl Interpreter {
                     }
                 }
             }
-            #[cfg(feature = "concurrency")]
+            #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
             Value::BuiltinFn(ref name, _) if name == "timeout" => self.builtin_timeout(args, span),
             Value::BuiltinFn(_, func) => {
                 func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
@@ -3134,7 +3134,7 @@ impl Interpreter {
         }
     }
 
-    #[cfg(feature = "concurrency")]
+    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
     fn builtin_timeout(&mut self, args: &[Value], span: Span) -> SignalResult {
         if args.len() < 2 {
             return Err(IonError::runtime(
@@ -3546,7 +3546,7 @@ impl Interpreter {
     }
 }
 
-#[cfg(feature = "concurrency")]
+#[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
 impl Interpreter {
     fn eval_async_block(&mut self, body: &[Stmt], _span: Span) -> SignalResult {
         use crate::async_rt::Nursery;
@@ -4130,7 +4130,7 @@ pub fn register_builtins(env: &mut Env, output: Arc<dyn OutputHandler>) {
         false,
     );
 
-    #[cfg(feature = "concurrency")]
+    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
     {
         env.define(
             ion_str!("sleep").to_string(),

@@ -26,12 +26,19 @@ engine.get_typed::<Player>("player")?;     // Value → T: IonType
 engine.register_fn("square", |args| { ... });
 
 // Register closures — can capture host state like database pools,
-// tokio Handles, shared counters, etc.
+// shared counters, etc.
 let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 let counter_c = counter.clone();
 engine.register_closure("tick", move |_args| {
     counter_c.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     Ok(Value::Unit)
+});
+
+// Register native async host functions (feature: async-runtime).
+engine.register_async_fn("later", |args| async move {
+    let ms = args.first().and_then(Value::as_int).unwrap_or(1);
+    tokio::time::sleep(std::time::Duration::from_millis(ms as u64)).await;
+    Ok(Value::Int(ms))
 });
 
 // Register modules (namespaced functions/values)
@@ -89,10 +96,12 @@ capture host state.
 | Method | Signature | Use when |
 |---|---|---|
 | `register_fn` | `fn(&[Value]) -> Result<Value, String>` | Stateless builtins. Plain function pointer, zero overhead. |
-| `register_closure` | `impl Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static` | Need to capture a `tokio::runtime::Handle`, a DB pool, an `Arc<Mutex<State>>`, etc. |
+| `register_closure` | `impl Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static` | Need to capture a DB pool, an `Arc<Mutex<State>>`, counters, etc. Runs synchronously. |
+| `register_async_fn` | `impl Fn(Vec<Value>) -> impl Future<Output = Result<Value, IonError>> + 'static` | Native Tokio async host work under `eval_async`. |
 
-Both appear to Ion scripts identically — `type_of(f) == "builtin_fn"`
-for both, and both satisfy `let f: fn = ...;` annotations.
+Sync callbacks appear to Ion scripts as `builtin_fn`; async callbacks are
+called with the same Ion syntax but require `eval_async`. Calling an async host
+function through sync `eval` produces an explicit runtime error.
 
 ## Host Types (`#[derive(IonType)]`)
 - Proc macro in `ion-derive/`
@@ -117,29 +126,50 @@ The replacement fragment is re-parsed; invalid Ion returns
 `RewriteError::InvalidReplacement`. Use cases: config surgery before
 eval, A/B swapping constants, build-time rewrites.
 
-## Embedding inside a tokio application
+## Embedding inside a Tokio application
 
-Ion's interpreter is synchronous. The conventional pattern:
+For native async I/O, enable `async-runtime` and await `Engine::eval_async`.
+Ion parks on Tokio futures instead of blocking an OS thread:
 
-1. Wrap `engine.eval(...)` in `tokio::task::spawn_blocking` to
-   run off the async worker pool.
-2. Register tokio-backed host functions via `register_closure`,
-   capturing a `tokio::runtime::Handle` and using
-   `handle.block_on(fut)` inside the closure.
+```rust,no_run
+use ion_core::{Engine, Value};
+use ion_core::error::IonError;
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), IonError> {
+    let mut engine = Engine::new();
+    engine.register_async_fn("fetch", |args| async move {
+        let path = args[0].as_str().unwrap_or("").to_string();
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        Ok(Value::Str(path))
+    });
+
+    let value = engine.eval_async(r#"
+        async {
+            let a = spawn fetch("/a");
+            let b = spawn fetch("/b");
+            [a.await, b.await]
+        }
+    "#).await?;
+
+    println!("{value}");
+    Ok(())
+}
+```
 
 See [`docs/concurrency.md`](concurrency.md#embedding-inside-a-tokio-host)
-for the full discussion and [`ion-core/examples/tokio_host.rs`](../ion-core/examples/tokio_host.rs)
-for a runnable end-to-end example.
+for the full model. `engine.eval(...)` remains synchronous and is still
+appropriate for purely synchronous hosts.
 
 ## Cargo.toml for Embedding
 ```toml
 [dependencies]
 ion-core = "0.2"  # includes derive + vm + optimize by default
 # optional:
-# ion-core = { version = "0.2", features = ["concurrency", "msgpack", "rewrite"] }
+# ion-core = { version = "0.2", features = ["async-runtime", "msgpack", "rewrite"] }
 ```
 
 ## Examples
 - `ion-core/examples/embed.rs` — basic eval, inject, pipe, register_fn, error display
 - `ion-core/examples/tokio_host.rs` — running Ion inside `#[tokio::main]` with
-  tokio-backed async builtins (requires `concurrency` feature)
+  native async host functions (requires `async-runtime` feature)

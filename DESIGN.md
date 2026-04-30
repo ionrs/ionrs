@@ -543,9 +543,23 @@ engine.register_module(module);
 
 ## 11. Structured Concurrency
 
-> Requires the `concurrency` cargo feature.
+> Native Tokio integration requires the `async-runtime` cargo feature.
 
 Inspired by Kotlin coroutines / Swift structured concurrency / Trio. All spawned tasks are scoped — they must complete before the parent scope exits. No fire-and-forget.
+
+The preferred runtime is native async: `Engine::eval_async()` returns a Rust
+future, drives a pollable bytecode continuation, and parks Ion tasks on
+Tokio-polled host futures, timers, channels, or child tasks. Ion source is
+mostly free of function coloring. A host async function is called like an
+ordinary Ion function; suspension is a runtime property of the host call.
+
+```rust
+engine.register_async_fn("fetch", |args| async move {
+    let url = args[0].as_str().unwrap_or("").to_string();
+    // reqwest::get(url).await?.text().await
+    Ok(Value::Str(url))
+});
+```
 
 ### Scope
 
@@ -557,6 +571,9 @@ let results = async {
     [a.await, b.await]
 };
 ```
+
+`spawn` creates another Ion task in the runtime, not a Tokio task and not
+an OS thread. `.await` parks the parent until the child completes.
 
 ### Cancellation
 
@@ -575,23 +592,28 @@ let result = async {
 
 ```ion
 let winner = select {
-    a = fetch("fast") => f"got: {a}",
-    _ = sleep(5000) => Err("timeout"),
+    a = spawn fetch("fast") => f"got: {a}",
+    _ = spawn sleep(5000) => Err("timeout"),
 };
 ```
 
-### Channels (bounded, MPMC)
+`select` races branch tasks. The first completion wins; losing branch tasks
+are cancelled and dropped.
+
+### Channels (bounded)
 
 ```ion
 let (tx, rx) = channel(10);
 
+fn produce(tx, items) {
+    for item in items {
+        tx.send(item);
+    }
+    tx.close();
+}
+
 async {
-    spawn {
-        for item in items {
-            tx.send(item);
-        }
-        tx.close();
-    };
+    spawn produce(tx, items);
 
     let mut val = rx.recv();
     while val != None {
@@ -606,10 +628,11 @@ async {
 
 `spawn` is only valid inside `async {}` blocks — no exceptions.
 
-Backed by `crossbeam-channel` for real MPMC semantics (no Mutex
-wrapping). See [`docs/concurrency.md`](docs/concurrency.md) for the
-runtime model, cancellation semantics, and the tokio embedding
-pattern.
+Under `async-runtime`, `channel(size)` returns native async sender and
+receiver endpoints backed by `tokio::sync::mpsc`. `send`, `recv`, and
+`recv_timeout` park the Ion task; `try_recv` is immediate; `close` closes
+the sender endpoint. See [`docs/concurrency.md`](docs/concurrency.md) for
+the runtime model, cancellation semantics, and Tokio embedding pattern.
 
 ---
 
@@ -672,7 +695,7 @@ engine.register_fn("fetch_url", |args: &[Value]| -> Result<Value, String> {
     Ok(Value::Str(body))
 });
 
-// Closure — can capture host state (DB pool, tokio Handle, etc.)
+// Closure — can capture host state (DB pool, counters, etc.)
 let pool = db_pool.clone();
 engine.register_closure("lookup", move |args| {
     let id = args[0].as_int().ok_or("id must be int")?;
@@ -789,7 +812,7 @@ Constants: `PI`, `E`, `TAU`, `INF`, `NAN`
 | `assert_eq(a, b)` | Assert equality |
 | `sleep(ms)` | Sleep for milliseconds |
 | `timeout(ms, fn)` | Run with timeout, returns Option |
-| `channel(size)` | Create bounded channel (concurrency feature) |
+| `channel(size)` | Create bounded channel (`async-runtime` native async, `concurrency` legacy sync backend) |
 
 ### Methods on values
 
@@ -867,11 +890,11 @@ All phases are complete.
 21. Type annotations (`let x: int = 5`)
 
 ### Phase 4 — Concurrency ✓
-22. Async runtime (structured scopes, trait-based backend)
+22. Async runtime (structured scopes, native Tokio continuation runtime)
 23. Spawn / await
 24. Select
 25. Channels
-26. Cooperative cancellation (flag propagated to child interpreters; select cancels losers)
+26. Cooperative cancellation (nursery cancellation; select cancels losers)
 
 ### Phase 5 — Performance ✓
 27. Bytecode compiler
@@ -905,8 +928,9 @@ ionlang/
 │       ├── module.rs         # module system
 │       ├── stdlib.rs         # standard library (math, json, io, string)
 │       ├── host_types.rs     # host struct/enum injection
-│       ├── async_rt.rs       # concurrency traits + Nursery + wait_any
-│       ├── async_rt_std.rs   # std::thread + crossbeam-channel backend
+│       ├── async_runtime.rs  # native Tokio async eval + bytecode continuations
+│       ├── async_rt.rs       # legacy sync-eval concurrency traits
+│       ├── async_rt_std.rs   # legacy std::thread + crossbeam-channel backend
 │       ├── rewrite.rs        # source rewriter (feature: rewrite)
 │       └── lib.rs
 ├── ion-derive/

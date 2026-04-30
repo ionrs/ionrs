@@ -4,7 +4,7 @@
 1. Strong typing, interpreter-inferred, with optional type annotations on `let` bindings
 2. Semicolons required
 3. Explicit string interpolation `f"..."`
-4. Structured concurrency (feature-gated)
+4. Structured concurrency (native Tokio runtime under `async-runtime`; legacy sync backend under `concurrency`)
 5. Flat module system (single-file scripts + host-provided globals)
 6. Both loops (`for`, `while`) and functional (`map`/`filter`/`fold`)
 7. **No struct/enum/impl in scripts** — host-injected only via `#[derive(IonType)]`
@@ -20,6 +20,7 @@
 - `unwrap()` allowed on Option/Result (updated — was previously forbidden)
 - All collection methods return NEW collections, no mutation
 - `spawn` only inside `async {}` — strictly enforced
+- Async host functions are uncolored in Ion source; `eval_async` parks VM continuations on Tokio futures
 - `+=` etc. are sugar for `x = x + ...` — require `let mut`
 - Pipe `|>` always passes as first argument: `a |> f(b)` = `f(a, b)`
 - Closures capture by value at time of creation

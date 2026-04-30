@@ -773,9 +773,29 @@ data.to_str()                  // Ok("hello")
 
 ## Concurrency
 
-> Requires the `concurrency` cargo feature.
+> Native async host integration requires the `async-runtime` cargo feature.
 
-Ion provides structured concurrency with `async` blocks, `spawn`, and channels.
+Ion provides structured concurrency with `async` blocks, `spawn`, `.await`,
+`select`, timers, and channels. In the native async runtime, Ion code stays
+synchronous-looking: a script calls an async host function as a normal
+function, and the runtime parks the current bytecode continuation on the
+underlying Tokio future.
+
+```rust
+engine.register_async_fn("http_get", |args| async move {
+    let url = args[0].as_str().unwrap_or("").to_string();
+    // reqwest::get(url).await?.text().await, mapped into Value
+    Ok(Value::Str(url))
+});
+```
+
+```
+fn load_user(id) {
+    // No `await` at this call site. If `http_get` is a host async
+    // function, eval_async parks and resumes this Ion function.
+    json::decode(http_get(f"/users/{id}"))
+}
+```
 
 ### Async blocks
 
@@ -788,6 +808,7 @@ let result = async {
 ```
 
 All spawned tasks must complete before the `async` block returns.
+Spawned tasks are Ion tasks managed by the runtime, not OS threads.
 
 ### Spawn and await
 
@@ -797,32 +818,29 @@ let task = spawn expensive_work();
 let result = task.await;
 ```
 
-### Task methods
-
-| Method | Description |
-|--------|-------------|
-| `.await` | Wait for task to complete |
-| `.await_timeout(ms)` | Wait with timeout (returns Result) |
-| `.is_finished()` | Check if task is done |
-| `.cancel()` | Request cancellation |
-| `.is_cancelled()` | Check if cancelled |
+`spawn` is only valid inside an `async {}` block. Awaiting a task parks
+the caller until the child completes. If a child fails before it is awaited,
+the nursery cancels sibling tasks and propagates the error.
 
 ### Channels
 
 ```
 let (tx, rx) = channel(10);    // buffered channel, capacity 10
 tx.send(42);
-let val = rx.recv();           // blocks until value available
+let val = rx.recv();           // parks until value available
 tx.close();
 ```
 
 | Method | Description |
 |--------|-------------|
-| `tx.send(val)` | Send a value |
+| `tx.send(val)` | Send a value, parking if the bounded channel is full |
 | `tx.close()` | Close the sender |
-| `rx.recv()` | Receive (blocks), returns `None` when closed |
+| `rx.recv()` | Receive, parking until a value arrives; returns `None` when closed |
 | `rx.try_recv()` | Non-blocking receive, returns `Option` |
 | `rx.recv_timeout(ms)` | Receive with timeout, returns `Option` |
+
+Under `async-runtime`, channels are backed by Tokio channels and integrate
+with the same parking mechanism as async host functions.
 
 ### Select
 
@@ -830,10 +848,46 @@ Race multiple async operations:
 
 ```
 select {
-    val = task1 => f"task1 finished: {val}",
-    val = task2 => f"task2 finished: {val}",
+    val = spawn http_get("/fast") => f"fast: {val}",
+    _ = spawn sleep(250) => "timeout",
 }
 ```
+
+The first completed branch wins. Losing branch tasks are cancelled and
+dropped.
+
+### Timers and timeout
+
+```
+sleep(50);  // parks on a Tokio timer under eval_async
+
+let maybe_body = timeout(250, || http_get("/slow"));
+match maybe_body {
+    Some(body) => body,
+    None => "request timed out",
+}
+```
+
+`timeout(ms, fn)` returns `Some(value)` if the callback completes before
+the timer, or `None` if the timer wins. Callback errors still propagate.
+
+### Tokio host callbacks
+
+Host async functions can call back into Ion through `EngineHandle`:
+
+```rust
+let handle = engine.handle();
+engine.register_async_fn("wait_for_event", move |_args| {
+    let handle = handle.clone();
+    async move {
+        let event = Value::Str("ready".into());
+        handle.call_async("on_event", vec![event]).await
+    }
+});
+```
+
+The callback runs on the same local async runtime and may itself call
+async host functions.
 
 ---
 
@@ -1088,5 +1142,6 @@ The VM automatically falls back to tree-walk interpretation for unsupported feat
 | `vm` | Yes | Bytecode VM path (`vm_eval`) |
 | `optimize` | Yes | Peephole optimizer, constant folding, DCE, TCO |
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
-| `concurrency` | No | Structured concurrency (`async`, `spawn`, channels) |
+| `async-runtime` | No | Native Tokio async evaluation (`eval_async`, async host functions, timers, channels) |
+| `concurrency` | No | Legacy sync-eval structured concurrency backend |
 | `obfuscate` | No | String obfuscation via `obfstr` |

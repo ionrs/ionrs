@@ -5,6 +5,9 @@
 - String interning: `StringPool` with `Symbol(u32)` keys
 - Env: `Vec<Binding>` stack with Symbol keys (shared by interpreter + VM)
 - Bytecode VM: stack-based, ~75 opcodes, hybrid mode (falls back to tree-walk)
+- Async bytecode runtime: pollable continuation VM behind `async-runtime`;
+  host futures, timers, and channels park on Tokio instead of blocking an OS
+  thread
 - Stack-slot locals: compiler resolves locals to slot indices, VM uses O(1) indexed access
 - VM fn compilation caching: `IonFn` has `fn_id: u64`, VM has `HashMap<u64, Chunk>` cache
 - Precompiled fn chunks: `compile_program()` returns `(Chunk, FnChunkCache)`

@@ -2,7 +2,7 @@
 
 A fast, embeddable scripting language for Rust applications.
 
-Ion is designed for embedding in Rust programs — like Lua for game engines, but with Rust-flavored syntax and strong typing. It features a tree-walk interpreter and an optimizing bytecode VM, Serde-native host integration, and a rich standard library.
+Ion is designed for embedding in Rust programs — like Lua for game engines, but with Rust-flavored syntax and strong typing. It features a tree-walk interpreter and an optimizing bytecode VM, Serde-native host integration, a native Tokio async runtime, and a rich standard library.
 
 ## Quick Start
 
@@ -102,8 +102,7 @@ engine.register_fn("fetch_score", |args: &[Value]| {
     }))
 });
 
-// Register closures that capture host state (DB pool, tokio Handle,
-// shared counter, etc.)
+// Register closures that capture host state (DB pool, shared counter, etc.)
 let hits = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 let hits_c = hits.clone();
 engine.register_closure("record_hit", move |_args| {
@@ -172,6 +171,44 @@ let b = engine.vm_eval("1 + 2").unwrap();
 assert_eq!(a, b);
 ```
 
+### Native Async Runtime
+
+With the `async-runtime` feature, hosts can register Tokio-native async
+functions. Ion scripts call them like ordinary functions; `Engine::eval_async`
+parks the Ion continuation on the host future and resumes when Tokio wakes it.
+No OS thread is spawned just to wait for network I/O.
+
+```rust
+use ion_core::{Engine, Value};
+use ion_core::error::IonError;
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), IonError> {
+    let mut engine = Engine::new();
+
+    engine.register_async_fn("http_get", |args| async move {
+        let url = args[0].as_str().unwrap_or("").to_string();
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        Ok(Value::Str(format!("GET {url} -> 200 OK")))
+    });
+
+    let value = engine.eval_async(r#"
+        fn load(path) {
+            http_get(path)
+        }
+
+        async {
+            let a = spawn load("/profile");
+            let b = spawn load("/orders");
+            [a.await, b.await]
+        }
+    "#).await?;
+
+    println!("{value}");
+    Ok(())
+}
+```
+
 ## Types
 
 | Type | Example | Description |
@@ -205,7 +242,8 @@ editors/      Editor syntax highlighting
 | `vm` | Yes | Bytecode compiler + stack VM |
 | `optimize` | Yes | Peephole optimizer, constant folding, DCE, TCO |
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
-| `concurrency` | No | Structured concurrency (`spawn` / `.await` / `select` / channels) |
+| `async-runtime` | No | Tokio-native async host functions, `eval_async`, `spawn` / `.await` / `select`, timers, channels |
+| `concurrency` | No | Legacy sync-eval structured concurrency backend |
 | `obfuscate` | No | String obfuscation via obfstr |
 | `msgpack` | No | `Value::to_msgpack()` via rmpv |
 | `rewrite` | No | Source rewriter — `rewrite::replace_global(src, name, new_value)` |
@@ -214,8 +252,8 @@ editors/      Editor syntax highlighting
 
 ```sh
 cargo build                          # default features
-cargo build --all-features           # everything including concurrency
-cargo test --all-features            # run all tests
+cargo build --all-features           # everything including async runtime
+RUST_MIN_STACK=16777216 cargo test --all-features  # run all feature-gated tests
 cargo run --bin ion-cli script.ion   # run a script
 cargo run --bin ion-cli              # start REPL
 ```
@@ -225,23 +263,21 @@ cargo run --bin ion-cli              # start REPL
 - [LANGUAGE.md](LANGUAGE.md) — complete language specification
 - [DESIGN.md](DESIGN.md) — design decisions and implementation phases
 - [docs/embedding.md](docs/embedding.md) — embedding API reference
-- [docs/concurrency.md](docs/concurrency.md) — concurrency model, cancellation,
-  and the tokio embedding pattern
+- [docs/concurrency.md](docs/concurrency.md) — native async runtime,
+  cancellation, channels, and the Tokio embedding pattern
 - [docs/stdlib.md](docs/stdlib.md) — standard library reference
 - [docs/performance.md](docs/performance.md) — performance strategy
 - [docs/vm-internals.md](docs/vm-internals.md) — bytecode VM internals
 - [docs/testing.md](docs/testing.md) — test suite layout
 - [docs/tooling.md](docs/tooling.md) — CLI, LSP, editor support
 
-## Embedding inside a tokio application
+## Embedding inside a Tokio application
 
-Ion's interpreter is synchronous. Inside a tokio host, wrap
-`engine.eval()` in `tokio::task::spawn_blocking` and use
-`register_closure` to capture a `tokio::runtime::Handle` for
-async host calls. See
-[docs/concurrency.md](docs/concurrency.md#embedding-inside-a-tokio-host)
-and the runnable example at
-[`ion-core/examples/tokio_host.rs`](ion-core/examples/tokio_host.rs).
+Enable `async-runtime`, register host futures with `register_async_fn`,
+and call `engine.eval_async(source).await`. Native host futures are polled
+by Tokio directly, so an Ion HTTP call can park without `spawn_blocking`,
+`Handle::block_on`, or one OS thread per script task. See
+[docs/concurrency.md](docs/concurrency.md#embedding-inside-a-tokio-host).
 
 ## License
 

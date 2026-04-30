@@ -1,93 +1,56 @@
-//! Example: embedding Ion inside a tokio application.
+//! Example: embedding Ion inside a Tokio application.
 //!
-//! Run with: cargo run --example tokio_host --features concurrency
+//! Run with: cargo run --example tokio_host --features async-runtime
 //!
-//! Demonstrates the two patterns you'll want when wiring Ion into a
-//! tokio-based host:
-//!
-//! 1. **Ion eval from async code** — Ion's interpreter is synchronous
-//!    and blocks. Wrap `engine.eval(...)` in
-//!    `tokio::task::spawn_blocking` so it runs on the blocking pool
-//!    rather than pinning an async worker.
-//!
-//! 2. **Tokio-backed builtins** — register a closure that captures a
-//!    `tokio::runtime::Handle` and uses `handle.block_on(fut)` to
-//!    drive async host work synchronously. Because Ion runs inside
-//!    `spawn_blocking`, this is always called from a blocking-pool
-//!    thread, never from an async worker, so `block_on` is safe.
+//! This is the native async embedding path: host functions are real Tokio
+//! futures registered with `register_async_fn`, and Ion is evaluated with
+//! `eval_async`. Script calls remain synchronous-looking; the runtime parks
+//! Ion continuations on Tokio futures instead of using `spawn_blocking` to
+//! wait for I/O.
 
 use std::time::Duration;
 
 use ion_core::engine::Engine;
+use ion_core::error::IonError;
 use ion_core::value::Value;
 
-#[tokio::main(flavor = "multi_thread")]
-async fn main() {
-    // Capture the current tokio Handle so we can drive tokio futures
-    // from inside an Ion builtin.
-    let rt = tokio::runtime::Handle::current();
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), IonError> {
+    let mut engine = Engine::new();
 
-    // Ion's synchronous interpreter must run off the async workers.
-    // Everything — Engine construction, builtin registration, script
-    // evaluation — happens inside `spawn_blocking`.
-    let script_out = tokio::task::spawn_blocking(move || {
-        let mut engine = Engine::new();
+    engine.register_async_fn("tokio_sleep", |args| async move {
+        let ms = args
+            .first()
+            .and_then(Value::as_int)
+            .ok_or_else(|| IonError::runtime("tokio_sleep(ms): ms must be int", 0, 0))?;
+        tokio::time::sleep(Duration::from_millis(ms as u64)).await;
+        Ok(Value::Int(ms))
+    });
 
-        // Register a tokio-backed "sleep_ms" builtin. It captures the
-        // tokio Handle from the outer async context.
-        {
-            let rt = rt.clone();
-            engine.register_closure("tokio_sleep", move |args| {
-                let ms = args
-                    .first()
-                    .and_then(|v| v.as_int())
-                    .ok_or_else(|| "tokio_sleep(ms): ms must be int".to_string())?;
-                rt.block_on(async move {
-                    tokio::time::sleep(Duration::from_millis(ms as u64)).await;
-                });
-                Ok(Value::Int(ms))
-            });
-        }
+    engine.register_async_fn("fake_fetch", |args| async move {
+        let url = args
+            .first()
+            .and_then(Value::as_str)
+            .ok_or_else(|| IonError::runtime("fake_fetch(url): url must be string", 0, 0))?
+            .to_string();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        Ok(Value::Str(format!("GET {url} -> 200 OK")))
+    });
 
-        // Register a tokio-backed "fetch" stand-in. In a real host this
-        // would be reqwest::get; here we just simulate latency.
-        {
-            let rt = rt.clone();
-            engine.register_closure("fake_fetch", move |args| {
-                let url = args
-                    .first()
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| "fake_fetch(url): url must be string".to_string())?
-                    .to_string();
-                let body = rt.block_on(async move {
-                    tokio::time::sleep(Duration::from_millis(20)).await;
-                    format!("GET {} -> 200 OK", url)
-                });
-                Ok(Value::Str(body))
-            });
-        }
-
-        // An Ion script that spawns three concurrent tasks, each of
-        // which calls a tokio-backed builtin. The `async {}` nursery
-        // waits for all three to finish; results are collected via
-        // channels.
-        engine.eval(
+    let script_out = engine
+        .eval_async(
             r#"
+            fn produce(tx, url, ms) {
+                tokio_sleep(ms);
+                tx.send(fake_fetch(url));
+            }
+
             async {
                 let (tx, rx) = channel(3);
 
-                let _a = spawn {
-                    tokio_sleep(30);
-                    tx.send(fake_fetch("https://a"));
-                };
-                let _b = spawn {
-                    tokio_sleep(10);
-                    tx.send(fake_fetch("https://b"));
-                };
-                let _c = spawn {
-                    tokio_sleep(20);
-                    tx.send(fake_fetch("https://c"));
-                };
+                spawn produce(tx, "https://a", 30);
+                spawn produce(tx, "https://b", 10);
+                spawn produce(tx, "https://c", 20);
 
                 let mut results = [];
                 let mut i = 0;
@@ -101,10 +64,8 @@ async fn main() {
             }
         "#,
         )
-    })
-    .await
-    .expect("spawn_blocking panicked")
-    .expect("ion eval failed");
+        .await?;
 
     println!("Ion returned: {}", script_out);
+    Ok(())
 }

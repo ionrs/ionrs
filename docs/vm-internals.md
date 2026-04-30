@@ -5,12 +5,19 @@
 - Compiler in `ion-core/src/compiler.rs`, bytecode defs in `ion-core/src/bytecode.rs`
 - ~75 opcodes, variable-width encoding for some
 - Hybrid mode: `Engine::vm_eval()` tries compile, falls back to tree-walk on failure
+- Native async mode: `ion-core/src/async_runtime.rs` drives the same bytecode
+  shape with explicit continuations so `Engine::eval_async()` can park on
+  Tokio host futures without storing Ion calls on the Rust stack
 
 ## Key Opcodes
 - `TryBegin` (3 bytes: u16 catch offset) — push exception handler
 - `TryEnd` (3 bytes: u16 jump offset) — pop handler, jump over catch
 - `CallNamed` (3 + named_count * 3 bytes) — u8 total_args, u8 named_count, then [u8 pos, u16 name_idx] per named arg
 - `TailCall` — trampoline-style TCO
+- `SpawnCall` / `SpawnCallNamed` — create child Ion tasks for async-runtime
+  execution
+- `AwaitTask` — park the current continuation until a child task completes
+- `SelectTasks` — race child task handles and resume with the winning branch
 - `Closure` — captures env values
 - `ConstructStruct` / `ConstructEnum` — host type construction
 - `IterInit` / `IterNext` / `IterDrop` — for-loop protocol
@@ -33,6 +40,16 @@
 - `emit_jump()`/`patch_jump()` for forward references
 - `compile_program()` returns `(Chunk, FnChunkCache)`
 - Fn bodies precompiled into `FnChunkCache`, loaded via `preload_fn_chunks()`
+
+## Async Continuations
+- `VmContinuation` stores stack, instruction pointer, explicit call frames,
+  exception handlers, locals, iterators, and task wait state.
+- Async host functions registered with `Engine::register_async_fn` are stored
+  in a host-future table and polled by `IonEvalFuture`.
+- While one task is parked on a host future, timer, channel, or child task, the
+  runtime can continue polling sibling Ion tasks.
+- Sync `Engine::eval()` and `Engine::vm_eval()` keep their existing execution
+  paths; async host functions require `Engine::eval_async()`.
 
 ## Chunk Structure
 - `code: Vec<u8>` — bytecode
