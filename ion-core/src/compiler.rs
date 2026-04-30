@@ -49,6 +49,9 @@ pub struct Compiler {
     needs_env_locals: bool,
     /// Stack of enclosing loops for break/continue resolution.
     loop_stack: Vec<LoopFrame>,
+    /// Current `async {}` nesting depth while compiling async-runtime syntax.
+    #[cfg(feature = "async-runtime")]
+    async_scope_depth: usize,
 }
 
 impl Default for Compiler {
@@ -67,6 +70,8 @@ impl Compiler {
             scope_depth: 0,
             needs_env_locals: true, // conservative default for top-level
             loop_stack: Vec::new(),
+            #[cfg(feature = "async-runtime")]
+            async_scope_depth: 0,
         }
     }
 
@@ -449,7 +454,7 @@ impl Compiler {
                     let idx = self.chunk.add_constant(Value::Str(type_name));
                     self.chunk.emit_op_u16(Op::CheckType, idx, line);
                 }
-                self.compile_let_pattern(pattern, *mutable, line)?;
+                self.compile_checked_let_pattern(pattern, *mutable, line)?;
             }
             StmtKind::ExprStmt { expr, .. } => {
                 self.compile_expr(expr)?;
@@ -547,13 +552,8 @@ impl Compiler {
                 self.compile_assign(target, op, value, line)?;
                 self.chunk.emit_op(Op::Pop, line); // discard assignment result
             }
-            StmtKind::Use { .. } => {
-                // Use statements modify global scope at runtime — bail to tree-walk
-                return Err(IonError::runtime(
-                    ion_str!("use statements not yet supported in VM"),
-                    line,
-                    0,
-                ));
+            StmtKind::Use { path, imports } => {
+                self.compile_use(path, imports, line)?;
             }
             StmtKind::WhileLet {
                 label,
@@ -1101,7 +1101,6 @@ impl Compiler {
                 self.chunk.patch_jump(end_jump);
             }
 
-            // Features that fall back to tree-walk for now
             ExprKind::StructConstruct {
                 name,
                 fields,
@@ -1162,7 +1161,31 @@ impl Compiler {
                 self.chunk.emit(args.len() as u8, line);
             }
 
-            #[cfg(feature = "concurrency")]
+            #[cfg(feature = "async-runtime")]
+            ExprKind::AsyncBlock(body) => {
+                self.begin_scope(line);
+                let saved_async_depth = self.async_scope_depth;
+                self.async_scope_depth += 1;
+                self.in_tail_position = was_tail;
+                let result = self.compile_block_expr(body, line);
+                self.async_scope_depth = saved_async_depth;
+                result?;
+                self.end_scope(line);
+            }
+            #[cfg(feature = "async-runtime")]
+            ExprKind::SpawnExpr(inner) => {
+                self.compile_spawn_expr(inner, line, col)?;
+            }
+            #[cfg(feature = "async-runtime")]
+            ExprKind::AwaitExpr(inner) => {
+                self.compile_expr(inner)?;
+                self.chunk.emit_op_span(Op::AwaitTask, line, col);
+            }
+            #[cfg(feature = "async-runtime")]
+            ExprKind::SelectExpr(branches) => {
+                self.compile_select_expr(branches, line, col)?;
+            }
+            #[cfg(all(not(feature = "async-runtime"), feature = "concurrency"))]
             ExprKind::AsyncBlock(_)
             | ExprKind::SpawnExpr(_)
             | ExprKind::AwaitExpr(_)
@@ -1173,7 +1196,7 @@ impl Compiler {
                     col,
                 ));
             }
-            #[cfg(not(feature = "concurrency"))]
+            #[cfg(all(not(feature = "async-runtime"), not(feature = "concurrency")))]
             ExprKind::AsyncBlock(_)
             | ExprKind::SpawnExpr(_)
             | ExprKind::AwaitExpr(_)
@@ -1290,6 +1313,167 @@ impl Compiler {
         Ok(())
     }
 
+    #[cfg(feature = "async-runtime")]
+    fn compile_spawn_expr(&mut self, expr: &Expr, line: usize, col: usize) -> Result<(), IonError> {
+        if self.async_scope_depth == 0 {
+            return Err(IonError::runtime(
+                ion_str!("spawn is only allowed inside async {}").to_string(),
+                line,
+                col,
+            ));
+        }
+        let ExprKind::Call { func, args } = &expr.kind else {
+            return Err(IonError::runtime(
+                ion_str!("spawn currently requires a function call in the bytecode VM").to_string(),
+                line,
+                col,
+            ));
+        };
+        let has_named = args.iter().any(|arg| arg.name.is_some());
+        self.compile_expr(func)?;
+        for arg in args {
+            self.compile_expr(&arg.value)?;
+        }
+        if has_named {
+            let named: Vec<(u8, u16)> = args
+                .iter()
+                .enumerate()
+                .filter_map(|(i, arg)| {
+                    arg.name
+                        .as_ref()
+                        .map(|name| (i as u8, self.chunk.add_constant(Value::Str(name.clone()))))
+                })
+                .collect();
+            self.chunk.emit_op_span(Op::SpawnCallNamed, line, col);
+            self.chunk.emit(args.len() as u8, line);
+            self.chunk.emit(named.len() as u8, line);
+            for (position, name_idx) in named {
+                self.chunk.emit(position, line);
+                self.chunk.emit((name_idx >> 8) as u8, line);
+                self.chunk.emit(name_idx as u8, line);
+            }
+        } else {
+            self.chunk
+                .emit_op_u8_span(Op::SpawnCall, args.len() as u8, line, col);
+        }
+        Ok(())
+    }
+
+    fn compile_use(
+        &mut self,
+        path: &[String],
+        imports: &UseImports,
+        line: usize,
+    ) -> Result<(), IonError> {
+        match imports {
+            UseImports::Glob => {
+                self.compile_module_path(path, line, 0)?;
+                self.chunk.emit_op(Op::ImportGlob, line);
+            }
+            UseImports::Names(names) => {
+                for name in names {
+                    self.compile_module_path_member(path, name, line, 0)?;
+                    self.emit_define_local(name, false, line);
+                }
+            }
+            UseImports::Single(name) => {
+                self.compile_module_path_member(path, name, line, 0)?;
+                self.emit_define_local(name, false, line);
+            }
+        }
+        Ok(())
+    }
+
+    fn compile_module_path_member(
+        &mut self,
+        path: &[String],
+        name: &str,
+        line: usize,
+        col: usize,
+    ) -> Result<(), IonError> {
+        let mut segments = path.to_vec();
+        segments.push(name.to_string());
+        self.compile_module_path(&segments, line, col)
+    }
+
+    fn compile_module_path(
+        &mut self,
+        segments: &[String],
+        line: usize,
+        col: usize,
+    ) -> Result<(), IonError> {
+        let Some(root) = segments.first() else {
+            return Err(IonError::runtime("empty module path", line, col));
+        };
+        let root_idx = self.chunk.add_constant(Value::Str(root.clone()));
+        self.chunk.emit_op_u16(Op::GetGlobal, root_idx, line);
+        for segment in &segments[1..] {
+            let idx = self.chunk.add_constant(Value::Str(segment.clone()));
+            self.chunk.emit_op_u16_span(Op::GetField, idx, line, col);
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "async-runtime")]
+    fn compile_select_expr(
+        &mut self,
+        branches: &[SelectBranch],
+        line: usize,
+        col: usize,
+    ) -> Result<(), IonError> {
+        if branches.is_empty() {
+            return Err(IonError::runtime(
+                ion_str!("select requires at least one branch").to_string(),
+                line,
+                col,
+            ));
+        }
+        if branches.len() > u8::MAX as usize {
+            return Err(IonError::runtime(
+                ion_str!("select has too many branches").to_string(),
+                line,
+                col,
+            ));
+        }
+
+        for branch in branches {
+            self.compile_spawn_expr(&branch.future_expr, line, col)?;
+        }
+        self.chunk
+            .emit_op_u8_span(Op::SelectTasks, branches.len() as u8, line, col);
+
+        let mut end_jumps = Vec::with_capacity(branches.len());
+        for (idx, branch) in branches.iter().enumerate() {
+            self.chunk.emit_op(Op::Dup, line);
+            self.chunk.emit_constant(Value::Int(0), line);
+            self.chunk.emit_op(Op::GetIndex, line);
+            self.chunk.emit_constant(Value::Int(idx as i64), line);
+            self.chunk.emit_op(Op::Eq, line);
+            let next_branch = self.chunk.emit_jump(Op::JumpIfFalse, line);
+            self.chunk.emit_op(Op::Pop, line);
+
+            self.begin_scope(line);
+            self.chunk.emit_op(Op::Dup, line);
+            self.chunk.emit_constant(Value::Int(1), line);
+            self.chunk.emit_op(Op::GetIndex, line);
+            self.compile_checked_let_pattern(&branch.pattern, false, line)?;
+            self.chunk.emit_op(Op::Pop, line);
+            self.compile_expr(&branch.body)?;
+            self.end_scope(line);
+            end_jumps.push(self.chunk.emit_jump(Op::Jump, line));
+
+            self.chunk.patch_jump(next_branch);
+            self.chunk.emit_op(Op::Pop, line);
+        }
+
+        self.chunk.emit_op(Op::Pop, line);
+        self.chunk.emit_op(Op::Unit, line);
+        for jump in end_jumps {
+            self.chunk.patch_jump(jump);
+        }
+        Ok(())
+    }
+
     fn type_ann_to_string(ann: &TypeAnn) -> String {
         match ann {
             TypeAnn::Simple(name) => name.clone(),
@@ -1318,6 +1502,26 @@ impl Compiler {
             Pattern::Ident(name) => {
                 self.emit_define_local(name, mutable, line);
             }
+            Pattern::Int(_)
+            | Pattern::Float(_)
+            | Pattern::Bool(_)
+            | Pattern::Str(_)
+            | Pattern::Bytes(_)
+            | Pattern::None => {
+                self.chunk.emit_op(Op::Pop, line);
+            }
+            Pattern::Some(inner) => {
+                self.chunk.emit_op_u8(Op::MatchArm, 1, line);
+                self.compile_let_pattern(inner, mutable, line)?;
+            }
+            Pattern::Ok(inner) => {
+                self.chunk.emit_op_u8(Op::MatchArm, 2, line);
+                self.compile_let_pattern(inner, mutable, line)?;
+            }
+            Pattern::Err(inner) => {
+                self.chunk.emit_op_u8(Op::MatchArm, 3, line);
+                self.compile_let_pattern(inner, mutable, line)?;
+            }
             Pattern::Tuple(pats) => {
                 // Value is on stack. Destructure it.
                 for (i, pat) in pats.iter().enumerate() {
@@ -1344,18 +1548,84 @@ impl Compiler {
                 }
                 self.chunk.emit_op(Op::Pop, line);
             }
+            Pattern::Struct { fields, .. } => {
+                for (field, pattern) in fields {
+                    self.emit_match_string_operand(Op::MatchArm, 6, field, line);
+                    self.chunk.emit_op_u8(Op::MatchArm, 1, line);
+                    if let Some(pattern) = pattern {
+                        self.compile_let_pattern(pattern, mutable, line)?;
+                    } else {
+                        self.emit_define_local(field, mutable, line);
+                    }
+                }
+                self.chunk.emit_op(Op::Pop, line);
+            }
+            Pattern::EnumVariant { fields, .. } => match fields {
+                EnumPatternFields::None => {
+                    self.chunk.emit_op(Op::Pop, line);
+                }
+                EnumPatternFields::Positional(pats) => {
+                    for (i, pat) in pats.iter().enumerate() {
+                        self.chunk.emit_op_u8(Op::MatchArm, 7, line);
+                        self.chunk.emit(i as u8, line);
+                        self.compile_let_pattern(pat, mutable, line)?;
+                    }
+                    self.chunk.emit_op(Op::Pop, line);
+                }
+                EnumPatternFields::Named(_) => {
+                    return Err(IonError::runtime(
+                        ion_str!("named enum pattern binding not supported in bytecode VM")
+                            .to_string(),
+                        line,
+                        0,
+                    ));
+                }
+            },
             Pattern::Wildcard => {
                 self.chunk.emit_op(Op::Pop, line);
             }
-            _ => {
-                return Err(IonError::runtime(
-                    ion_str!("complex pattern not yet supported in bytecode VM let").to_string(),
-                    line,
-                    0,
-                ));
-            }
         }
         Ok(())
+    }
+
+    fn compile_checked_let_pattern(
+        &mut self,
+        pattern: &Pattern,
+        mutable: bool,
+        line: usize,
+    ) -> Result<(), IonError> {
+        match pattern {
+            Pattern::Ident(_) | Pattern::Wildcard => {
+                self.compile_let_pattern(pattern, mutable, line)
+            }
+            _ => {
+                let test_keeps_matched_value = matches!(
+                    pattern,
+                    Pattern::Some(_)
+                        | Pattern::Ok(_)
+                        | Pattern::Err(_)
+                        | Pattern::Tuple(_)
+                        | Pattern::List(_, _)
+                        | Pattern::Struct { .. }
+                        | Pattern::EnumVariant { .. }
+                );
+                self.chunk.emit_op(Op::Dup, line);
+                self.compile_pattern_test(pattern, line)?;
+                let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+                self.compile_let_pattern(pattern, mutable, line)?;
+                if test_keeps_matched_value {
+                    self.chunk.emit_op(Op::Pop, line); // pop original matched value
+                }
+                let end_jump = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(fail_jump);
+                self.chunk.emit_op(Op::Pop, line); // pop false
+                self.chunk.emit_op(Op::Pop, line); // pop original value
+                self.chunk.emit_op(Op::MatchEnd, line);
+                self.chunk.patch_jump(end_jump);
+                Ok(())
+            }
+        }
     }
 
     fn compile_fn_decl(
@@ -1440,7 +1710,7 @@ impl Compiler {
 
         // Bind pattern
         self.begin_scope(line);
-        self.compile_let_pattern(pattern, false, line)?;
+        self.compile_checked_let_pattern(pattern, false, line)?;
 
         // Execute body (with dead code elimination)
         for stmt in body {
@@ -1757,6 +2027,61 @@ impl Compiler {
         Ok(())
     }
 
+    fn emit_match_string_operand(&mut self, op: Op, kind: u8, value: &str, line: usize) {
+        let idx = self.chunk.add_constant(Value::Str(value.to_string()));
+        self.chunk.emit_op_u8(op, kind, line);
+        self.chunk.emit((idx >> 8) as u8, line);
+        self.chunk.emit((idx & 0xff) as u8, line);
+    }
+
+    fn emit_match_enum_operand(
+        &mut self,
+        enum_name: &str,
+        variant: &str,
+        arity: usize,
+        line: usize,
+    ) -> Result<(), IonError> {
+        if arity > u8::MAX as usize {
+            return Err(IonError::runtime(
+                ion_str!("enum pattern has too many fields").to_string(),
+                line,
+                0,
+            ));
+        }
+        let enum_idx = self.chunk.add_constant(Value::Str(enum_name.to_string()));
+        let variant_idx = self.chunk.add_constant(Value::Str(variant.to_string()));
+        self.chunk.emit_op_u8(Op::MatchBegin, 7, line);
+        self.chunk.emit((enum_idx >> 8) as u8, line);
+        self.chunk.emit((enum_idx & 0xff) as u8, line);
+        self.chunk.emit((variant_idx >> 8) as u8, line);
+        self.chunk.emit((variant_idx & 0xff) as u8, line);
+        self.chunk.emit(arity as u8, line);
+        Ok(())
+    }
+
+    fn compile_struct_field_test(
+        &mut self,
+        field: &str,
+        pattern: Option<&Pattern>,
+        line: usize,
+    ) -> Result<(), IonError> {
+        self.emit_match_string_operand(Op::MatchArm, 6, field, line);
+        self.chunk.emit_op_u8(Op::MatchBegin, 1, line); // field exists: Option::Some
+        let missing_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+        self.chunk.emit_op(Op::Pop, line); // pop true
+        self.chunk.emit_op_u8(Op::MatchArm, 1, line); // unwrap Some(field)
+        if let Some(pattern) = pattern {
+            self.compile_pattern_test(pattern, line)?;
+        } else {
+            self.chunk.emit_op(Op::Pop, line); // shorthand field binding always matches
+            self.chunk.emit_op(Op::True, line);
+        }
+        let end = self.chunk.emit_jump(Op::Jump, line);
+        self.chunk.patch_jump(missing_jump);
+        self.chunk.patch_jump(end);
+        Ok(())
+    }
+
     /// Compile a pattern test: consumes the value on stack, pushes bool.
     fn compile_pattern_test(&mut self, pattern: &Pattern, line: usize) -> Result<(), IonError> {
         match pattern {
@@ -1888,14 +2213,65 @@ impl Compiler {
                 self.chunk.patch_jump(fail_jump);
                 self.chunk.patch_jump(end);
             }
-            _ => {
-                // For complex patterns (EnumVariant, Struct), fall back
-                return Err(IonError::runtime(
-                    ion_str!("complex pattern not yet supported in bytecode VM match").to_string(),
-                    line,
-                    0,
-                ));
+            Pattern::Struct { name, fields } => {
+                self.emit_match_string_operand(Op::MatchBegin, 6, name, line);
+                let type_fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                self.chunk.emit_op(Op::Pop, line); // pop true
+
+                let mut field_fail_jumps = Vec::new();
+                for (field, pattern) in fields {
+                    self.compile_struct_field_test(field, pattern.as_ref(), line)?;
+                    field_fail_jumps.push(self.chunk.emit_jump(Op::JumpIfFalse, line));
+                    self.chunk.emit_op(Op::Pop, line); // pop true
+                }
+
+                self.chunk.emit_op(Op::True, line);
+                let end = self.chunk.emit_jump(Op::Jump, line);
+                self.chunk.patch_jump(type_fail_jump);
+                for jump in field_fail_jumps {
+                    self.chunk.patch_jump(jump);
+                }
+                self.chunk.patch_jump(end);
             }
+            Pattern::EnumVariant {
+                enum_name,
+                variant,
+                fields,
+            } => match fields {
+                EnumPatternFields::None => {
+                    self.emit_match_enum_operand(enum_name, variant, 0, line)?;
+                }
+                EnumPatternFields::Positional(pats) => {
+                    self.emit_match_enum_operand(enum_name, variant, pats.len(), line)?;
+                    let variant_fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
+                    self.chunk.emit_op(Op::Pop, line); // pop true
+
+                    let mut field_fail_jumps = Vec::new();
+                    for (i, pat) in pats.iter().enumerate() {
+                        self.chunk.emit_op_u8(Op::MatchArm, 7, line);
+                        self.chunk.emit(i as u8, line);
+                        self.compile_pattern_test(pat, line)?;
+                        field_fail_jumps.push(self.chunk.emit_jump(Op::JumpIfFalse, line));
+                        self.chunk.emit_op(Op::Pop, line); // pop true
+                    }
+
+                    self.chunk.emit_op(Op::True, line);
+                    let end = self.chunk.emit_jump(Op::Jump, line);
+                    self.chunk.patch_jump(variant_fail_jump);
+                    for jump in field_fail_jumps {
+                        self.chunk.patch_jump(jump);
+                    }
+                    self.chunk.patch_jump(end);
+                }
+                EnumPatternFields::Named(_) => {
+                    return Err(IonError::runtime(
+                        ion_str!("named enum patterns not supported in bytecode VM match")
+                            .to_string(),
+                        line,
+                        0,
+                    ));
+                }
+            },
         }
         Ok(())
     }
@@ -1959,14 +2335,39 @@ impl Compiler {
                 }
                 self.chunk.emit_op(Op::Pop, line); // pop list
             }
-            _ => {
-                return Err(IonError::runtime(
-                    ion_str!("complex pattern binding not yet supported in bytecode VM")
-                        .to_string(),
-                    line,
-                    0,
-                ));
+            Pattern::Struct { fields, .. } => {
+                for (field, pattern) in fields {
+                    self.emit_match_string_operand(Op::MatchArm, 6, field, line);
+                    self.chunk.emit_op_u8(Op::MatchArm, 1, line); // unwrap Some(field)
+                    if let Some(pattern) = pattern {
+                        self.compile_pattern_bind(pattern, line)?;
+                    } else {
+                        self.emit_define_local(field, false, line);
+                    }
+                }
+                self.chunk.emit_op(Op::Pop, line);
             }
+            Pattern::EnumVariant { fields, .. } => match fields {
+                EnumPatternFields::None => {
+                    self.chunk.emit_op(Op::Pop, line);
+                }
+                EnumPatternFields::Positional(pats) => {
+                    for (i, pat) in pats.iter().enumerate() {
+                        self.chunk.emit_op_u8(Op::MatchArm, 7, line);
+                        self.chunk.emit(i as u8, line);
+                        self.compile_pattern_bind(pat, line)?;
+                    }
+                    self.chunk.emit_op(Op::Pop, line);
+                }
+                EnumPatternFields::Named(_) => {
+                    return Err(IonError::runtime(
+                        ion_str!("named enum pattern binding not supported in bytecode VM")
+                            .to_string(),
+                        line,
+                        0,
+                    ));
+                }
+            },
         }
         Ok(())
     }
@@ -1991,7 +2392,7 @@ impl Compiler {
 
         // Bind pattern in scope
         self.begin_scope(line);
-        self.compile_let_pattern(pattern, false, line)?;
+        self.compile_checked_let_pattern(pattern, false, line)?;
 
         // If there's a condition, check it
         if let Some(cond_expr) = cond {
@@ -2047,7 +2448,7 @@ impl Compiler {
         let exit_jump = self.chunk.emit_jump(Op::IterNext, line);
 
         self.begin_scope(line);
-        self.compile_let_pattern(pattern, false, line)?;
+        self.compile_checked_let_pattern(pattern, false, line)?;
 
         if let Some(cond_expr) = cond {
             self.compile_expr(cond_expr)?;

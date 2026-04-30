@@ -61,6 +61,8 @@ pub mod ast;
 pub mod async_rt;
 #[cfg(feature = "concurrency")]
 pub mod async_rt_std;
+#[cfg(feature = "async-runtime")]
+pub mod async_runtime;
 #[cfg(feature = "vm")]
 pub mod bytecode;
 #[cfg(feature = "vm")]

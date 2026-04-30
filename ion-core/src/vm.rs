@@ -508,6 +508,20 @@ impl Vm {
                     mutable,
                 });
             }
+            Op::ImportGlob => {
+                let module = self.pop(line, col)?;
+                let Value::Dict(map) = module else {
+                    return Err(IonError::type_err(
+                        ion_str!("use target is not a module"),
+                        line,
+                        col,
+                    ));
+                };
+                for (name, value) in map {
+                    let sym = self.env.intern(&name);
+                    self.env.define_sym(sym, value, false);
+                }
+            }
             Op::GetLocalSlot => {
                 let slot = self.locals_base + chunk.read_u16(self.ip) as usize;
                 self.ip += 2;
@@ -770,7 +784,7 @@ impl Vm {
 
             // --- Pattern matching ---
             Op::MatchBegin => {
-                // u8: kind (1=Some, 2=Ok, 3=Err, 4=Tuple, 5=List)
+                // u8: kind (1=Some, 2=Ok, 3=Err, 4=Tuple, 5=List, 6=HostStruct, 7=HostEnum)
                 let kind = chunk.read_u8(self.ip);
                 self.ip += 1;
                 let val = self.pop(line, col)?;
@@ -802,6 +816,62 @@ impl Vm {
                             _ => false,
                         }
                     }
+                    6 => {
+                        let type_idx = chunk.read_u16(self.ip) as usize;
+                        self.ip += 2;
+                        let expected = chunk
+                            .constants
+                            .get(type_idx)
+                            .ok_or_else(|| {
+                                IonError::runtime(
+                                    ion_str!("type constant index out of bounds"),
+                                    line,
+                                    col,
+                                )
+                            })
+                            .and_then(|value| self.const_as_str(value, line, col))?;
+                        matches!(&val, Value::HostStruct { type_name, .. } if type_name == &expected)
+                    }
+                    7 => {
+                        let enum_idx = chunk.read_u16(self.ip) as usize;
+                        self.ip += 2;
+                        let variant_idx = chunk.read_u16(self.ip) as usize;
+                        self.ip += 2;
+                        let expected_arity = chunk.read_u8(self.ip) as usize;
+                        self.ip += 1;
+                        let expected_enum = chunk
+                            .constants
+                            .get(enum_idx)
+                            .ok_or_else(|| {
+                                IonError::runtime(
+                                    ion_str!("enum constant index out of bounds"),
+                                    line,
+                                    col,
+                                )
+                            })
+                            .and_then(|value| self.const_as_str(value, line, col))?;
+                        let expected_variant = chunk
+                            .constants
+                            .get(variant_idx)
+                            .ok_or_else(|| {
+                                IonError::runtime(
+                                    ion_str!("variant constant index out of bounds"),
+                                    line,
+                                    col,
+                                )
+                            })
+                            .and_then(|value| self.const_as_str(value, line, col))?;
+                        matches!(
+                            &val,
+                            Value::HostEnum {
+                                enum_name,
+                                variant,
+                                data,
+                            } if enum_name == &expected_enum
+                                && variant == &expected_variant
+                                && data.len() == expected_arity
+                        )
+                    }
                     _ => false,
                 };
                 // Push value back (needed for unwrap) and then bool
@@ -809,7 +879,7 @@ impl Vm {
                 self.stack.push(Value::Bool(result));
             }
             Op::MatchArm => {
-                // u8: kind (1=unwrap Some, 2=unwrap Ok, 3=unwrap Err, 4=get tuple element, 5=get list element)
+                // u8: kind (1=unwrap Some, 2=unwrap Ok, 3=unwrap Err, 4=get tuple element, 5=get list element, 6=get struct field, 7=get enum data)
                 let kind = chunk.read_u8(self.ip);
                 self.ip += 1;
                 match kind {
@@ -844,6 +914,41 @@ impl Vm {
                             Value::Tuple(items) | Value::List(items) => {
                                 self.stack
                                     .push(items.get(idx).cloned().unwrap_or(Value::Unit));
+                            }
+                            _ => self.stack.push(Value::Unit),
+                        }
+                    }
+                    6 => {
+                        let field_idx = chunk.read_u16(self.ip) as usize;
+                        self.ip += 2;
+                        let field = chunk
+                            .constants
+                            .get(field_idx)
+                            .ok_or_else(|| {
+                                IonError::runtime(
+                                    ion_str!("field constant index out of bounds"),
+                                    line,
+                                    col,
+                                )
+                            })
+                            .and_then(|value| self.const_as_str(value, line, col))?;
+                        let val = self.peek(line, col)?;
+                        match val {
+                            Value::HostStruct { fields, .. } => {
+                                let field_value = fields.get(&field).cloned();
+                                self.stack.push(Value::Option(field_value.map(Box::new)));
+                            }
+                            _ => self.stack.push(Value::Option(None)),
+                        }
+                    }
+                    7 => {
+                        let idx = chunk.read_u8(self.ip) as usize;
+                        self.ip += 1;
+                        let val = self.peek(line, col)?;
+                        match val {
+                            Value::HostEnum { data, .. } => {
+                                self.stack
+                                    .push(data.get(idx).cloned().unwrap_or(Value::Unit));
                             }
                             _ => self.stack.push(Value::Unit),
                         }
@@ -1195,10 +1300,12 @@ impl Vm {
                     "dict" => matches!(val, Value::Dict(_)),
                     "tuple" => matches!(val, Value::Tuple(_)),
                     "set" => matches!(val, Value::Set(_)),
-                    "fn" => matches!(
-                        val,
-                        Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _)
-                    ),
+                    "fn" => match val {
+                        Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => true,
+                        #[cfg(feature = "async-runtime")]
+                        Value::AsyncBuiltinClosure(_, _) => true,
+                        _ => false,
+                    },
                     "cell" => matches!(val, Value::Cell(_)),
                     "any" => true,
                     s if s.starts_with("Option") => matches!(val, Value::Option(_)),
@@ -1240,6 +1347,51 @@ impl Vm {
                 let obj = self.pop(line, col)?;
                 let result = self.slice_access(obj, start_val, end_val, inclusive, line, col)?;
                 self.stack.push(result);
+            }
+
+            Op::SpawnCall => {
+                let _arg_count = chunk.read_u8(self.ip);
+                self.ip += 1;
+                return Err(IonError::runtime(
+                    ion_str!(
+                        "spawn requires the pollable async runtime; it cannot run in the synchronous VM"
+                    ),
+                    line,
+                    col,
+                ));
+            }
+            Op::SpawnCallNamed => {
+                let _arg_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                let named_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1 + named_count * 3;
+                return Err(IonError::runtime(
+                    ion_str!(
+                        "spawn requires the pollable async runtime; it cannot run in the synchronous VM"
+                    ),
+                    line,
+                    col,
+                ));
+            }
+            Op::AwaitTask => {
+                return Err(IonError::runtime(
+                    ion_str!(
+                        "await requires the pollable async runtime; it cannot run in the synchronous VM"
+                    ),
+                    line,
+                    col,
+                ));
+            }
+            Op::SelectTasks => {
+                let _branch_count = chunk.read_u8(self.ip);
+                self.ip += 1;
+                return Err(IonError::runtime(
+                    ion_str!(
+                        "select requires the pollable async runtime; it cannot run in the synchronous VM"
+                    ),
+                    line,
+                    col,
+                ));
             }
 
             // --- Print ---
@@ -3210,6 +3362,16 @@ impl Vm {
                     self.stack.push(result);
                     return Ok(());
                 }
+                #[cfg(feature = "async-runtime")]
+                Value::AsyncBuiltinClosure(_, _) => {
+                    return Err(IonError::runtime(
+                        ion_str!(
+                            "async host function cannot be called by the synchronous evaluator; use eval_async"
+                        ),
+                        line,
+                        col,
+                    ));
+                }
                 Value::Fn(ion_fn) => {
                     self.env.push_scope();
 
@@ -3403,6 +3565,14 @@ impl Vm {
                 self.stack.push(result);
                 Ok(())
             }
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncBuiltinClosure(_, _) => Err(IonError::runtime(
+                ion_str!(
+                    "async host function cannot be called by the synchronous evaluator; use eval_async"
+                ),
+                line,
+                col,
+            )),
             _ => Err(IonError::type_err(
                 format!("cannot call {}", func.type_name()),
                 line,

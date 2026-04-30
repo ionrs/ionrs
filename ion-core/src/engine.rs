@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "async-runtime")]
+use std::future::Future;
 use std::sync::Arc;
 
 use crate::error::IonError;
@@ -14,6 +16,8 @@ use crate::value::Value;
 pub struct Engine {
     interpreter: Interpreter,
     output: Arc<dyn OutputHandler>,
+    #[cfg(feature = "async-runtime")]
+    external_queue: crate::async_runtime::ExternalQueue,
 }
 
 impl Engine {
@@ -22,6 +26,8 @@ impl Engine {
         Self {
             interpreter: Interpreter::with_output(Arc::clone(&output)),
             output,
+            #[cfg(feature = "async-runtime")]
+            external_queue: crate::async_runtime::ExternalQueue::new(),
         }
     }
 
@@ -38,6 +44,8 @@ impl Engine {
         Self {
             interpreter: Interpreter::with_output(Arc::clone(&output)),
             output,
+            #[cfg(feature = "async-runtime")]
+            external_queue: crate::async_runtime::ExternalQueue::new(),
         }
     }
 
@@ -48,6 +56,57 @@ impl Engine {
         let mut parser = Parser::new(tokens);
         let program = parser.parse_program()?;
         self.interpreter.eval_program(&program)
+    }
+
+    /// Evaluate a script through the async-runtime entry point.
+    ///
+    /// Pure synchronous scripts execute through the existing evaluator.
+    /// Compilable scripts that reference async host functions run through
+    /// the pollable bytecode continuation runtime.
+    #[cfg(feature = "async-runtime")]
+    pub fn eval_async<'a>(
+        &'a mut self,
+        source: &'a str,
+    ) -> crate::async_runtime::IonEvalFuture<'a> {
+        crate::async_runtime::IonEvalFuture::new(self, source)
+    }
+
+    /// Return a cloneable handle that host async code can use to schedule
+    /// callbacks into the async runtime.
+    #[cfg(feature = "async-runtime")]
+    pub fn handle(&self) -> crate::async_runtime::EngineHandle {
+        self.external_queue.handle()
+    }
+
+    #[cfg(feature = "async-runtime")]
+    #[allow(dead_code)]
+    pub(crate) fn external_queue(&self) -> crate::async_runtime::ExternalQueue {
+        self.external_queue.clone()
+    }
+
+    #[cfg(feature = "async-runtime")]
+    pub(crate) fn interpreter_mut(&mut self) -> &mut Interpreter {
+        &mut self.interpreter
+    }
+
+    #[cfg(feature = "async-runtime")]
+    pub(crate) fn interpreter(&self) -> &Interpreter {
+        &self.interpreter
+    }
+
+    #[cfg(feature = "async-runtime")]
+    pub(crate) fn output_handler(&self) -> Arc<dyn OutputHandler> {
+        Arc::clone(&self.output)
+    }
+
+    /// Drain externally scheduled requests.
+    ///
+    /// This is exposed while the async runtime is scaffolded so tests and
+    /// future runtime code can validate the non-reentrant handle path.
+    #[cfg(feature = "async-runtime")]
+    #[doc(hidden)]
+    pub fn drain_external_requests(&self) -> Vec<crate::async_runtime::ExternalRequest> {
+        self.external_queue.drain()
     }
 
     /// Inject a value into the script scope.
@@ -109,6 +168,24 @@ impl Engine {
         self.interpreter.env.define(
             name.to_string(),
             Value::BuiltinClosure(name.to_string(), crate::value::BuiltinClosureFn::new(func)),
+            false,
+        );
+    }
+
+    /// Register a host async function. Scripts call this like a normal
+    /// function under `eval_async`; sync `eval` rejects it explicitly.
+    #[cfg(feature = "async-runtime")]
+    pub fn register_async_fn<F, Fut>(&mut self, name: &str, func: F)
+    where
+        F: Fn(Vec<Value>) -> Fut + 'static,
+        Fut: Future<Output = Result<Value, IonError>> + 'static,
+    {
+        self.interpreter.env.define(
+            name.to_string(),
+            Value::AsyncBuiltinClosure(
+                name.to_string(),
+                crate::value::AsyncBuiltinClosureFn::new(func),
+            ),
             false,
         );
     }

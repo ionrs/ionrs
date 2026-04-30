@@ -10,13 +10,8 @@ use std::sync::Arc;
 /// Control flow signals that escape normal evaluation.
 enum Signal {
     Return(Value),
-    Break {
-        label: Option<String>,
-        value: Value,
-    },
-    Continue {
-        label: Option<String>,
-    },
+    Break { label: Option<String>, value: Value },
+    Continue { label: Option<String> },
 }
 
 /// Returns true if a break/continue signal carrying `sig_label` should be
@@ -3120,6 +3115,16 @@ impl Interpreter {
             Value::BuiltinClosure(_, func) => func
                 .call(args)
                 .map_err(|msg| IonError::runtime(msg, span.line, span.col).into()),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncBuiltinClosure(_, _) => Err(IonError::runtime(
+                ion_str!(
+                        "async host function cannot be called by the synchronous evaluator; use eval_async"
+                )
+                .to_string(),
+                span.line,
+                span.col,
+            )
+            .into()),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("not callable: "), func.type_name()),
                 span.line,
@@ -3297,10 +3302,12 @@ impl Interpreter {
                 "dict" => matches!(val, Value::Dict(_)),
                 "tuple" => matches!(val, Value::Tuple(_)),
                 "set" => matches!(val, Value::Set(_)),
-                "fn" => matches!(
-                    val,
-                    Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _)
-                ),
+                "fn" => match val {
+                    Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => true,
+                    #[cfg(feature = "async-runtime")]
+                    Value::AsyncBuiltinClosure(_, _) => true,
+                    _ => false,
+                },
                 "cell" => matches!(val, Value::Cell(_)),
                 "any" => true,
                 _ => true, // unknown types pass (forward compatibility)

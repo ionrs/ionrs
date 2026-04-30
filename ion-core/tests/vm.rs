@@ -1430,6 +1430,134 @@ fn test_vm_host_enum_variant_with_data() {
     }
 }
 
+#[test]
+fn test_vm_host_enum_pattern_match_with_payload() {
+    let mut engine = vm_engine_with_types();
+    let val = engine
+        .vm_eval(
+            r#"
+        let c = Color::Custom(255, 128, 0);
+        match c {
+            Color::Red => "red",
+            Color::Custom(r, g, b) => f"rgb({r},{g},{b})",
+            _ => "other",
+        }
+    "#,
+        )
+        .unwrap();
+    assert_eq!(val, Value::Str("rgb(255,128,0)".into()));
+}
+
+#[test]
+fn test_vm_host_enum_pattern_match_unit_variant() {
+    let mut engine = vm_engine_with_types();
+    let val = engine
+        .vm_eval(
+            r#"
+        let c = Color::Red;
+        match c {
+            Color::Red => "red",
+            Color::Custom(_, _, _) => "custom",
+            _ => "other",
+        }
+    "#,
+        )
+        .unwrap();
+    assert_eq!(val, Value::Str("red".into()));
+}
+
+#[test]
+fn test_vm_host_struct_let_destructure() {
+    let mut engine = vm_engine_with_types();
+    let val = engine
+        .vm_eval(
+            r#"
+        let Config { host, port } = Config { host: "localhost", port: 8080, debug: true };
+        f"{host}:{port}"
+    "#,
+        )
+        .unwrap();
+    assert_eq!(val, Value::Str("localhost:8080".into()));
+}
+
+#[test]
+fn test_vm_host_enum_let_destructure() {
+    let mut engine = vm_engine_with_types();
+    let val = engine
+        .vm_eval(
+            r#"
+        let Color::Custom(r, g, b) = Color::Custom(255, 128, 0);
+        r + g + b
+    "#,
+        )
+        .unwrap();
+    assert_eq!(val, Value::Int(383));
+}
+
+#[test]
+fn test_vm_let_pattern_mismatch_errors() {
+    let mut engine = vm_engine_with_types();
+    let err = engine
+        .vm_eval(
+            r#"
+        let Color::Custom(r, g, b) = Color::Red;
+        r
+    "#,
+        )
+        .unwrap_err();
+    assert!(
+        err.message.contains("non-exhaustive match"),
+        "unexpected error: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_vm_for_host_struct_destructure_checks_pattern() {
+    let mut engine = vm_engine_with_types();
+    let val = engine
+        .vm_eval(
+            r#"
+        let mut sum = 0;
+        for Config { port } in [
+            Config { host: "a", port: 20, debug: false },
+            Config { host: "b", port: 22, debug: true },
+        ] {
+            sum += port;
+        }
+        sum
+    "#,
+        )
+        .unwrap();
+    assert_eq!(val, Value::Int(42));
+}
+
+#[test]
+fn test_vm_for_pattern_mismatch_errors() {
+    let err = vm_eval_err(
+        r#"
+        for (a, b) in [(1, 2), 3] {
+            a + b;
+        }
+    "#,
+    );
+    assert!(
+        err.contains("non-exhaustive match"),
+        "unexpected error: {}",
+        err
+    );
+}
+
+#[test]
+fn test_vm_list_comp_pattern_mismatch_errors() {
+    let err = vm_eval_err("[a for (a, b) in [(1, 2), 3]]");
+    assert!(
+        err.contains("non-exhaustive match"),
+        "unexpected error: {}",
+        err
+    );
+}
+
 // ============================================================
 // Peephole optimization (correctness under optimization)
 // ============================================================

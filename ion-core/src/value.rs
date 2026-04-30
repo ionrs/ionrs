@@ -2,12 +2,18 @@ use indexmap::IndexMap;
 use serde_json;
 use std::collections::HashMap;
 use std::fmt;
+#[cfg(feature = "async-runtime")]
+use std::future::Future;
+#[cfg(feature = "async-runtime")]
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::ast::{Param, Stmt};
 #[cfg(feature = "vm")]
 use crate::bytecode::Chunk;
+#[cfg(feature = "async-runtime")]
+use crate::error::IonError;
 
 static NEXT_FN_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -33,6 +39,20 @@ pub enum Value {
     ///
     /// Register via `Engine::register_closure`.
     BuiltinClosure(String, BuiltinClosureFn),
+    /// Async closure-backed builtin. This is the host-facing value for
+    /// native async integration; it is only executable by the future
+    /// pollable async runtime, not by the current sync evaluator.
+    #[cfg(feature = "async-runtime")]
+    AsyncBuiltinClosure(String, AsyncBuiltinClosureFn),
+    /// Async-runtime task handle used by the native async scaffold.
+    #[cfg(feature = "async-runtime")]
+    AsyncTask(crate::async_runtime::AsyncTask),
+    /// Native async-runtime channel sender.
+    #[cfg(feature = "async-runtime")]
+    AsyncChannelSender(crate::async_runtime::NativeChannelSender),
+    /// Native async-runtime channel receiver.
+    #[cfg(feature = "async-runtime")]
+    AsyncChannelReceiver(crate::async_runtime::NativeChannelReceiver),
     /// Ordered set of unique values
     Set(Vec<Value>),
     /// Host-injected struct: `TypeName { field: val, ... }`
@@ -98,6 +118,19 @@ pub type FnChunkCache = HashMap<u64, Chunk>;
 /// A built-in function: Rust-side callback.
 pub type BuiltinFn = fn(&[Value]) -> Result<Value, String>;
 pub type BuiltinClosure = dyn Fn(&[Value]) -> Result<Value, String> + Send + Sync;
+#[cfg(feature = "async-runtime")]
+pub type BoxIonFuture = Pin<Box<dyn Future<Output = Result<Value, IonError>> + 'static>>;
+#[cfg(feature = "async-runtime")]
+pub type AsyncBuiltinClosure = dyn Fn(Vec<Value>) -> BoxIonFuture + 'static;
+#[cfg(feature = "async-runtime")]
+pub type AsyncHostFn = dyn Fn(Vec<Value>) -> HostCallResult + 'static;
+
+/// Result of invoking a host function in the future pollable async VM.
+#[cfg(feature = "async-runtime")]
+pub enum HostCallResult {
+    Ready(Result<Value, IonError>),
+    Pending(BoxIonFuture),
+}
 
 /// Wrapper around a closure-backed builtin so `Value` can still derive
 /// `Debug`. `dyn Fn` doesn't implement `Debug`; we print a placeholder.
@@ -123,6 +156,34 @@ impl BuiltinClosureFn {
     }
 }
 
+/// Wrapper around an async closure-backed builtin so `Value` can still
+/// derive `Debug`.
+#[cfg(feature = "async-runtime")]
+#[derive(Clone)]
+pub struct AsyncBuiltinClosureFn(pub Arc<AsyncBuiltinClosure>);
+
+#[cfg(feature = "async-runtime")]
+impl fmt::Debug for AsyncBuiltinClosureFn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<async closure>")
+    }
+}
+
+#[cfg(feature = "async-runtime")]
+impl AsyncBuiltinClosureFn {
+    pub fn new<F, Fut>(func: F) -> Self
+    where
+        F: Fn(Vec<Value>) -> Fut + 'static,
+        Fut: Future<Output = Result<Value, IonError>> + 'static,
+    {
+        Self(Arc::new(move |args| Box::pin(func(args))))
+    }
+
+    pub fn call(&self, args: Vec<Value>) -> BoxIonFuture {
+        (self.0)(args)
+    }
+}
+
 impl Value {
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -140,6 +201,14 @@ impl Value {
             Value::Fn(_) => ion_static_str!("fn"),
             Value::BuiltinFn(_, _) => ion_static_str!("builtin_fn"),
             Value::BuiltinClosure(_, _) => ion_static_str!("builtin_fn"),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncBuiltinClosure(_, _) => ion_static_str!("async_builtin_fn"),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncTask(_) => ion_static_str!("AsyncTask"),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncChannelSender(_) => ion_static_str!("AsyncChannelSender"),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncChannelReceiver(_) => ion_static_str!("AsyncChannelReceiver"),
             Value::HostStruct { .. } => ion_static_str!("struct"),
             Value::HostEnum { .. } => ion_static_str!("enum"),
             #[cfg(feature = "concurrency")]
@@ -293,6 +362,14 @@ impl fmt::Display for Value {
             Value::Fn(func) => write!(f, "<fn {}>", func.name),
             Value::BuiltinFn(name, _) => write!(f, "<builtin {}>", name),
             Value::BuiltinClosure(name, _) => write!(f, "<builtin {}>", name),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncBuiltinClosure(name, _) => write!(f, "<async builtin {}>", name),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncTask(_) => write!(f, "<AsyncTask>"),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncChannelSender(_) => write!(f, "<AsyncChannelTx>"),
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncChannelReceiver(_) => write!(f, "<AsyncChannelRx>"),
             #[cfg(feature = "concurrency")]
             Value::Task(_) => write!(f, "<Task>"),
             #[cfg(feature = "concurrency")]
@@ -402,6 +479,12 @@ impl PartialEq for Value {
             ) => s1 == s2 && e1 == e2 && i1 == i2,
             (Value::Unit, Value::Unit) => true,
             (Value::Option(None), Value::Unit) => false,
+            #[cfg(feature = "async-runtime")]
+            (Value::AsyncTask(a), Value::AsyncTask(b)) => a.ptr_eq(b),
+            #[cfg(feature = "async-runtime")]
+            (Value::AsyncChannelSender(a), Value::AsyncChannelSender(b)) => a.ptr_eq(b),
+            #[cfg(feature = "async-runtime")]
+            (Value::AsyncChannelReceiver(a), Value::AsyncChannelReceiver(b)) => a.ptr_eq(b),
             // Task and Channel are not comparable
             _ => false,
         }
@@ -487,6 +570,11 @@ impl Value {
             Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => {
                 serde_json::Value::Null
             }
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncBuiltinClosure(_, _)
+            | Value::AsyncTask(_)
+            | Value::AsyncChannelSender(_)
+            | Value::AsyncChannelReceiver(_) => serde_json::Value::Null,
         }
     }
 
@@ -578,6 +666,11 @@ impl Value {
                     .collect(),
             ),
             Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => rmpv::Value::Nil,
+            #[cfg(feature = "async-runtime")]
+            Value::AsyncBuiltinClosure(_, _)
+            | Value::AsyncTask(_)
+            | Value::AsyncChannelSender(_)
+            | Value::AsyncChannelReceiver(_) => rmpv::Value::Nil,
         }
     }
 

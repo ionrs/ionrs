@@ -625,13 +625,21 @@ fn label_inner_break_only_exits_inner() {
 #[test]
 fn label_break_unknown_errors() {
     let msg = eval_err("for i in 0..3 { break 'nope; }");
-    assert!(msg.contains("'nope") || msg.contains("nope"), "got: {}", msg);
+    assert!(
+        msg.contains("'nope") || msg.contains("nope"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
 fn label_continue_unknown_errors() {
     let msg = eval_err("for i in 0..3 { continue 'nope; }");
-    assert!(msg.contains("'nope") || msg.contains("nope"), "got: {}", msg);
+    assert!(
+        msg.contains("'nope") || msg.contains("nope"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]

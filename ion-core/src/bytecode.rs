@@ -123,7 +123,7 @@ pub enum Op {
     /// Begin a match expression.
     MatchBegin,
     /// Test a pattern against the match subject.
-    MatchArm, // u8 kind (1=Some,2=Ok,3=Err,4=tuple,5=list), +u8 index for 4/5
+    MatchArm, // u8 kind (1=Some,2=Ok,3=Err,4=tuple,5=list,6=struct field,7=enum field)
     /// End match (cleanup).
     MatchEnd,
 
@@ -160,6 +160,9 @@ pub enum Op {
     /// Set a local by slot index.
     SetLocalSlot, // u16 slot index
 
+    /// Import every entry from a module dict on TOS into the current env scope.
+    ImportGlob,
+
     /// Call with named arguments: u8 arg count, then u8 count of named pairs, each is u16 (arg position) + u16 (name constant)
     CallNamed, // u8 total_args, u8 named_count, then [u8 position, u16 name_idx] * named_count
 
@@ -167,6 +170,16 @@ pub enum Op {
     TryBegin, // u16 catch handler offset
     /// End a try block (no error): pop handler, jump over catch.
     TryEnd, // u16 jump offset past catch block
+
+    // --- Native async runtime ---
+    /// Spawn a function call as an async runtime task: pops func + args, pushes AsyncTask.
+    SpawnCall, // u8 arg count
+    /// Spawn a function call with named arguments as an async runtime task.
+    SpawnCallNamed, // u8 total_args, u8 named_count, then [u8 position, u16 name_idx] * named_count
+    /// Await an AsyncTask by parking this VM continuation on the runtime future table.
+    AwaitTask,
+    /// Race N AsyncTask handles and push `(winner_index, value)` when one completes.
+    SelectTasks, // u8 branch count
 
     /// Print (for testing/debugging)
     Print, // u8: 0 = print, 1 = println
@@ -355,7 +368,9 @@ impl Chunk {
                 || x == Op::ListExtend as u8
                 || x == Op::DictInsert as u8
                 || x == Op::DictMerge as u8
-                || x == Op::IterDrop as u8 =>
+                || x == Op::IterDrop as u8
+                || x == Op::ImportGlob as u8
+                || x == Op::AwaitTask as u8 =>
             {
                 1
             }
@@ -366,6 +381,8 @@ impl Chunk {
                 || x == Op::BuildRange as u8
                 || x == Op::Slice as u8
                 || x == Op::DefineLocalSlot as u8
+                || x == Op::SpawnCall as u8
+                || x == Op::SelectTasks as u8
                 || x == Op::Print as u8 =>
             {
                 2
@@ -403,8 +420,8 @@ impl Chunk {
             x if x == Op::ConstructStruct as u8 => 5,
             // 6-byte (u16 + u16 + u8)
             x if x == Op::ConstructEnum as u8 => 6,
-            // Variable-width: CallNamed: 1(op) + 1(total_args) + 1(named_count) + named_count * 3
-            x if x == Op::CallNamed as u8 => {
+            // Variable-width named calls: 1(op) + 1(total_args) + 1(named_count) + named_count * 3
+            x if x == Op::CallNamed as u8 || x == Op::SpawnCallNamed as u8 => {
                 if offset + 2 < code.len() {
                     let named_count = code[offset + 2] as usize;
                     3 + named_count * 3 // op + total_args + named_count + (position u8 + name u16) * count
@@ -418,18 +435,22 @@ impl Chunk {
                     match code[offset + 1] {
                         4 => 3, // Tuple: kind + u8 length
                         5 => 4, // List: kind + u8 length + u8 has_rest
+                        6 => 4, // Host struct: kind + u16 type-name constant
+                        7 => 7, // Host enum: kind + u16 enum + u16 variant + u8 arity
                         _ => 2, // Some/Ok/Err: just kind
                     }
                 } else {
                     2
                 }
             }
-            // Variable-width: MatchArm (u8 kind, then u8 index for kinds 4/5)
+            // Variable-width: MatchArm (u8 kind, then u8 index for kinds 4/5/7 or u16 field for kind 6)
             x if x == Op::MatchArm as u8 => {
                 if offset + 1 < code.len() {
                     let kind = code[offset + 1];
-                    if kind == 4 || kind == 5 {
+                    if kind == 4 || kind == 5 || kind == 7 {
                         3
+                    } else if kind == 6 {
+                        4
                     } else {
                         2
                     }
