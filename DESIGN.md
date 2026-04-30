@@ -812,7 +812,7 @@ Constants: `PI`, `E`, `TAU`, `INF`, `NAN`
 | `assert_eq(a, b)` | Assert equality |
 | `sleep(ms)` | Sleep for milliseconds |
 | `timeout(ms, fn)` | Run with timeout, returns Option |
-| `channel(size)` | Create bounded channel (`async-runtime` native async, `concurrency` legacy sync backend) |
+| `channel(size)` | Create bounded channel (`async-runtime` native async, `legacy-threaded-concurrency` legacy OS-thread backend) |
 
 ### Methods on values
 
@@ -929,7 +929,7 @@ ionlang/
 │       ├── stdlib.rs         # standard library (math, json, io, string)
 │       ├── host_types.rs     # host struct/enum injection
 │       ├── async_runtime.rs  # native Tokio async eval + bytecode continuations
-│       ├── async_rt.rs       # legacy sync-eval concurrency traits
+│       ├── async_rt.rs       # legacy sync-eval OS-thread concurrency traits
 │       ├── async_rt_std.rs   # legacy std::thread + crossbeam-channel backend
 │       ├── rewrite.rs        # source rewriter (feature: rewrite)
 │       └── lib.rs

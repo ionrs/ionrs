@@ -4,7 +4,7 @@
 1. Strong typing, interpreter-inferred, with optional type annotations on `let` bindings
 2. Semicolons required
 3. Explicit string interpolation `f"..."`
-4. Structured concurrency (native Tokio runtime under `async-runtime`; legacy sync backend under `concurrency`)
+4. Structured concurrency (native Tokio runtime under `async-runtime`; legacy OS-thread backend under `legacy-threaded-concurrency`)
 5. Flat module system (single-file scripts + host-provided globals)
 6. Both loops (`for`, `while`) and functional (`map`/`filter`/`fold`)
 7. **No struct/enum/impl in scripts** — host-injected only via `#[derive(IonType)]`

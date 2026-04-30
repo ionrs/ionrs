@@ -1143,5 +1143,5 @@ The VM automatically falls back to tree-walk interpretation for unsupported feat
 | `optimize` | Yes | Peephole optimizer, constant folding, DCE, TCO |
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
 | `async-runtime` | No | Native Tokio async evaluation (`eval_async`, async host functions, timers, channels) |
-| `concurrency` | No | Legacy sync-eval structured concurrency backend |
+| `legacy-threaded-concurrency` | No | Legacy sync-eval backend using OS threads and crossbeam channels |
 | `obfuscate` | No | String obfuscation via `obfstr` |

@@ -3346,7 +3346,7 @@ impl Vm {
         // Trampoline loop: handles tail calls without growing the Rust stack
         loop {
             match func {
-                #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
+                #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
                 Value::BuiltinFn(ref name, _) if name == "timeout" => {
                     let result = self.builtin_timeout(&args, line, col)?;
                     self.stack.push(result);
@@ -3581,7 +3581,7 @@ impl Vm {
         }
     }
 
-    #[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
+    #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
     fn builtin_timeout(&self, args: &[Value], line: usize, col: usize) -> Result<Value, IonError> {
         if args.len() < 2 {
             return Err(IonError::runtime(

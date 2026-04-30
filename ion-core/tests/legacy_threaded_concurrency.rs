@@ -1,4 +1,4 @@
-#![cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
+#![cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
 
 use ion_core::engine::Engine;
 use ion_core::value::Value;
@@ -219,7 +219,7 @@ fn test_channel_between_tasks() {
 // This test is always compiled but the feature is enabled for this file
 // so we just verify basic functionality works
 #[test]
-fn test_concurrency_feature_enabled() {
+fn test_legacy_threaded_concurrency_feature_enabled() {
     // Simply verify the async keyword parses and runs
     assert_eq!(eval("async { 1 + 1 }"), Value::Int(2));
 }

@@ -1,4 +1,4 @@
-//! std::thread backend for Ion concurrency (the only backend).
+//! std::thread backend for legacy-threaded-concurrency.
 //!
 //! Each `spawn` creates one OS thread. The thread wrapper signals a
 //! completion condvar and notifies any `Subscriber`s when the body

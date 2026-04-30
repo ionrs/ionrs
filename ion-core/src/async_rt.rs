@@ -1,4 +1,4 @@
-//! Concurrency runtime for Ion's structured concurrency model.
+//! Legacy OS-thread runtime for Ion's structured concurrency model.
 //!
 //! Single backend (std::thread + crossbeam-channel). Provides:
 //! - `TaskHandle`: joinable, cancellable, subscribable task handles

@@ -243,7 +243,7 @@ editors/      Editor syntax highlighting
 | `optimize` | Yes | Peephole optimizer, constant folding, DCE, TCO |
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
 | `async-runtime` | No | Tokio-native async host functions, `eval_async`, `spawn` / `.await` / `select`, timers, channels |
-| `concurrency` | No | Legacy sync-eval structured concurrency backend |
+| `legacy-threaded-concurrency` | No | Legacy sync-eval backend using OS threads and crossbeam channels |
 | `obfuscate` | No | String obfuscation via obfstr |
 | `msgpack` | No | `Value::to_msgpack()` via rmpv |
 | `rewrite` | No | Source rewriter — `rewrite::replace_global(src, name, new_value)` |

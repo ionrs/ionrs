@@ -6,13 +6,13 @@
   `Engine::eval_async`, `Engine::register_async_fn`, `EngineHandle`,
   Tokio timers, Tokio-backed channels, and bytecode continuations that park
   without blocking an OS thread.
-- `concurrency` — legacy synchronous evaluation backend. It keeps the older
-  `std::thread`/crossbeam implementation available for compatibility, but it
-  is not the Tokio-native runtime.
+- `legacy-threaded-concurrency` — legacy synchronous evaluation backend. It
+  keeps the older `std::thread`/crossbeam implementation available for
+  compatibility, but it is not the Tokio-native runtime.
 
 If both features are enabled, `async-runtime` wins and the legacy thread
 backend is not compiled. Test the legacy backend with `--no-default-features
---features concurrency`.
+--features legacy-threaded-concurrency`.
 
 ## Core Rule
 
@@ -198,7 +198,7 @@ host-side blocking pool.
 
 ## Legacy Backend
 
-The older `concurrency` feature still exists for synchronous `eval()` programs.
-It uses `std::thread` for spawned tasks and crossbeam channels. New Tokio
-embedding should use `async-runtime`; the legacy backend is compatibility
-surface, not the target design for native async I/O.
+The older OS-thread backend is now named `legacy-threaded-concurrency` for
+synchronous `eval()` programs. It uses `std::thread` for spawned tasks and
+crossbeam channels. New Tokio embedding should use `async-runtime`; the legacy
+backend is compatibility surface, not the target design for native async I/O.

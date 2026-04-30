@@ -1185,24 +1185,27 @@ impl Compiler {
             ExprKind::SelectExpr(branches) => {
                 self.compile_select_expr(branches, line, col)?;
             }
-            #[cfg(all(not(feature = "async-runtime"), feature = "concurrency"))]
+            #[cfg(all(not(feature = "async-runtime"), feature = "legacy-threaded-concurrency"))]
             ExprKind::AsyncBlock(_)
             | ExprKind::SpawnExpr(_)
             | ExprKind::AwaitExpr(_)
             | ExprKind::SelectExpr(_) => {
                 return Err(IonError::runtime(
-                    ion_str!("concurrency not supported in bytecode VM").to_string(),
+                    ion_str!(
+                        "legacy-threaded-concurrency is not supported in bytecode VM"
+                    )
+                    .to_string(),
                     line,
                     col,
                 ));
             }
-            #[cfg(all(not(feature = "async-runtime"), not(feature = "concurrency")))]
+            #[cfg(all(not(feature = "async-runtime"), not(feature = "legacy-threaded-concurrency")))]
             ExprKind::AsyncBlock(_)
             | ExprKind::SpawnExpr(_)
             | ExprKind::AwaitExpr(_)
             | ExprKind::SelectExpr(_) => {
                 return Err(IonError::runtime(
-                    ion_str!("concurrency not available").to_string(),
+                    ion_str!("concurrency syntax requires 'async-runtime'").to_string(),
                     line,
                     col,
                 ));

@@ -24,7 +24,8 @@
 //! - **`async-runtime`** — Native Tokio async evaluation via
 //!   [`engine::Engine::eval_async`], async host functions, `spawn`/`.await`/
 //!   `select`, timers, and channels
-//! - **`concurrency`** — Legacy sync-eval structured concurrency backend
+//! - **`legacy-threaded-concurrency`** — Legacy sync-eval backend using OS
+//!   threads and crossbeam channels
 //! - **`msgpack`** — `Value::to_msgpack()` / `from_msgpack()` via `rmpv`
 //! - **`obfuscate`** — String obfuscation via `obfstr`
 //! - **`rewrite`** — Source rewriter at [`rewrite::replace_global`]
@@ -58,9 +59,9 @@ macro_rules! ion_static_str {
 }
 
 pub mod ast;
-#[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
+#[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
 pub mod async_rt;
-#[cfg(all(feature = "concurrency", not(feature = "async-runtime")))]
+#[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
 pub mod async_rt_std;
 #[cfg(feature = "async-runtime")]
 pub mod async_runtime;

@@ -12,7 +12,7 @@ Counts vary by feature flags; the async-runtime suite is only compiled when
 | `ion-core/tests/vm.rs` | ~160 | VM-specific behavior |
 | `ion-core/tests/async_runtime.rs` | 130 | `async-runtime` native Tokio eval, host futures, timers, channels, callbacks |
 | `ion-core/tests/edge_cases.rs` | ~65 | Adversarial/edge cases |
-| `ion-core/tests/concurrency.rs` | 17 | Legacy `concurrency` sync-eval backend |
+| `ion-core/tests/legacy_threaded_concurrency.rs` | 17 | Legacy `legacy-threaded-concurrency` OS-thread sync-eval backend |
 | `ion-core/src/` (unit tests) | ~15 | Lexer and parser |
 | Doctests | 1+ | Public crate examples |
 
@@ -32,7 +32,7 @@ fn assert_both_eq(src: &str, expected: Value) {
 RUST_MIN_STACK=16777216 cargo test --workspace --all-features   # everything enabled
 cargo test --all-features -p ion-core --test cross_validate   # just parity
 cargo test -p ion-core --features async-runtime --test async_runtime   # native async runtime
-cargo test -p ion-core --no-default-features --features concurrency --test concurrency   # legacy concurrency only
+cargo test -p ion-core --no-default-features --features legacy-threaded-concurrency --test legacy_threaded_concurrency
 cargo test --all-features -p ion-core --test integration register_closure   # by name
 
 cargo clippy --all-features --all-targets -- -D warnings
