@@ -17,9 +17,9 @@
 //!
 //! # Features
 //!
-//! - **`vm`** (default) — Bytecode compiler and stack-based VM
-//! - **`optimize`** (default) — Peephole optimizer, constant folding,
-//!   dead-code elimination, tail-call optimization
+//! - **`vm`** (default) — Bytecode compiler and stack-based VM with
+//!   peephole optimization, constant folding, dead-code elimination, and
+//!   tail-call optimization
 //! - **`derive`** (default) — `#[derive(IonType)]` for host type injection
 //! - **`async-runtime`** — Native Tokio async evaluation via
 //!   [`engine::Engine::eval_async`], async host functions, `spawn`/`.await`/

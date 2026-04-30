@@ -279,7 +279,7 @@ fn fib(n) {
 fib(10)  // 55
 ```
 
-Tail calls are optimized (TCO) when the `optimize` feature is enabled.
+Tail calls are optimized (TCO) on the bytecode VM path.
 
 ---
 
@@ -1139,8 +1139,7 @@ The VM automatically falls back to tree-walk interpretation for unsupported feat
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `vm` | Yes | Bytecode VM path (`vm_eval`) |
-| `optimize` | Yes | Peephole optimizer, constant folding, DCE, TCO |
+| `vm` | Yes | Bytecode VM path (`vm_eval`) with peephole optimization, constant folding, DCE, and TCO |
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
 | `async-runtime` | No | Native Tokio async evaluation (`eval_async`, async host functions, timers, channels) |
 | `legacy-threaded-concurrency` | No | Legacy sync-eval backend using OS threads and crossbeam channels |

@@ -239,8 +239,7 @@ editors/      Editor syntax highlighting
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `vm` | Yes | Bytecode compiler + stack VM |
-| `optimize` | Yes | Peephole optimizer, constant folding, DCE, TCO |
+| `vm` | Yes | Bytecode compiler + stack VM with peephole optimization, constant folding, DCE, and TCO |
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
 | `async-runtime` | No | Tokio-native async host functions, `eval_async`, `spawn` / `.await` / `select`, timers, channels |
 | `legacy-threaded-concurrency` | No | Legacy sync-eval backend using OS threads and crossbeam channels |

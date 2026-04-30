@@ -253,7 +253,6 @@ impl Compiler {
     }
 
     /// Try to constant-fold a binary operation on two literal operands.
-    #[cfg(feature = "optimize")]
     fn try_fold_binop(left: &Expr, op: &BinOp, right: &Expr) -> Option<Value> {
         match (&left.kind, op, &right.kind) {
             // Int op Int
@@ -314,7 +313,6 @@ impl Compiler {
     }
 
     /// Try to constant-fold a unary operation on a literal operand.
-    #[cfg(feature = "optimize")]
     fn try_fold_unary(op: &UnaryOp, inner: &Expr) -> Option<Value> {
         match (op, &inner.kind) {
             (UnaryOp::Neg, ExprKind::Int(v)) => Some(Value::Int(-v)),
@@ -325,7 +323,6 @@ impl Compiler {
     }
 
     /// Check if a statement is terminal (control never continues past it).
-    #[cfg(feature = "optimize")]
     fn stmt_is_terminal(stmt: &Stmt) -> bool {
         matches!(
             &stmt.kind,
@@ -425,7 +422,6 @@ impl Compiler {
                     }
                 }
             }
-            #[cfg(feature = "optimize")]
             if !is_last && Self::stmt_is_terminal(stmt) {
                 break;
             }
@@ -434,7 +430,6 @@ impl Compiler {
             self.chunk.emit_op(Op::Unit, 0);
         }
         self.chunk.emit_op(Op::Return, 0);
-        #[cfg(feature = "optimize")]
         self.chunk.peephole_optimize();
         Ok((self.chunk, self.fn_chunks))
     }
@@ -585,7 +580,6 @@ impl Compiler {
                 self.compile_pattern_bind(pattern, line)?;
                 for stmt in body {
                     self.compile_stmt(stmt)?;
-                    #[cfg(feature = "optimize")]
                     if Self::stmt_is_terminal(stmt) {
                         break;
                     }
@@ -671,10 +665,7 @@ impl Compiler {
 
             ExprKind::BinOp { left, op, right } => {
                 // Constant folding: evaluate at compile time if both sides are literals
-                #[cfg(feature = "optimize")]
                 let folded = Self::try_fold_binop(left, op, right);
-                #[cfg(not(feature = "optimize"))]
-                let folded: Option<Value> = None;
                 if let Some(val) = folded {
                     self.chunk.emit_constant(val, line);
                 } else {
@@ -721,10 +712,7 @@ impl Compiler {
             }
 
             ExprKind::UnaryOp { op, expr: inner } => {
-                #[cfg(feature = "optimize")]
                 let folded = Self::try_fold_unary(op, inner);
-                #[cfg(not(feature = "optimize"))]
-                let folded: Option<Value> = None;
                 if let Some(val) = folded {
                     self.chunk.emit_constant(val, line);
                 } else {
@@ -798,10 +786,7 @@ impl Compiler {
                         self.chunk.emit(name_idx as u8, line);
                     }
                 } else {
-                    #[cfg(feature = "optimize")]
                     let op = if was_tail { Op::TailCall } else { Op::Call };
-                    #[cfg(not(feature = "optimize"))]
-                    let op = Op::Call;
                     self.chunk.emit_op_u8_span(op, args.len() as u8, line, col);
                 }
             }
@@ -952,7 +937,6 @@ impl Compiler {
                 }
                 fn_compiler.compile_expr(body)?;
                 fn_compiler.chunk.emit_op(Op::Return, line);
-                #[cfg(feature = "optimize")]
                 fn_compiler.chunk.peephole_optimize();
                 let compiled_chunk = fn_compiler.chunk;
                 self.fn_chunks.extend(fn_compiler.fn_chunks);
@@ -1307,7 +1291,6 @@ impl Compiler {
                 }
             }
             // Dead code elimination: skip remaining statements after terminal
-            #[cfg(feature = "optimize")]
             if !is_last && Self::stmt_is_terminal(stmt) {
                 break;
             }
@@ -1662,7 +1645,6 @@ impl Compiler {
         }
         fn_compiler.compile_block_expr(body, line)?;
         fn_compiler.chunk.emit_op(Op::Return, line);
-        #[cfg(feature = "optimize")]
         fn_compiler.chunk.peephole_optimize();
         let compiled_chunk = fn_compiler.chunk;
         // Collect any nested function chunks
@@ -1718,7 +1700,6 @@ impl Compiler {
         // Execute body (with dead code elimination)
         for stmt in body {
             self.compile_stmt(stmt)?;
-            #[cfg(feature = "optimize")]
             if Self::stmt_is_terminal(stmt) {
                 break;
             }
@@ -1766,7 +1747,6 @@ impl Compiler {
         self.begin_scope(line);
         for stmt in body {
             self.compile_stmt(stmt)?;
-            #[cfg(feature = "optimize")]
             if Self::stmt_is_terminal(stmt) {
                 break;
             }
@@ -1804,7 +1784,6 @@ impl Compiler {
         self.begin_scope(line);
         for stmt in body {
             self.compile_stmt(stmt)?;
-            #[cfg(feature = "optimize")]
             if Self::stmt_is_terminal(stmt) {
                 break;
             }

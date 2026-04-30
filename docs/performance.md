@@ -12,7 +12,7 @@
 - VM fn compilation caching: `IonFn` has `fn_id: u64`, VM has `HashMap<u64, Chunk>` cache
 - Precompiled fn chunks: `compile_program()` returns `(Chunk, FnChunkCache)`
 
-## Optimizations (feature-gated: `optimize`, requires `vm`)
+## VM Optimizations
 - Peephole optimizer: dead instruction removal with jump fixup
 - Constant folding: literal BinOp/UnaryOp at compile time (int, float, string, bool)
 - Dead code elimination: skip unreachable statements after return/break/continue
