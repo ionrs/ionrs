@@ -1,10 +1,10 @@
 [package]
 name = "ion-derive"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2021"
 description = "Derive macro for Ion scripting language host types"
 license = "MIT"
-repository = "https://github.com/paiml/ionlang"
+repository = "https://github.com/chutuananh2k/ion-lang"
 readme = "../README.md"
 keywords = ["scripting", "derive", "ion"]
 categories = ["compilers"]
