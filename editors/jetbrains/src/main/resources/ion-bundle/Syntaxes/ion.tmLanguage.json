@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "Ion",
   "scopeName": "source.ion",
+  "fileTypes": ["ion"],
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
