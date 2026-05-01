@@ -9,6 +9,7 @@ use crate::interpreter::{Interpreter, Limits};
 use crate::lexer::Lexer;
 use crate::module::Module;
 use crate::parser::Parser;
+use crate::log::{AtomicLogLevel, LogHandler, LogLevel, StdLogHandler};
 use crate::stdlib::OutputHandler;
 use crate::value::Value;
 
@@ -16,19 +17,15 @@ use crate::value::Value;
 pub struct Engine {
     interpreter: Interpreter,
     output: Arc<dyn OutputHandler>,
+    log_handler: Arc<dyn LogHandler>,
+    log_level: Arc<AtomicLogLevel>,
     #[cfg(feature = "async-runtime")]
     external_queue: crate::async_runtime::ExternalQueue,
 }
 
 impl Engine {
     pub fn new() -> Self {
-        let output = crate::stdlib::missing_output_handler();
-        Self {
-            interpreter: Interpreter::with_output(Arc::clone(&output)),
-            output,
-            #[cfg(feature = "async-runtime")]
-            external_queue: crate::async_runtime::ExternalQueue::new(),
-        }
+        Self::with_output_handler(crate::stdlib::missing_output_handler())
     }
 
     /// Create an engine with a host-provided output handler for `io::print*`.
@@ -39,11 +36,42 @@ impl Engine {
         Self::with_output_handler(Arc::new(output))
     }
 
-    /// Create an engine with a shared host-provided output handler.
+    /// Create an engine with a shared host-provided output handler. Uses the
+    /// default [`StdLogHandler`] wired to the engine-wide log level (so
+    /// `log::set_level` works as expected).
     pub fn with_output_handler(output: Arc<dyn OutputHandler>) -> Self {
+        let log_level = AtomicLogLevel::default_runtime();
+        let log_handler: Arc<dyn LogHandler> =
+            Arc::new(StdLogHandler::with_threshold(Arc::clone(&log_level)));
+        Self::build(output, log_handler, log_level)
+    }
+
+    /// Create an engine with both a host output handler and a log handler.
+    /// The log handler manages its own filtering — `log::set_level` still
+    /// updates the engine-wide threshold but the supplied handler can ignore
+    /// it (e.g. [`crate::log::TracingLogHandler`] defers to `tracing`).
+    pub fn with_handlers(
+        output: Arc<dyn OutputHandler>,
+        log_handler: Arc<dyn LogHandler>,
+    ) -> Self {
+        Self::build(output, log_handler, AtomicLogLevel::default_runtime())
+    }
+
+    fn build(
+        output: Arc<dyn OutputHandler>,
+        log_handler: Arc<dyn LogHandler>,
+        log_level: Arc<AtomicLogLevel>,
+    ) -> Self {
+        let interpreter = Interpreter::with_handlers(
+            Arc::clone(&output),
+            Arc::clone(&log_handler),
+            Arc::clone(&log_level),
+        );
         Self {
-            interpreter: Interpreter::with_output(Arc::clone(&output)),
+            interpreter,
             output,
+            log_handler,
+            log_level,
             #[cfg(feature = "async-runtime")]
             external_queue: crate::async_runtime::ExternalQueue::new(),
         }
@@ -145,6 +173,36 @@ impl Engine {
         self.interpreter
             .env
             .define(io.name.clone(), io.to_value(), false);
+    }
+
+    /// Install a host log handler. Surviving `log::*` callsites dispatch into
+    /// this handler. The shared runtime threshold (controlled by
+    /// `log::set_level` / [`Engine::set_log_level`]) is preserved.
+    pub fn set_log_handler<H>(&mut self, handler: H)
+    where
+        H: LogHandler + 'static,
+    {
+        self.set_log_handler_arc(Arc::new(handler));
+    }
+
+    /// Install a shared host log handler.
+    pub fn set_log_handler_arc(&mut self, handler: Arc<dyn LogHandler>) {
+        self.log_handler = Arc::clone(&handler);
+        let log = crate::stdlib::log_module_with_handler(handler, Arc::clone(&self.log_level));
+        self.interpreter
+            .env
+            .define(log.name.clone(), log.to_value(), false);
+    }
+
+    /// Set the runtime log level used by the default `StdLogHandler`.
+    /// Custom handlers may consult this via [`Engine::log_level`] but are
+    /// not required to.
+    pub fn set_log_level(&mut self, level: LogLevel) {
+        self.log_level.set(level);
+    }
+
+    pub fn log_level(&self) -> Arc<AtomicLogLevel> {
+        Arc::clone(&self.log_level)
     }
 
     /// Register a built-in function.
@@ -274,3 +332,4 @@ impl Default for Engine {
         Self::new()
     }
 }
+

@@ -366,6 +366,128 @@ fn format_output_args(args: &[Value]) -> String {
         .join(" ")
 }
 
+/// Build the `log` stdlib module with a handler whose threshold is the
+/// shared atomic level (used by `log::set_level`/`log::level`).
+///
+/// Functions: trace, debug, info, warn, error, set_level, level, enabled.
+pub fn log_module_with_handler(
+    handler: Arc<dyn crate::log::LogHandler>,
+    level: Arc<crate::log::AtomicLogLevel>,
+) -> Module {
+    use crate::log::{AtomicLogLevel, LogLevel};
+
+    let mut m = Module::new("log");
+
+    fn register_level(
+        m: &mut Module,
+        name: &'static str,
+        level: LogLevel,
+        handler: Arc<dyn crate::log::LogHandler>,
+    ) {
+        m.register_closure(name, move |args: &[Value]| {
+            // Pre-flight check — handlers can short-circuit before any
+            // formatting work happens for callsites that survived
+            // compile-time stripping but fail the runtime threshold.
+            if !handler.enabled(level) {
+                return Ok(Value::Unit);
+            }
+            let (message, fields) = match args.len() {
+                1 => (extract_message(&args[0])?, Vec::new()),
+                2 => (extract_message(&args[0])?, extract_fields(&args[1])?),
+                _ => {
+                    return Err(format!(
+                        "log::{} requires 1 or 2 arguments: message, [fields]",
+                        level.as_str()
+                    ));
+                }
+            };
+            handler.log(level, &message, &fields);
+            Ok(Value::Unit)
+        });
+    }
+
+    register_level(&mut m, "trace", LogLevel::Trace, Arc::clone(&handler));
+    register_level(&mut m, "debug", LogLevel::Debug, Arc::clone(&handler));
+    register_level(&mut m, "info", LogLevel::Info, Arc::clone(&handler));
+    register_level(&mut m, "warn", LogLevel::Warn, Arc::clone(&handler));
+    register_level(&mut m, "error", LogLevel::Error, Arc::clone(&handler));
+
+    let level_for_set = Arc::clone(&level);
+    m.register_closure("set_level", move |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("log::set_level takes 1 argument: name"));
+        }
+        let name = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("log::set_level requires a string"))?;
+        let parsed = LogLevel::from_str_ci(name).ok_or_else(|| {
+            format!(
+                "log::set_level: unknown level '{}' (expected off|error|warn|info|debug|trace)",
+                name
+            )
+        })?;
+        level_for_set.set(parsed);
+        Ok(Value::Unit)
+    });
+
+    let level_for_get = Arc::clone(&level);
+    m.register_closure("level", move |args: &[Value]| {
+        if !args.is_empty() {
+            return Err(ion_str!("log::level takes no arguments"));
+        }
+        Ok(Value::Str(level_for_get.get().as_str().to_string()))
+    });
+
+    let handler_for_enabled = Arc::clone(&handler);
+    m.register_closure("enabled", move |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("log::enabled takes 1 argument: name"));
+        }
+        let name = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("log::enabled requires a string"))?;
+        let parsed = LogLevel::from_str_ci(name).ok_or_else(|| {
+            format!(
+                "log::enabled: unknown level '{}' (expected off|error|warn|info|debug|trace)",
+                name
+            )
+        })?;
+        Ok(Value::Bool(handler_for_enabled.enabled(parsed)))
+    });
+
+    // Avoid `unused` warning when no extra references are made later.
+    let _ = AtomicLogLevel::default_runtime;
+    let _ = level;
+
+    m
+}
+
+/// Build the default `log` stdlib module — uses [`StdLogHandler`] writing to
+/// stderr, with a fresh runtime threshold (honouring `ION_LOG`).
+pub fn log_module() -> Module {
+    let level = crate::log::AtomicLogLevel::default_runtime();
+    let handler: Arc<dyn crate::log::LogHandler> =
+        Arc::new(crate::log::StdLogHandler::with_threshold(Arc::clone(&level)));
+    log_module_with_handler(handler, level)
+}
+
+fn extract_message(v: &Value) -> Result<String, String> {
+    match v {
+        Value::Str(s) => Ok(s.clone()),
+        other => Ok(format!("{}", other)),
+    }
+}
+
+fn extract_fields(v: &Value) -> Result<Vec<(String, Value)>, String> {
+    match v {
+        Value::Dict(map) => Ok(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+        other => Err(format!(
+            "log fields must be a dict, got {}",
+            other.type_name()
+        )),
+    }
+}
+
 /// Build the `io` stdlib module.
 ///
 /// Functions: print, println, eprintln
@@ -436,6 +558,22 @@ pub fn register_stdlib(env: &mut crate::env::Env) {
 
 /// Register all stdlib modules with a host-provided output handler.
 pub fn register_stdlib_with_output(env: &mut crate::env::Env, output: Arc<dyn OutputHandler>) {
+    let level = crate::log::AtomicLogLevel::default_runtime();
+    let log_handler: Arc<dyn crate::log::LogHandler> = Arc::new(
+        crate::log::StdLogHandler::with_threshold(Arc::clone(&level)),
+    );
+    register_stdlib_with_handlers(env, output, log_handler, level);
+}
+
+/// Register all stdlib modules with both a host output handler and a log
+/// handler. The shared `level` is used by `log::set_level`/`log::level` to
+/// gate the default `StdLogHandler`. Custom handlers are free to ignore it.
+pub fn register_stdlib_with_handlers(
+    env: &mut crate::env::Env,
+    output: Arc<dyn OutputHandler>,
+    log_handler: Arc<dyn crate::log::LogHandler>,
+    level: Arc<crate::log::AtomicLogLevel>,
+) {
     let math = math_module();
     env.define(math.name.clone(), math.to_value(), false);
 
@@ -447,4 +585,7 @@ pub fn register_stdlib_with_output(env: &mut crate::env::Env, output: Arc<dyn Ou
 
     let string_mod = string_module();
     env.define(string_mod.name.clone(), string_mod.to_value(), false);
+
+    let log = log_module_with_handler(log_handler, level);
+    env.define(log.name.clone(), log.to_value(), false);
 }

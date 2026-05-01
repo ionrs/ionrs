@@ -760,6 +760,16 @@ impl Compiler {
             }
 
             ExprKind::Call { func, args } => {
+                // Compile-time elision for `log::<level>(...)` callsites whose
+                // level is above the COMPILE_LOG_CAP — emit Unit without
+                // touching any args. This mirrors `tracing`'s
+                // `release_max_level_*` semantics.
+                if let Some(level) = recognize_log_call(func) {
+                    if !level.allowed_under(crate::log::COMPILE_LOG_CAP) {
+                        self.chunk.emit_op(Op::Unit, line);
+                        return Ok(());
+                    }
+                }
                 let has_named = args.iter().any(|a| a.name.is_some());
                 // Sub-expressions are not in tail position (already cleared above)
                 self.compile_expr(func)?;
@@ -2462,5 +2472,29 @@ impl Compiler {
         self.chunk.patch_jump(exit_jump);
         self.chunk.emit_op(Op::Pop, line);
         Ok(())
+    }
+}
+
+/// Recognize a `log::<level>(...)` callsite by shape. Returns the matched
+/// `LogLevel` or `None` if the call expression is not a literal `log::<level>`
+/// path of the form recognized by the compile-time elision pass.
+///
+/// Indirect call shapes (`use log::debug; debug(x)`, `let f = log::debug; f(x)`)
+/// are intentionally not recognized — they go through the runtime handler's
+/// `enabled` check instead.
+fn recognize_log_call(func: &Expr) -> Option<crate::log::LogLevel> {
+    match &func.kind {
+        ExprKind::ModulePath(segments) if segments.len() == 2 && segments[0] == "log" => {
+            crate::log::LogLevel::from_str_ci(&segments[1])
+                .filter(|l| matches!(
+                    l,
+                    crate::log::LogLevel::Trace
+                        | crate::log::LogLevel::Debug
+                        | crate::log::LogLevel::Info
+                        | crate::log::LogLevel::Warn
+                        | crate::log::LogLevel::Error
+                ))
+        }
+        _ => None,
     }
 }

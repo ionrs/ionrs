@@ -31,6 +31,27 @@ fn unmatched_label_msg(keyword: &str, label: Option<String>) -> String {
     }
 }
 
+/// Recognize a `log::<level>(...)` callsite. Mirrors the bytecode compiler's
+/// `recognize_log_call` so the tree-walk interpreter applies the same
+/// compile-time elision rule.
+fn recognize_log_call_expr(func: &Expr) -> Option<crate::log::LogLevel> {
+    match &func.kind {
+        ExprKind::ModulePath(segments) if segments.len() == 2 && segments[0] == "log" => {
+            crate::log::LogLevel::from_str_ci(&segments[1]).filter(|l| {
+                matches!(
+                    l,
+                    crate::log::LogLevel::Trace
+                        | crate::log::LogLevel::Debug
+                        | crate::log::LogLevel::Info
+                        | crate::log::LogLevel::Warn
+                        | crate::log::LogLevel::Error
+                )
+            })
+        }
+        _ => None,
+    }
+}
+
 type IonResult = Result<Value, IonError>;
 type SignalResult = Result<Value, SignalOrError>;
 
@@ -89,8 +110,21 @@ impl Interpreter {
     }
 
     pub fn with_output(output: Arc<dyn OutputHandler>) -> Self {
+        let level = crate::log::AtomicLogLevel::default_runtime();
+        let log_handler: Arc<dyn crate::log::LogHandler> = Arc::new(
+            crate::log::StdLogHandler::with_threshold(Arc::clone(&level)),
+        );
+        Self::with_handlers(output, log_handler, level)
+    }
+
+    /// Construct an interpreter with both an output handler and a log handler.
+    pub fn with_handlers(
+        output: Arc<dyn OutputHandler>,
+        log_handler: Arc<dyn crate::log::LogHandler>,
+        log_level: Arc<crate::log::AtomicLogLevel>,
+    ) -> Self {
         let mut env = Env::new();
-        register_builtins(&mut env, output);
+        register_builtins_with_handlers(&mut env, output, log_handler, log_level);
         Self {
             env,
             limits: Limits::default(),
@@ -1100,6 +1134,14 @@ impl Interpreter {
             }
 
             ExprKind::Call { func, args } => {
+                // Compile-time elision: skip `log::<level>(...)` callsites
+                // whose level is above COMPILE_LOG_CAP (mirrors the bytecode
+                // compiler's behaviour). Args are not evaluated.
+                if let Some(level) = recognize_log_call_expr(func) {
+                    if !level.allowed_under(crate::log::COMPILE_LOG_CAP) {
+                        return Ok(Value::Unit);
+                    }
+                }
                 let func_val = self.eval_expr(func)?;
                 let has_named = args.iter().any(|a| a.name.is_some());
                 if has_named {
@@ -3811,6 +3853,19 @@ impl Interpreter {
 }
 
 pub fn register_builtins(env: &mut Env, output: Arc<dyn OutputHandler>) {
+    let level = crate::log::AtomicLogLevel::default_runtime();
+    let log_handler: Arc<dyn crate::log::LogHandler> = Arc::new(
+        crate::log::StdLogHandler::with_threshold(Arc::clone(&level)),
+    );
+    register_builtins_with_handlers(env, output, log_handler, level)
+}
+
+pub fn register_builtins_with_handlers(
+    env: &mut Env,
+    output: Arc<dyn OutputHandler>,
+    log_handler: Arc<dyn crate::log::LogHandler>,
+    log_level: Arc<crate::log::AtomicLogLevel>,
+) {
     // I/O: moved to io:: module
     // Math: moved to math:: module
     // JSON/Msgpack: moved to json:: module
@@ -4172,6 +4227,6 @@ pub fn register_builtins(env: &mut Env, output: Arc<dyn OutputHandler>) {
         );
     }
 
-    // Register stdlib modules (math, json, io)
-    crate::stdlib::register_stdlib_with_output(env, output);
+    // Register stdlib modules (math, json, io, string, log)
+    crate::stdlib::register_stdlib_with_handlers(env, output, log_handler, log_level);
 }

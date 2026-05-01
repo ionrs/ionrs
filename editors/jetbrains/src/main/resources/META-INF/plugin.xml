@@ -17,6 +17,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.4.0</h3>
+        <ul>
+            <li>Highlights and LSP support for the new <code>log::</code> module — <code>log::trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>, plus <code>set_level</code> / <code>level</code> / <code>enabled</code>. Hover overview describes the compile-time stripping cap.</li>
+        </ul>
         <h3>0.3.2</h3>
         <ul>
             <li>Pairs with <code>ion-lsp</code> 0.3.2: hover now resolves methods (<code>xs.push</code>), module members (<code>math::sqrt</code>), type names, function parameters, and shows the full <code>let</code> initializer with mutability and type annotation.</li>

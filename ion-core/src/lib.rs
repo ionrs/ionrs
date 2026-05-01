@@ -76,6 +76,7 @@ pub mod host_types;
 pub mod intern;
 pub mod interpreter;
 pub mod lexer;
+pub mod log;
 pub mod module;
 pub mod parser;
 #[cfg(feature = "rewrite")]

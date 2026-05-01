@@ -587,6 +587,7 @@ fn module_members(module: &str) -> &'static [ModuleMember] {
         "json" => JSON_MEMBERS,
         "io" => IO_MEMBERS,
         "string" => STRING_MEMBERS,
+        "log" => LOG_MEMBERS,
         _ => &[],
     }
 }
@@ -633,7 +634,18 @@ const STRING_MEMBERS: &[ModuleMember] = &[
     ModuleMember { name: "join", signature: "string::join(list, sep)", doc: "Join list elements into string with optional separator", is_const: false },
 ];
 
-const MODULE_NAMES: &[&str] = &["math", "json", "io", "string"];
+const LOG_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "trace", signature: "log::trace(message, fields?)", doc: "Emit a TRACE record. Stripped at compile time when level > log_max_level_*.", is_const: false },
+    ModuleMember { name: "debug", signature: "log::debug(message, fields?)", doc: "Emit a DEBUG record. Stripped at compile time when level > log_max_level_*.", is_const: false },
+    ModuleMember { name: "info",  signature: "log::info(message, fields?)",  doc: "Emit an INFO record. Stripped at compile time when level > log_max_level_*.",  is_const: false },
+    ModuleMember { name: "warn",  signature: "log::warn(message, fields?)",  doc: "Emit a WARN record. Stripped at compile time when level > log_max_level_*.",  is_const: false },
+    ModuleMember { name: "error", signature: "log::error(message, fields?)", doc: "Emit an ERROR record.", is_const: false },
+    ModuleMember { name: "set_level", signature: "log::set_level(name)", doc: "Set the runtime threshold (off|error|warn|info|debug|trace).", is_const: false },
+    ModuleMember { name: "level",     signature: "log::level()",        doc: "Return the current runtime threshold as a string.", is_const: false },
+    ModuleMember { name: "enabled",   signature: "log::enabled(name)",  doc: "Check whether the handler would emit at the given level.", is_const: false },
+];
+
+const MODULE_NAMES: &[&str] = &["math", "json", "io", "string", "log"];
 
 // ---- Type names (shared by hover and completion) ----
 
@@ -949,6 +961,7 @@ fn format_module_overview(module: &str) -> String {
         "json" => "JSON encoding and decoding.",
         "io" => "Standard input/output.",
         "string" => "String utilities.",
+        "log" => "Leveled logging — `log::trace` / `debug` / `info` / `warn` / `error`. Compile-time stripped above the cap.",
         _ => "Module.",
     };
     let mut out = format!("**module `{}`** — {}\n\n{} members:\n", module, summary, count);
