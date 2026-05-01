@@ -46,8 +46,15 @@
       "patterns": [
         {
           "name": "string.quoted.triple.interpolated.ion",
-          "begin": "f\"\"\"",
+          "begin": "(f)(\"\"\")",
           "end": "\"\"\"",
+          "beginCaptures": {
+            "1": { "name": "storage.type.string.ion" },
+            "2": { "name": "punctuation.definition.string.begin.ion" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.ion" }
+          },
           "patterns": [
             { "include": "#string-escapes" },
             { "include": "#string-interpolation" }
@@ -57,14 +64,27 @@
           "name": "string.quoted.triple.ion",
           "begin": "\"\"\"",
           "end": "\"\"\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.ion" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.ion" }
+          },
           "patterns": [
             { "include": "#string-escapes" }
           ]
         },
         {
           "name": "string.quoted.double.interpolated.ion",
-          "begin": "f\"",
+          "begin": "(f)(\")",
           "end": "\"",
+          "beginCaptures": {
+            "1": { "name": "storage.type.string.ion" },
+            "2": { "name": "punctuation.definition.string.begin.ion" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.ion" }
+          },
           "patterns": [
             { "include": "#string-escapes" },
             { "include": "#string-interpolation" }
@@ -74,6 +94,12 @@
           "name": "string.quoted.double.ion",
           "begin": "\"",
           "end": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.ion" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.ion" }
+          },
           "patterns": [
             { "include": "#string-escapes" }
           ]

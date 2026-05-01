@@ -17,6 +17,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.3.1</h3>
+        <ul>
+            <li>Distinct scope (<code>storage.type.string.ion</code>) for the f-string <code>f</code> prefix so themes can color it apart from the string body.</li>
+            <li>Explicit <code>punctuation.definition.string.{begin,end}</code> captures on string delimiters.</li>
+        </ul>
         <h3>0.2.1</h3>
         <ul>
             <li>Restored the TextMate file type mapping for <code>.ion</code> files in the bundled JetBrains grammar.</li>

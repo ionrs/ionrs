@@ -23,7 +23,7 @@ cd editors/jetbrains
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/ion-jetbrains-0.2.1.zip`. Install in any JetBrains
+Output: `build/distributions/ion-jetbrains-0.3.1.zip`. Install in any JetBrains
 IDE via *Settings | Plugins | ⚙ | Install Plugin from Disk…*.
 
 ## Run a sandbox IDE

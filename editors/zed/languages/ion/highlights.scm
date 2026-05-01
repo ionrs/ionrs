@@ -118,6 +118,10 @@
 
 (escape_sequence) @string.escape
 
+; F-string prefix — distinct scope so themes can highlight `f"` / `f"""`
+(fstring_literal "f\"" @string.special.symbol)
+(fstring_literal "f\"\"\"" @string.special.symbol)
+
 (interpolation
   "{" @punctuation.special
   "}" @punctuation.special)
