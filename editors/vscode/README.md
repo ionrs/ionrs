@@ -53,7 +53,7 @@ To disable the LSP (syntax highlighting still works):
 ## Install from .vsix
 
 ```bash
-code --install-extension ion-lang-0.1.0.vsix
+code --install-extension ion-lang-0.2.0.vsix
 ```
 
 ## Development

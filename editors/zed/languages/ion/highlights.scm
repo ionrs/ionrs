@@ -15,7 +15,6 @@
   "continue"
   "return"
   "in"
-  "as"
   "async"
   "spawn"
   "select"
@@ -31,18 +30,16 @@
 ] @keyword
 
 ; ── Loop labels ──────────────────────────────────────────────
-; VSCode highlights `'name` labels via the tmLanguage grammar. Zed's
-; highlights are tree-sitter-driven, so this requires the external
-; tree-sitter-ion grammar at github.com/chutuananh2k/ion-lang to expose a label
-; node (e.g. `(label)` or `(loop_label)`) before it can be highlighted
-; here. Once that lands, add:
-;
-;   (label) @label
-;   (break_statement label: (label) @label)
-;   (continue_statement label: (label) @label)
-;
-; Until then, labels render as plain text — keep this comment as a TODO
-; anchor when bumping the grammar pin in extension.toml.
+(label) @label
+
+(labeled_loop_statement
+  label: (label) @label)
+
+(break_statement
+  (label) @label)
+
+(continue_statement
+  (label) @label)
 
 ; ── Constructors ─────────────────────────────────────────────
 (some_expression "Some" @constructor)
@@ -77,12 +74,14 @@
   (#match? @function.builtin "^(len|range|enumerate|type_of|str|int|float|bytes|bytes_from_hex|assert|assert_eq|channel|set|cell|sleep|timeout)$"))
 
 ((identifier) @namespace
-  (#match? @namespace "^(math|json|io)$"))
+  (#match? @namespace "^(math|json|io|string)$"))
 
 ; ── Module paths ─────────────────────────────────────────────
-(module_path_expression
-  module: (identifier) @namespace
-  member: (identifier) @function)
+(module_path
+  (identifier) @namespace)
+
+(import_path_tail
+  (identifier) @namespace)
 
 (module_path_import
   (identifier) @namespace)

@@ -31,7 +31,6 @@ module.exports = grammar({
   word: ($) => $.identifier,
 
   conflicts: ($) => [
-    [$.primary_expression, $.named_argument],
     [$.method_call_expression, $.field_expression],
   ],
 
@@ -45,6 +44,7 @@ module.exports = grammar({
         $.let_statement,
         $.function_definition,
         $.use_statement,
+        $.labeled_loop_statement,
         $.expression_statement,
         $.break_statement,
         $.continue_statement,
@@ -89,14 +89,22 @@ module.exports = grammar({
       ),
 
     module_path_import: ($) =>
-      choice(
-        // use mod::name
-        seq($.identifier, "::", $.identifier),
-        // use mod::{a, b}
-        seq($.identifier, "::", "{", $.import_list, "}"),
-        // use mod::*
-        seq($.identifier, "::", "*"),
+      seq(
+        $.identifier,
+        "::",
+        $.import_path_tail,
       ),
+
+    import_path_tail: ($) =>
+      choice(
+        "*",
+        seq("{", $.import_list, "}"),
+        $.identifier,
+        prec.right(seq($.identifier, "::", $.import_path_tail)),
+      ),
+
+    module_path: ($) =>
+      seq($.identifier, repeat1(seq("::", $.identifier))),
 
     import_list: ($) =>
       seq($.identifier, repeat(seq(",", $.identifier)), optional(",")),
@@ -105,13 +113,20 @@ module.exports = grammar({
       seq($._expression, optional(";")),
 
     break_statement: ($) =>
-      seq("break", optional($._expression), ";"),
+      seq("break", optional($.label), optional($._expression), ";"),
 
     continue_statement: ($) =>
-      seq("continue", ";"),
+      seq("continue", optional($.label), ";"),
 
     return_statement: ($) =>
       seq("return", optional($._expression), ";"),
+
+    labeled_loop_statement: ($) =>
+      seq(
+        field("label", $.label),
+        ":",
+        field("loop", choice($.for_expression, $.while_expression, $.loop_expression)),
+      ),
 
     // ── Types ───────────────────────────────────────────────────
 
@@ -132,6 +147,7 @@ module.exports = grammar({
         "dict",
         "tuple",
         "set",
+        "cell",
         "fn",
         "any",
         "Option",
@@ -334,7 +350,7 @@ module.exports = grammar({
       ),
 
     named_argument: ($) =>
-      seq(field("name", $.identifier), "=", field("value", $._expression)),
+      seq(field("name", $.identifier), ":", field("value", $._expression)),
 
     field_expression: ($) =>
       prec(PREC.FIELD, seq($._expression, ".", field("field", $.identifier))),
@@ -357,12 +373,7 @@ module.exports = grammar({
         optional($._expression),
       ),
 
-    module_path_expression: ($) =>
-      seq(
-        field("module", $.identifier),
-        "::",
-        field("member", $.identifier),
-      ),
+    module_path_expression: ($) => $.module_path,
 
     // ── Control Flow ────────────────────────────────────────────
 
@@ -457,7 +468,14 @@ module.exports = grammar({
       seq("loop", $.block),
 
     while_expression: ($) =>
-      seq("while", $._expression, $.block),
+      seq(
+        "while",
+        choice(
+          seq("let", field("pattern", $.pattern), "=", field("value", $._expression)),
+          field("condition", $._expression),
+        ),
+        $.block,
+      ),
 
     for_expression: ($) =>
       seq("for", $.pattern, "in", $._expression, $.block),
@@ -496,6 +514,8 @@ module.exports = grammar({
     // ── Terminals ───────────────────────────────────────────────
 
     identifier: (_) => /[a-zA-Z_][a-zA-Z0-9_]*/,
+
+    label: (_) => /'[a-zA-Z_][a-zA-Z0-9_]*/,
 
     line_comment: (_) => /\/\/[^\n]*/,
   },
