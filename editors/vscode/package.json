@@ -2,7 +2,7 @@
   "name": "ion-lang",
   "displayName": "Ion Language",
   "description": "Syntax highlighting and LSP support for the Ion scripting language",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "ionlang",
   "license": "MIT",
   "repository": {

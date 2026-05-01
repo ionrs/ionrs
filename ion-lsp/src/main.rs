@@ -55,11 +55,15 @@ fn collect_definitions(source: &str) -> Vec<Definition> {
     // Use recovering parse so definitions are available even with errors
     let output = parser.parse_program_recovering();
     let mut defs = Vec::new();
-    collect_defs_from_stmts(&output.program.stmts, &mut defs);
+    collect_defs_from_stmts(&output.program.stmts, source, &mut defs);
     defs
 }
 
-fn collect_defs_from_stmts(stmts: &[ion_core::ast::Stmt], defs: &mut Vec<Definition>) {
+fn collect_defs_from_stmts(
+    stmts: &[ion_core::ast::Stmt],
+    source: &str,
+    defs: &mut Vec<Definition>,
+) {
     for stmt in stmts {
         let line = if stmt.span.line > 0 {
             stmt.span.line as u32 - 1
@@ -80,10 +84,26 @@ fn collect_defs_from_stmts(stmts: &[ion_core::ast::Stmt], defs: &mut Vec<Definit
                     col,
                     detail: format_fn_signature(name, params),
                 });
-                collect_defs_from_stmts(body, defs);
+                // Track parameters as definitions so they hover/jump correctly.
+                for param in params {
+                    let p_detail = match &param.default {
+                        Some(_) => format!("(parameter) {} (with default)", param.name),
+                        None => format!("(parameter) {}", param.name),
+                    };
+                    defs.push(Definition {
+                        name: param.name.clone(),
+                        kind: DefKind::Variable,
+                        line,
+                        col,
+                        detail: p_detail,
+                    });
+                }
+                collect_defs_from_stmts(body, source, defs);
             }
             StmtKind::Let {
+                mutable,
                 pattern: ion_core::ast::Pattern::Ident(name),
+                type_ann,
                 ..
             } => {
                 defs.push(Definition {
@@ -91,14 +111,14 @@ fn collect_defs_from_stmts(stmts: &[ion_core::ast::Stmt], defs: &mut Vec<Definit
                     kind: DefKind::Variable,
                     line,
                     col,
-                    detail: format!("let {}", name),
+                    detail: format_let_detail(source, line, *mutable, name, type_ann.as_ref()),
                 });
             }
-            StmtKind::For { body, .. } => collect_defs_from_stmts(body, defs),
-            StmtKind::While { body, .. } => collect_defs_from_stmts(body, defs),
-            StmtKind::WhileLet { body, .. } => collect_defs_from_stmts(body, defs),
-            StmtKind::Loop { body, .. } => collect_defs_from_stmts(body, defs),
-            StmtKind::ExprStmt { expr, .. } => collect_defs_from_expr(expr, defs),
+            StmtKind::For { body, .. } => collect_defs_from_stmts(body, source, defs),
+            StmtKind::While { body, .. } => collect_defs_from_stmts(body, source, defs),
+            StmtKind::WhileLet { body, .. } => collect_defs_from_stmts(body, source, defs),
+            StmtKind::Loop { body, .. } => collect_defs_from_stmts(body, source, defs),
+            StmtKind::ExprStmt { expr, .. } => collect_defs_from_expr(expr, source, defs),
             StmtKind::Use { path, imports } => {
                 let module_path = path.join("::");
                 let names: Vec<String> = match imports {
@@ -121,7 +141,11 @@ fn collect_defs_from_stmts(stmts: &[ion_core::ast::Stmt], defs: &mut Vec<Definit
     }
 }
 
-fn collect_defs_from_expr(expr: &ion_core::ast::Expr, defs: &mut Vec<Definition>) {
+fn collect_defs_from_expr(
+    expr: &ion_core::ast::Expr,
+    source: &str,
+    defs: &mut Vec<Definition>,
+) {
     use ion_core::ast::ExprKind;
     match &expr.kind {
         ExprKind::If {
@@ -129,9 +153,9 @@ fn collect_defs_from_expr(expr: &ion_core::ast::Expr, defs: &mut Vec<Definition>
             else_body,
             ..
         } => {
-            collect_defs_from_stmts(then_body, defs);
+            collect_defs_from_stmts(then_body, source, defs);
             if let Some(eb) = else_body {
-                collect_defs_from_stmts(eb, defs);
+                collect_defs_from_stmts(eb, source, defs);
             }
         }
         ExprKind::IfLet {
@@ -139,20 +163,20 @@ fn collect_defs_from_expr(expr: &ion_core::ast::Expr, defs: &mut Vec<Definition>
             else_body,
             ..
         } => {
-            collect_defs_from_stmts(then_body, defs);
+            collect_defs_from_stmts(then_body, source, defs);
             if let Some(eb) = else_body {
-                collect_defs_from_stmts(eb, defs);
+                collect_defs_from_stmts(eb, source, defs);
             }
         }
         ExprKind::Match { arms, .. } => {
             for arm in arms {
-                collect_defs_from_expr(&arm.body, defs);
+                collect_defs_from_expr(&arm.body, source, defs);
             }
         }
-        ExprKind::Block(stmts) => collect_defs_from_stmts(stmts, defs),
+        ExprKind::Block(stmts) => collect_defs_from_stmts(stmts, source, defs),
         ExprKind::TryCatch { body, handler, .. } => {
-            collect_defs_from_stmts(body, defs);
-            collect_defs_from_stmts(handler, defs);
+            collect_defs_from_stmts(body, source, defs);
+            collect_defs_from_stmts(handler, source, defs);
         }
         _ => {}
     }
@@ -170,6 +194,70 @@ fn format_fn_signature(name: &str, params: &[Param]) -> String {
         })
         .collect();
     format!("fn {}({})", name, params_str.join(", "))
+}
+
+/// Build a richer hover string for a `let` binding by reading the source line
+/// where it was declared and extracting the initializer expression.
+fn format_let_detail(
+    source: &str,
+    line: u32,
+    mutable: bool,
+    name: &str,
+    type_ann: Option<&ion_core::ast::TypeAnn>,
+) -> String {
+    let mut_str = if mutable { "mut " } else { "" };
+    let type_str = match type_ann {
+        Some(t) => format!(": {}", format_type_ann(t)),
+        None => String::new(),
+    };
+    let init = source.lines().nth(line as usize).and_then(extract_let_initializer);
+    match init {
+        Some(rhs) => format!("let {}{}{} = {}", mut_str, name, type_str, rhs.trim()),
+        None => format!("let {}{}{}", mut_str, name, type_str),
+    }
+}
+
+/// Pull the initializer text out of a single-line `let` statement. Returns
+/// the slice between `=` and a trailing `;` (if present), trimmed.
+fn extract_let_initializer(line_text: &str) -> Option<String> {
+    let bytes = line_text.as_bytes();
+    // Find the first top-level `=` (skip `==`, `<=`, `>=`, `!=`).
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'/' && bytes.get(i + 1) == Some(&b'/') {
+            return None; // hit a line comment before any `=`
+        }
+        if b == b'=' {
+            let prev = if i > 0 { bytes[i - 1] } else { 0 };
+            let next = bytes.get(i + 1).copied().unwrap_or(0);
+            if next != b'=' && !matches!(prev, b'=' | b'<' | b'>' | b'!' | b'+' | b'-' | b'*' | b'/') {
+                let rest = &line_text[i + 1..];
+                let rest = rest.trim_end();
+                let rest = rest.strip_suffix(';').unwrap_or(rest);
+                let trimmed = rest.trim();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                return Some(trimmed.to_string());
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn format_type_ann(t: &ion_core::ast::TypeAnn) -> String {
+    use ion_core::ast::TypeAnn;
+    match t {
+        TypeAnn::Simple(s) => s.clone(),
+        TypeAnn::Option(inner) => format!("Option<{}>", format_type_ann(inner)),
+        TypeAnn::Result(ok, err) => {
+            format!("Result<{}, {}>", format_type_ann(ok), format_type_ann(err))
+        }
+        TypeAnn::List(inner) => format!("list<{}>", format_type_ann(inner)),
+        TypeAnn::Dict(k, v) => format!("dict<{}, {}>", format_type_ann(k), format_type_ann(v)),
+    }
 }
 
 // ---- Word at position ----
@@ -197,6 +285,86 @@ fn word_at_position(source: &str, line: u32, col: u32) -> Option<String> {
 
 fn is_ident_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Context immediately preceding the word at cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PrefixCtx {
+    /// No special prefix.
+    Plain,
+    /// The word is preceded by `.` (method call).
+    Method,
+    /// The word is preceded by `<name>::` (module member).
+    Module(String),
+}
+
+/// Compute the byte range of the word at `(line, col)` in the source line.
+/// Returns `(start_byte, end_byte)` within the line, or `None` if the cursor
+/// isn't on an identifier.
+fn word_range_in_line(line_text: &str, col: usize) -> Option<(usize, usize)> {
+    if col > line_text.len() {
+        return None;
+    }
+    let bytes = line_text.as_bytes();
+    let mut start = col;
+    while start > 0 && is_ident_char(bytes[start - 1]) {
+        start -= 1;
+    }
+    let mut end = col;
+    while end < bytes.len() && is_ident_char(bytes[end]) {
+        end += 1;
+    }
+    if start == end {
+        None
+    } else {
+        Some((start, end))
+    }
+}
+
+/// Detect what immediately precedes the word at the given position.
+fn prefix_context_at(source: &str, line: u32, col: u32) -> PrefixCtx {
+    let Some(line_text) = source.lines().nth(line as usize) else {
+        return PrefixCtx::Plain;
+    };
+    let col = col as usize;
+    let Some((start, _)) = word_range_in_line(line_text, col) else {
+        return PrefixCtx::Plain;
+    };
+    let bytes = line_text.as_bytes();
+    if start == 0 {
+        return PrefixCtx::Plain;
+    }
+    let prev = bytes[start - 1];
+    if prev == b'.' {
+        return PrefixCtx::Method;
+    }
+    // Look for `<ident>::` ending exactly at `start`.
+    if start >= 2 && bytes[start - 1] == b':' && bytes[start - 2] == b':' {
+        let mod_end = start - 2;
+        let mut mod_start = mod_end;
+        while mod_start > 0 && is_ident_char(bytes[mod_start - 1]) {
+            mod_start -= 1;
+        }
+        if mod_start < mod_end {
+            let name = &line_text[mod_start..mod_end];
+            return PrefixCtx::Module(name.to_string());
+        }
+    }
+    PrefixCtx::Plain
+}
+
+/// Convert a (line, byte_start, byte_end) tuple to an LSP Range, treating
+/// positions as UTF-16 code units (matching how editors send positions).
+fn line_range(line: u32, line_text: &str, start_byte: usize, end_byte: usize) -> Range {
+    let to_utf16 = |byte: usize| -> u32 {
+        line_text[..byte.min(line_text.len())]
+            .encode_utf16()
+            .count() as u32
+    };
+    Range {
+        start: Position::new(line, to_utf16(start_byte)),
+        end: Position::new(line, to_utf16(end_byte)),
+    }
 }
 
 // ---- Builtins ----
@@ -294,6 +462,201 @@ const KEYWORDS: &[&str] = &[
     "let", "mut", "fn", "if", "else", "while", "for", "loop", "break", "continue", "return",
     "match", "in", "true", "false", "None", "Some", "Ok", "Err", "async", "spawn", "select", "try",
     "catch", "use",
+];
+
+// ---- Methods (shared by hover and completion) ----
+
+struct MethodInfo {
+    name: &'static str,
+    signature: &'static str,
+    doc: &'static str,
+}
+
+const METHODS: &[MethodInfo] = &[
+    // String methods
+    MethodInfo { name: "len", signature: "len()", doc: "Length" },
+    MethodInfo { name: "is_empty", signature: "is_empty()", doc: "True if empty" },
+    MethodInfo { name: "contains", signature: "contains(sub)", doc: "Contains substring/element" },
+    MethodInfo { name: "starts_with", signature: "starts_with(prefix)", doc: "Starts with prefix" },
+    MethodInfo { name: "ends_with", signature: "ends_with(suffix)", doc: "Ends with suffix" },
+    MethodInfo { name: "trim", signature: "trim()", doc: "Strip whitespace" },
+    MethodInfo { name: "trim_start", signature: "trim_start()", doc: "Trim leading whitespace" },
+    MethodInfo { name: "trim_end", signature: "trim_end()", doc: "Trim trailing whitespace" },
+    MethodInfo { name: "split", signature: "split(delim)", doc: "Split by delimiter" },
+    MethodInfo { name: "replace", signature: "replace(from, to)", doc: "Replace occurrences" },
+    MethodInfo { name: "to_upper", signature: "to_upper()", doc: "Uppercase" },
+    MethodInfo { name: "to_lower", signature: "to_lower()", doc: "Lowercase" },
+    MethodInfo { name: "chars", signature: "chars()", doc: "List of characters" },
+    MethodInfo { name: "char_len", signature: "char_len()", doc: "Character count (Unicode-aware)" },
+    MethodInfo { name: "reverse", signature: "reverse()", doc: "Reversed copy" },
+    MethodInfo { name: "find", signature: "find(sub)", doc: "Index of first occurrence" },
+    MethodInfo { name: "repeat", signature: "repeat(n)", doc: "Repeat n times" },
+    MethodInfo { name: "to_int", signature: "to_int()", doc: "Parse as integer" },
+    MethodInfo { name: "to_float", signature: "to_float()", doc: "Parse as float" },
+    MethodInfo { name: "to_string", signature: "to_string()", doc: "Convert to string" },
+    MethodInfo { name: "pad_start", signature: "pad_start(width, char)", doc: "Pad start to width" },
+    MethodInfo { name: "pad_end", signature: "pad_end(width, char)", doc: "Pad end to width" },
+    MethodInfo { name: "strip_prefix", signature: "strip_prefix(prefix)", doc: "Remove prefix if present" },
+    MethodInfo { name: "strip_suffix", signature: "strip_suffix(suffix)", doc: "Remove suffix if present" },
+    // List methods
+    MethodInfo { name: "push", signature: "push(val)", doc: "Append value" },
+    MethodInfo { name: "pop", signature: "pop()", doc: "Remove last element" },
+    MethodInfo { name: "first", signature: "first()", doc: "First element (Option)" },
+    MethodInfo { name: "last", signature: "last()", doc: "Last element (Option)" },
+    MethodInfo { name: "sort", signature: "sort()", doc: "Sorted copy" },
+    MethodInfo { name: "sort_by", signature: "sort_by(fn)", doc: "Sort by key function" },
+    MethodInfo { name: "flatten", signature: "flatten()", doc: "Flatten one level" },
+    MethodInfo { name: "join", signature: "join(sep)", doc: "Join with separator" },
+    MethodInfo { name: "enumerate", signature: "enumerate()", doc: "Index-value tuples" },
+    MethodInfo { name: "zip", signature: "zip(other)", doc: "Zip with another list" },
+    MethodInfo { name: "map", signature: "map(fn)", doc: "Apply function" },
+    MethodInfo { name: "filter", signature: "filter(fn)", doc: "Keep matching elements" },
+    MethodInfo { name: "fold", signature: "fold(init, fn)", doc: "Reduce with accumulator" },
+    MethodInfo { name: "flat_map", signature: "flat_map(fn)", doc: "Map then flatten" },
+    MethodInfo { name: "any", signature: "any(fn)", doc: "True if any match" },
+    MethodInfo { name: "all", signature: "all(fn)", doc: "True if all match" },
+    MethodInfo { name: "index", signature: "index(val)", doc: "Index of first occurrence" },
+    MethodInfo { name: "count", signature: "count(val)", doc: "Count occurrences" },
+    MethodInfo { name: "dedup", signature: "dedup()", doc: "Remove consecutive duplicates" },
+    MethodInfo { name: "unique", signature: "unique()", doc: "Remove all duplicates" },
+    MethodInfo { name: "sum", signature: "sum()", doc: "Sum of elements" },
+    MethodInfo { name: "window", signature: "window(n)", doc: "Sliding windows of size n" },
+    MethodInfo { name: "chunk", signature: "chunk(n)", doc: "Split into chunks of size n" },
+    MethodInfo { name: "reduce", signature: "reduce(fn)", doc: "Reduce list with fn (no initial value)" },
+    MethodInfo { name: "min", signature: "min()", doc: "Minimum element" },
+    MethodInfo { name: "max", signature: "max()", doc: "Maximum element" },
+    // Dict methods
+    MethodInfo { name: "keys", signature: "keys()", doc: "List of keys" },
+    MethodInfo { name: "values", signature: "values()", doc: "List of values" },
+    MethodInfo { name: "entries", signature: "entries()", doc: "List of (key, value) tuples" },
+    MethodInfo { name: "contains_key", signature: "contains_key(key)", doc: "Key exists" },
+    MethodInfo { name: "get", signature: "get(key)", doc: "Get value by key" },
+    MethodInfo { name: "insert", signature: "insert(key, val)", doc: "Insert entry" },
+    MethodInfo { name: "remove", signature: "remove(key)", doc: "Remove entry (dict) or element (set)" },
+    MethodInfo { name: "merge", signature: "merge(other)", doc: "Merge dicts" },
+    MethodInfo { name: "update", signature: "update(other)", doc: "Merge dict (mutating)" },
+    MethodInfo { name: "keys_of", signature: "keys_of(val)", doc: "Keys with matching value" },
+    // Option/Result methods
+    MethodInfo { name: "unwrap", signature: "unwrap()", doc: "Extract value or error" },
+    MethodInfo { name: "unwrap_or", signature: "unwrap_or(default)", doc: "Unwrap or return default" },
+    MethodInfo { name: "expect", signature: "expect(msg)", doc: "Unwrap or error" },
+    MethodInfo { name: "is_some", signature: "is_some()", doc: "True if Some" },
+    MethodInfo { name: "is_none", signature: "is_none()", doc: "True if None" },
+    MethodInfo { name: "is_ok", signature: "is_ok()", doc: "True if Ok" },
+    MethodInfo { name: "is_err", signature: "is_err()", doc: "True if Err" },
+    MethodInfo { name: "map_err", signature: "map_err(fn)", doc: "Transform error" },
+    MethodInfo { name: "and_then", signature: "and_then(fn)", doc: "Flat-map on Ok/Some" },
+    MethodInfo { name: "or_else", signature: "or_else(fn)", doc: "Call fn on Err/None" },
+    // Bytes methods
+    MethodInfo { name: "to_list", signature: "to_list()", doc: "Convert to list" },
+    MethodInfo { name: "to_str", signature: "to_str()", doc: "Decode as UTF-8" },
+    MethodInfo { name: "to_hex", signature: "to_hex()", doc: "Hex-encoded string" },
+    MethodInfo { name: "slice", signature: "slice(start, end)", doc: "Sub-slice" },
+    MethodInfo { name: "bytes", signature: "bytes()", doc: "Byte representation" },
+    // Task methods
+    MethodInfo { name: "await", signature: "await", doc: "Wait for task" },
+    MethodInfo { name: "is_finished", signature: "is_finished()", doc: "Check if done" },
+    MethodInfo { name: "cancel", signature: "cancel()", doc: "Cancel task" },
+    MethodInfo { name: "is_cancelled", signature: "is_cancelled()", doc: "Check if cancelled" },
+    // Channel methods
+    MethodInfo { name: "send", signature: "send(val)", doc: "Send value" },
+    MethodInfo { name: "recv", signature: "recv()", doc: "Receive value" },
+    MethodInfo { name: "try_recv", signature: "try_recv()", doc: "Non-blocking receive" },
+    MethodInfo { name: "close", signature: "close()", doc: "Close channel" },
+    // Set methods
+    MethodInfo { name: "add", signature: "add(val)", doc: "Add element to set" },
+    MethodInfo { name: "union", signature: "union(other)", doc: "Union of two sets" },
+    MethodInfo { name: "intersection", signature: "intersection(other)", doc: "Intersection of two sets" },
+    MethodInfo { name: "difference", signature: "difference(other)", doc: "Difference of two sets" },
+    // Cell methods
+    MethodInfo { name: "set", signature: "set(val)", doc: "Set cell value" },
+];
+
+// ---- Module members (shared by hover and completion) ----
+
+struct ModuleMember {
+    name: &'static str,
+    signature: &'static str,
+    doc: &'static str,
+    is_const: bool,
+}
+
+fn module_members(module: &str) -> &'static [ModuleMember] {
+    match module {
+        "math" => MATH_MEMBERS,
+        "json" => JSON_MEMBERS,
+        "io" => IO_MEMBERS,
+        "string" => STRING_MEMBERS,
+        _ => &[],
+    }
+}
+
+const MATH_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "PI", signature: "math::PI", doc: "Pi constant (3.14159...)", is_const: true },
+    ModuleMember { name: "E", signature: "math::E", doc: "Euler's number (2.71828...)", is_const: true },
+    ModuleMember { name: "TAU", signature: "math::TAU", doc: "Tau (2π)", is_const: true },
+    ModuleMember { name: "INF", signature: "math::INF", doc: "Positive infinity", is_const: true },
+    ModuleMember { name: "NAN", signature: "math::NAN", doc: "Not-a-number", is_const: true },
+    ModuleMember { name: "abs", signature: "math::abs(x)", doc: "Absolute value", is_const: false },
+    ModuleMember { name: "min", signature: "math::min(a, b)", doc: "Minimum of arguments", is_const: false },
+    ModuleMember { name: "max", signature: "math::max(a, b)", doc: "Maximum of arguments", is_const: false },
+    ModuleMember { name: "floor", signature: "math::floor(x)", doc: "Floor (round down)", is_const: false },
+    ModuleMember { name: "ceil", signature: "math::ceil(x)", doc: "Ceiling (round up)", is_const: false },
+    ModuleMember { name: "round", signature: "math::round(x)", doc: "Round to nearest", is_const: false },
+    ModuleMember { name: "sqrt", signature: "math::sqrt(x)", doc: "Square root", is_const: false },
+    ModuleMember { name: "pow", signature: "math::pow(base, exp)", doc: "Exponentiation", is_const: false },
+    ModuleMember { name: "clamp", signature: "math::clamp(x, lo, hi)", doc: "Clamp value to range", is_const: false },
+    ModuleMember { name: "sin", signature: "math::sin(x)", doc: "Sine", is_const: false },
+    ModuleMember { name: "cos", signature: "math::cos(x)", doc: "Cosine", is_const: false },
+    ModuleMember { name: "tan", signature: "math::tan(x)", doc: "Tangent", is_const: false },
+    ModuleMember { name: "atan2", signature: "math::atan2(y, x)", doc: "Two-argument arctangent", is_const: false },
+    ModuleMember { name: "log", signature: "math::log(x)", doc: "Natural logarithm", is_const: false },
+    ModuleMember { name: "log2", signature: "math::log2(x)", doc: "Base-2 logarithm", is_const: false },
+    ModuleMember { name: "log10", signature: "math::log10(x)", doc: "Base-10 logarithm", is_const: false },
+    ModuleMember { name: "is_nan", signature: "math::is_nan(x)", doc: "Check if NaN", is_const: false },
+    ModuleMember { name: "is_inf", signature: "math::is_inf(x)", doc: "Check if infinite", is_const: false },
+];
+
+const JSON_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "encode", signature: "json::encode(value) -> string", doc: "Value to JSON string", is_const: false },
+    ModuleMember { name: "decode", signature: "json::decode(string) -> value", doc: "JSON string to value", is_const: false },
+    ModuleMember { name: "pretty", signature: "json::pretty(value) -> string", doc: "Pretty-printed JSON string", is_const: false },
+];
+
+const IO_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "print", signature: "io::print(...args)", doc: "Print without newline", is_const: false },
+    ModuleMember { name: "println", signature: "io::println(...args)", doc: "Print with newline", is_const: false },
+    ModuleMember { name: "eprintln", signature: "io::eprintln(...args)", doc: "Print to stderr with newline", is_const: false },
+];
+
+const STRING_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "join", signature: "string::join(list, sep)", doc: "Join list elements into string with optional separator", is_const: false },
+];
+
+const MODULE_NAMES: &[&str] = &["math", "json", "io", "string"];
+
+// ---- Type names (shared by hover and completion) ----
+
+struct TypeInfo {
+    name: &'static str,
+    doc: &'static str,
+}
+
+const TYPES: &[TypeInfo] = &[
+    TypeInfo { name: "int", doc: "Integer type" },
+    TypeInfo { name: "float", doc: "Floating-point type" },
+    TypeInfo { name: "bool", doc: "Boolean type" },
+    TypeInfo { name: "string", doc: "String type" },
+    TypeInfo { name: "bytes", doc: "Byte string type" },
+    TypeInfo { name: "list", doc: "List type (e.g. list<int>)" },
+    TypeInfo { name: "dict", doc: "Dictionary type (e.g. dict<string, int>)" },
+    TypeInfo { name: "tuple", doc: "Tuple type" },
+    TypeInfo { name: "set", doc: "Set type" },
+    TypeInfo { name: "fn", doc: "Function type" },
+    TypeInfo { name: "cell", doc: "Mutable reference cell type" },
+    TypeInfo { name: "any", doc: "Any type (accepts all values)" },
+    TypeInfo { name: "Option", doc: "Option type (e.g. Option<int>)" },
+    TypeInfo { name: "Result", doc: "Result type (e.g. Result<int, string>)" },
 ];
 
 // ---- Main ----
@@ -466,73 +829,133 @@ fn handle_goto_definition(
 // ---- Hover ----
 
 fn handle_hover(source: &str, pos: Position) -> Option<Hover> {
-    let word = word_at_position(source, pos.line, pos.character)?;
+    let line_text = source.lines().nth(pos.line as usize)?;
+    let col = pos.character as usize;
+    let (start, end) = word_range_in_line(line_text, col)?;
+    let word = &line_text[start..end];
+    let range = Some(line_range(pos.line, line_text, start, end));
+    let ctx = prefix_context_at(source, pos.line, pos.character);
 
-    // Check builtins first
+    // Cursor sits on a module name immediately before `::name` — show module overview.
+    if matches!(ctx, PrefixCtx::Plain)
+        && line_text[end..].starts_with("::")
+        && MODULE_NAMES.contains(&word)
+    {
+        return Some(markdown_hover(format_module_overview(word), range));
+    }
+
+    match &ctx {
+        PrefixCtx::Method => {
+            for m in METHODS {
+                if m.name == word {
+                    return Some(markdown_hover(format_method_doc(m), range));
+                }
+            }
+            // Fall through — `await` also valid as keyword/method.
+        }
+        PrefixCtx::Module(module) => {
+            if let Some(member) = module_members(module).iter().find(|m| m.name == word) {
+                return Some(markdown_hover(format_module_member_doc(member), range));
+            }
+            // Fall through to other lookups.
+        }
+        PrefixCtx::Plain => {}
+    }
+
+    // Builtins (top-level functions like `len`, `range`, `int`, …).
     for bi in BUILTINS {
         if bi.name == word {
-            let content = format!("```ion\n{}\n```\n{}", bi.signature, bi.description);
-            return Some(Hover {
-                contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: content,
-                }),
-                range: None,
-            });
+            return Some(markdown_hover(
+                format!("```ion\n{}\n```\n{}", bi.signature, bi.description),
+                range,
+            ));
         }
     }
 
-    // Check user-defined functions/variables
+    // Type names (only when not already covered by a builtin with the same name).
+    let known_builtin = BUILTINS.iter().any(|b| b.name == word);
+    if !known_builtin {
+        if let Some(t) = TYPES.iter().find(|t| t.name == word) {
+            return Some(markdown_hover(
+                format!("```ion\n{}\n```\n{}", t.name, t.doc),
+                range,
+            ));
+        }
+    }
+
+    // User-defined functions/variables/parameters.
     let defs = collect_definitions(source);
-    for def in &defs {
-        if def.name == word {
-            let content = match def.kind {
-                DefKind::Function => format!("```ion\n{}\n```", def.detail),
-                DefKind::Variable => format!("```ion\n{}\n```", def.detail),
-            };
-            return Some(Hover {
-                contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: content,
-                }),
-                range: None,
-            });
-        }
+    if let Some(def) = defs.iter().find(|d| d.name == word) {
+        return Some(markdown_hover(format!("```ion\n{}\n```", def.detail), range));
     }
 
-    // Check keywords
-    let keyword_doc = match word.as_str() {
+    // Keywords.
+    let keyword_doc = match word {
         "let" => Some("Declare a variable. Use `mut` for mutable bindings.\n\n```ion\nlet x = 10;\nlet mut y = 0;\n```"),
         "fn" => Some("Declare a function.\n\n```ion\nfn add(a, b) { a + b }\n```"),
         "if" => Some("Conditional expression.\n\n```ion\nif x > 0 { \"positive\" } else { \"non-positive\" }\n```"),
+        "else" => Some("Alternative branch of an `if` expression."),
         "match" => Some("Pattern matching expression.\n\n```ion\nmatch value {\n    Some(x) => x,\n    None => 0,\n}\n```"),
-        "for" => Some("Iterate over a collection.\n\n```ion\nfor x in [1, 2, 3] { println(x); }\n```"),
+        "for" => Some("Iterate over a collection.\n\n```ion\nfor x in [1, 2, 3] { io::println(x); }\n```"),
         "while" => Some("Loop while condition is true.\n\n```ion\nwhile x < 10 { x += 1; }\n```"),
         "loop" => Some("Infinite loop. Use `break` to exit.\n\n```ion\nlet result = loop { if done { break 42; } };\n```"),
-        "spawn" => Some("Spawn a concurrent task (requires `concurrency` feature).\n\n```ion\nlet t = spawn compute(100);\nlet result = t.await;\n```"),
+        "spawn" => Some("Spawn a concurrent task.\n\n```ion\nlet t = spawn compute(100);\nlet result = t.await;\n```"),
         "async" => Some("Structured concurrency scope.\n\n```ion\nlet result = async {\n    let t = spawn work();\n    t.await\n};\n```"),
+        "select" => Some("Wait for the first of multiple async branches to complete.\n\n```ion\nselect {\n    val = ch.recv() => val,\n    _ = sleep(100) => 0,\n}\n```"),
+        "await" => Some("Wait for a task or future to complete.\n\n```ion\nlet result = task.await;\n```"),
         "Some" => Some("`Option` variant containing a value.\n\n```ion\nSome(42)\n```"),
         "None" => Some("`Option` variant representing no value."),
         "Ok" => Some("`Result` variant representing success.\n\n```ion\nOk(42)\n```"),
         "Err" => Some("`Result` variant representing failure.\n\n```ion\nErr(\"something failed\")\n```"),
         "try" => Some("Begin a try/catch block.\n\n```ion\nlet result = try { risky() } catch e { fallback(e) };\n```"),
-        "catch" => Some("Handle errors from a try block.\n\n```ion\ntry { risky() } catch e { println(e); }\n```"),
+        "catch" => Some("Handle errors from a try block.\n\n```ion\ntry { risky() } catch e { io::println(e); }\n```"),
         "break" => Some("Exit a loop. Optionally return a value.\n\n```ion\nlet x = loop { break 42; };\n```"),
         "continue" => Some("Skip to the next iteration of a loop."),
         "return" => Some("Return a value from a function early.\n\n```ion\nfn check(x) { if x < 0 { return Err(\"negative\"); } Ok(x) }\n```"),
         "mut" => Some("Mark a binding as mutable.\n\n```ion\nlet mut count = 0;\ncount += 1;\n```"),
-        "in" => Some("Used in `for` loops and membership tests.\n\n```ion\nfor x in [1, 2, 3] { println(x); }\n```"),
+        "in" => Some("Used in `for` loops and membership tests.\n\n```ion\nfor x in [1, 2, 3] { io::println(x); }\n```"),
         "use" => Some("Import names from a module.\n\n```ion\nuse math::add;          // single import\nuse math::{add, PI};    // multiple imports\nuse math::*;            // glob import\n```"),
+        "true" | "false" => Some("Boolean literal."),
         _ => None,
     };
 
-    keyword_doc.map(|doc| Hover {
+    keyword_doc.map(|doc| markdown_hover(doc.to_string(), range))
+}
+
+fn markdown_hover(value: String, range: Option<Range>) -> Hover {
+    Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
-            value: doc.to_string(),
+            value,
         }),
-        range: None,
-    })
+        range,
+    }
+}
+
+fn format_method_doc(m: &MethodInfo) -> String {
+    format!("```ion\n.{}\n```\n{}", m.signature, m.doc)
+}
+
+fn format_module_member_doc(m: &ModuleMember) -> String {
+    let kind = if m.is_const { "constant" } else { "function" };
+    format!("```ion\n{}\n```\n{} — {}", m.signature, kind, m.doc)
+}
+
+fn format_module_overview(module: &str) -> String {
+    let members = module_members(module);
+    let count = members.len();
+    let summary = match module {
+        "math" => "Mathematical constants and functions.",
+        "json" => "JSON encoding and decoding.",
+        "io" => "Standard input/output.",
+        "string" => "String utilities.",
+        _ => "Module.",
+    };
+    let mut out = format!("**module `{}`** — {}\n\n{} members:\n", module, summary, count);
+    for m in members {
+        out.push_str(&format!("- `{}`\n", m.signature));
+    }
+    out
 }
 
 // ---- Completion ----
@@ -576,94 +999,17 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
     };
 
     if let Some(ref mod_name) = module_prefix {
-        let members: &[(&str, &str, CompletionItemKind)] = match mod_name.as_str() {
-            "math" => &[
-                (
-                    "PI",
-                    "Pi constant (3.14159...)",
-                    CompletionItemKind::CONSTANT,
-                ),
-                (
-                    "E",
-                    "Euler's number (2.71828...)",
-                    CompletionItemKind::CONSTANT,
-                ),
-                ("TAU", "Tau (2π)", CompletionItemKind::CONSTANT),
-                ("INF", "Positive infinity", CompletionItemKind::CONSTANT),
-                ("NAN", "Not-a-number", CompletionItemKind::CONSTANT),
-                ("abs", "Absolute value", CompletionItemKind::FUNCTION),
-                ("min", "Minimum of arguments", CompletionItemKind::FUNCTION),
-                ("max", "Maximum of arguments", CompletionItemKind::FUNCTION),
-                ("floor", "Floor (round down)", CompletionItemKind::FUNCTION),
-                ("ceil", "Ceiling (round up)", CompletionItemKind::FUNCTION),
-                ("round", "Round to nearest", CompletionItemKind::FUNCTION),
-                ("sqrt", "Square root", CompletionItemKind::FUNCTION),
-                ("pow", "Exponentiation", CompletionItemKind::FUNCTION),
-                (
-                    "clamp",
-                    "Clamp value to range",
-                    CompletionItemKind::FUNCTION,
-                ),
-                ("sin", "Sine", CompletionItemKind::FUNCTION),
-                ("cos", "Cosine", CompletionItemKind::FUNCTION),
-                ("tan", "Tangent", CompletionItemKind::FUNCTION),
-                (
-                    "atan2",
-                    "Two-argument arctangent",
-                    CompletionItemKind::FUNCTION,
-                ),
-                ("log", "Natural logarithm", CompletionItemKind::FUNCTION),
-                ("log2", "Base-2 logarithm", CompletionItemKind::FUNCTION),
-                ("log10", "Base-10 logarithm", CompletionItemKind::FUNCTION),
-                ("is_nan", "Check if NaN", CompletionItemKind::FUNCTION),
-                ("is_inf", "Check if infinite", CompletionItemKind::FUNCTION),
-            ],
-            "json" => &[
-                (
-                    "encode",
-                    "Value to JSON string",
-                    CompletionItemKind::FUNCTION,
-                ),
-                (
-                    "decode",
-                    "JSON string to value",
-                    CompletionItemKind::FUNCTION,
-                ),
-                (
-                    "pretty",
-                    "Pretty-printed JSON string",
-                    CompletionItemKind::FUNCTION,
-                ),
-            ],
-            "io" => &[
-                (
-                    "print",
-                    "Print without newline",
-                    CompletionItemKind::FUNCTION,
-                ),
-                (
-                    "println",
-                    "Print with newline",
-                    CompletionItemKind::FUNCTION,
-                ),
-                (
-                    "eprintln",
-                    "Print to stderr with newline",
-                    CompletionItemKind::FUNCTION,
-                ),
-            ],
-            "string" => &[(
-                "join",
-                "Join list elements into string with optional separator",
-                CompletionItemKind::FUNCTION,
-            )],
-            _ => &[],
-        };
-        for (label, doc, kind) in members {
+        for member in module_members(mod_name) {
+            let kind = if member.is_const {
+                CompletionItemKind::CONSTANT
+            } else {
+                CompletionItemKind::FUNCTION
+            };
             items.push(CompletionItem {
-                label: label.to_string(),
-                kind: Some(*kind),
-                documentation: Some(lsp_types::Documentation::String(doc.to_string())),
+                label: member.name.to_string(),
+                kind: Some(kind),
+                detail: Some(member.signature.to_string()),
+                documentation: Some(lsp_types::Documentation::String(member.doc.to_string())),
                 ..Default::default()
             });
         }
@@ -672,567 +1018,21 @@ fn handle_completion(source: &str, pos: Position) -> CompletionResponse {
             items,
         });
     } else if is_type_position {
-        let type_names = [
-            ("int", "Integer type"),
-            ("float", "Floating-point type"),
-            ("bool", "Boolean type"),
-            ("string", "String type"),
-            ("bytes", "Byte string type"),
-            ("list", "List type (e.g. list<int>)"),
-            ("dict", "Dictionary type (e.g. dict<string, int>)"),
-            ("tuple", "Tuple type"),
-            ("set", "Set type"),
-            ("fn", "Function type"),
-            ("cell", "Mutable reference cell type"),
-            ("any", "Any type (accepts all values)"),
-            ("Option", "Option type (e.g. Option<int>)"),
-            ("Result", "Result type (e.g. Result<int, string>)"),
-        ];
-        for (name, doc) in type_names {
+        for t in TYPES {
             items.push(CompletionItem {
-                label: name.to_string(),
+                label: t.name.to_string(),
                 kind: Some(CompletionItemKind::TYPE_PARAMETER),
-                documentation: Some(lsp_types::Documentation::String(doc.to_string())),
+                documentation: Some(lsp_types::Documentation::String(t.doc.to_string())),
                 ..Default::default()
             });
         }
     } else if is_dot_completion {
-        // Provide method completions
-        let methods = [
-            // String methods
-            ("len", "len()", "Length", CompletionItemKind::METHOD),
-            (
-                "is_empty",
-                "is_empty()",
-                "True if empty",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "contains",
-                "contains(sub)",
-                "Contains substring/element",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "starts_with",
-                "starts_with(prefix)",
-                "Starts with prefix",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "ends_with",
-                "ends_with(suffix)",
-                "Ends with suffix",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "trim",
-                "trim()",
-                "Strip whitespace",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "split",
-                "split(delim)",
-                "Split by delimiter",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "replace",
-                "replace(from, to)",
-                "Replace occurrences",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "to_upper",
-                "to_upper()",
-                "Uppercase",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "to_lower",
-                "to_lower()",
-                "Lowercase",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "chars",
-                "chars()",
-                "List of characters",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "reverse",
-                "reverse()",
-                "Reversed copy",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "find",
-                "find(sub)",
-                "Index of first occurrence",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "repeat",
-                "repeat(n)",
-                "Repeat n times",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "to_int",
-                "to_int()",
-                "Parse as integer",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "to_float",
-                "to_float()",
-                "Parse as float",
-                CompletionItemKind::METHOD,
-            ),
-            // List methods
-            (
-                "push",
-                "push(val)",
-                "Append value",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "pop",
-                "pop()",
-                "Remove last element",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "first",
-                "first()",
-                "First element (Option)",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "last",
-                "last()",
-                "Last element (Option)",
-                CompletionItemKind::METHOD,
-            ),
-            ("sort", "sort()", "Sorted copy", CompletionItemKind::METHOD),
-            (
-                "flatten",
-                "flatten()",
-                "Flatten one level",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "join",
-                "join(sep)",
-                "Join with separator",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "enumerate",
-                "enumerate()",
-                "Index-value tuples",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "zip",
-                "zip(other)",
-                "Zip with another list",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "map",
-                "map(fn)",
-                "Apply function",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "filter",
-                "filter(fn)",
-                "Keep matching elements",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "fold",
-                "fold(init, fn)",
-                "Reduce with accumulator",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "flat_map",
-                "flat_map(fn)",
-                "Map then flatten",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "any",
-                "any(fn)",
-                "True if any match",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "all",
-                "all(fn)",
-                "True if all match",
-                CompletionItemKind::METHOD,
-            ),
-            // Dict methods
-            ("keys", "keys()", "List of keys", CompletionItemKind::METHOD),
-            (
-                "values",
-                "values()",
-                "List of values",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "entries",
-                "entries()",
-                "List of (key, value) tuples",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "contains_key",
-                "contains_key(key)",
-                "Key exists",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "get",
-                "get(key)",
-                "Get value by key",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "insert",
-                "insert(key, val)",
-                "Insert entry",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "remove",
-                "remove(key)",
-                "Remove entry",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "merge",
-                "merge(other)",
-                "Merge dicts",
-                CompletionItemKind::METHOD,
-            ),
-            // New list/string/dict methods
-            (
-                "index",
-                "index(val)",
-                "Index of first occurrence",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "count",
-                "count(val)",
-                "Count occurrences",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "dedup",
-                "dedup()",
-                "Remove consecutive duplicates",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "unique",
-                "unique()",
-                "Remove all duplicates",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "sum",
-                "sum()",
-                "Sum of elements",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "window",
-                "window(n)",
-                "Sliding windows of size n",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "sort_by",
-                "sort_by(fn)",
-                "Sort by key function",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "to_string",
-                "to_string()",
-                "Convert to string",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "pad_start",
-                "pad_start(width, char)",
-                "Pad start to width",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "pad_end",
-                "pad_end(width, char)",
-                "Pad end to width",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "strip_prefix",
-                "strip_prefix(prefix)",
-                "Remove prefix if present",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "strip_suffix",
-                "strip_suffix(suffix)",
-                "Remove suffix if present",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "char_len",
-                "char_len()",
-                "Character count (Unicode-aware)",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "bytes",
-                "bytes()",
-                "Byte representation",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "update",
-                "update(other)",
-                "Merge dict (mutating)",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "keys_of",
-                "keys_of(val)",
-                "Keys with matching value",
-                CompletionItemKind::METHOD,
-            ),
-            // Option/Result methods
-            (
-                "unwrap",
-                "unwrap()",
-                "Extract value or error",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "unwrap_or",
-                "unwrap_or(default)",
-                "Unwrap or return default",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "expect",
-                "expect(msg)",
-                "Unwrap or error",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "is_some",
-                "is_some()",
-                "True if Some",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "is_none",
-                "is_none()",
-                "True if None",
-                CompletionItemKind::METHOD,
-            ),
-            ("is_ok", "is_ok()", "True if Ok", CompletionItemKind::METHOD),
-            (
-                "is_err",
-                "is_err()",
-                "True if Err",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "map_err",
-                "map_err(fn)",
-                "Transform error",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "and_then",
-                "and_then(fn)",
-                "Flat-map on Ok/Some",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "or_else",
-                "or_else(fn)",
-                "Call fn on Err/None",
-                CompletionItemKind::METHOD,
-            ),
-            // Bytes methods
-            (
-                "to_list",
-                "to_list()",
-                "Convert to list",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "to_str",
-                "to_str()",
-                "Decode as UTF-8",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "to_hex",
-                "to_hex()",
-                "Hex-encoded string",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "slice",
-                "slice(start, end)",
-                "Sub-slice",
-                CompletionItemKind::METHOD,
-            ),
-            // Task methods
-            (
-                "await",
-                "await",
-                "Wait for task",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "is_finished",
-                "is_finished()",
-                "Check if done",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "cancel",
-                "cancel()",
-                "Cancel task",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "is_cancelled",
-                "is_cancelled()",
-                "Check if cancelled",
-                CompletionItemKind::METHOD,
-            ),
-            // Channel methods
-            (
-                "send",
-                "send(val)",
-                "Send value",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "recv",
-                "recv()",
-                "Receive value",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "try_recv",
-                "try_recv()",
-                "Non-blocking receive",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "close",
-                "close()",
-                "Close channel",
-                CompletionItemKind::METHOD,
-            ),
-            // List methods: chunk, reduce, min, max
-            (
-                "chunk",
-                "chunk(n)",
-                "Split into chunks of size n",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "reduce",
-                "reduce(fn)",
-                "Reduce list with fn (no initial value)",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "min",
-                "min()",
-                "Minimum element",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "max",
-                "max()",
-                "Maximum element",
-                CompletionItemKind::METHOD,
-            ),
-            // String methods: trim_start, trim_end
-            (
-                "trim_start",
-                "trim_start()",
-                "Trim leading whitespace",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "trim_end",
-                "trim_end()",
-                "Trim trailing whitespace",
-                CompletionItemKind::METHOD,
-            ),
-            // Set methods
-            (
-                "add",
-                "add(val)",
-                "Add element to set",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "remove",
-                "remove(val)",
-                "Remove element from set",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "union",
-                "union(other)",
-                "Union of two sets",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "intersection",
-                "intersection(other)",
-                "Intersection of two sets",
-                CompletionItemKind::METHOD,
-            ),
-            (
-                "difference",
-                "difference(other)",
-                "Difference of two sets",
-                CompletionItemKind::METHOD,
-            ),
-            // Cell methods
-            (
-                "set",
-                "set(val)",
-                "Set cell value",
-                CompletionItemKind::METHOD,
-            ),
-        ];
-
-        for (label, detail, doc, kind) in methods {
+        for m in METHODS {
             items.push(CompletionItem {
-                label: label.to_string(),
-                kind: Some(kind),
-                detail: Some(detail.to_string()),
-                documentation: Some(lsp_types::Documentation::String(doc.to_string())),
+                label: m.name.to_string(),
+                kind: Some(CompletionItemKind::METHOD),
+                detail: Some(m.signature.to_string()),
+                documentation: Some(lsp_types::Documentation::String(m.doc.to_string())),
                 ..Default::default()
             });
         }
@@ -1575,5 +1375,130 @@ mod tests {
         assert!(!is_valid_identifier("9foo"));
         assert!(!is_valid_identifier("foo bar"));
         assert!(!is_valid_identifier("foo-bar"));
+    }
+
+    fn hover_text(src: &str, line: u32, character: u32) -> String {
+        let h = handle_hover(src, Position::new(line, character))
+            .expect("expected hover");
+        match h.contents {
+            HoverContents::Markup(m) => m.value,
+            _ => panic!("expected markdown hover"),
+        }
+    }
+
+    #[test]
+    fn hover_method_after_dot() {
+        let src = "let xs = [1, 2, 3];\nxs.push(4);\n";
+        // cursor on `push`
+        let text = hover_text(src, 1, 4);
+        assert!(text.contains("push(val)"), "got: {}", text);
+        assert!(text.contains("Append value"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_module_member() {
+        let src = "let r = math::sqrt(2.0);\n";
+        // cursor on `sqrt`
+        let text = hover_text(src, 0, 16);
+        assert!(text.contains("math::sqrt"), "got: {}", text);
+        assert!(text.contains("Square root"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_module_constant() {
+        let src = "let p = math::PI;\n";
+        let text = hover_text(src, 0, 14);
+        assert!(text.contains("math::PI"), "got: {}", text);
+        assert!(text.contains("constant"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_module_name_overview() {
+        let src = "let r = math::sqrt(2.0);\n";
+        // cursor on `math` (column 8 is the m)
+        let text = hover_text(src, 0, 8);
+        assert!(text.contains("module `math`"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_let_with_initializer() {
+        let src = "let count = 42;\ncount + 1;\n";
+        // cursor on `count` in line 0
+        let text = hover_text(src, 0, 6);
+        assert!(text.contains("let count = 42"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_let_mut_with_type() {
+        let src = "let mut total: int = 0;\n";
+        let text = hover_text(src, 0, 10);
+        assert!(text.contains("let mut total: int = 0"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_function_parameter() {
+        let src = "fn double(x) {\n    x * 2\n}\n";
+        // cursor on the `x` inside the body
+        let text = hover_text(src, 1, 4);
+        assert!(text.contains("(parameter) x"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_type_name() {
+        let src = "let x: Option<int> = Some(1);\n";
+        // cursor on `Option`
+        let text = hover_text(src, 0, 10);
+        assert!(text.contains("Option"), "got: {}", text);
+    }
+
+    #[test]
+    fn hover_returns_range() {
+        let src = "let count = 0;\n";
+        let h = handle_hover(src, Position::new(0, 6)).expect("hover");
+        let r = h.range.expect("range");
+        assert_eq!(r.start, Position::new(0, 4));
+        assert_eq!(r.end, Position::new(0, 9));
+    }
+
+    #[test]
+    fn prefix_context_dot() {
+        let src = "xs.push(1)";
+        assert_eq!(prefix_context_at(src, 0, 4), PrefixCtx::Method);
+    }
+
+    #[test]
+    fn prefix_context_module() {
+        let src = "math::sqrt(2.0)";
+        assert_eq!(
+            prefix_context_at(src, 0, 7),
+            PrefixCtx::Module("math".into())
+        );
+    }
+
+    #[test]
+    fn prefix_context_plain() {
+        let src = "let x = 1;";
+        assert_eq!(prefix_context_at(src, 0, 4), PrefixCtx::Plain);
+    }
+
+    #[test]
+    fn extract_let_initializer_basic() {
+        assert_eq!(
+            extract_let_initializer("let x = 42;"),
+            Some("42".to_string())
+        );
+        assert_eq!(
+            extract_let_initializer("let mut total: int = 0;"),
+            Some("0".to_string())
+        );
+        assert_eq!(
+            extract_let_initializer("let pair = (1, 2)"),
+            Some("(1, 2)".to_string())
+        );
+        // Only treat top-level `=` (skip `==`, `!=`, etc.).
+        assert_eq!(
+            extract_let_initializer("let eq = a == b;"),
+            Some("a == b".to_string())
+        );
     }
 }
