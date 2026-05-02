@@ -2,7 +2,7 @@
 
 Syntax highlighting and LSP support for the [Ion scripting
 language](../) in JetBrains IDEs (IntelliJ IDEA, RustRover, PyCharm, WebStorm,
-etc., Community or Ultimate, 2024.1+).
+etc., Community or Ultimate, 2024.2+).
 
 This is the JetBrains sibling of the [VSCode](../vscode/) and [Zed](../zed/)
 extensions and ships the same `tmLanguage` grammar.
@@ -23,7 +23,7 @@ cd editors/jetbrains
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/ion-jetbrains-0.7.2.zip`. Install in any JetBrains
+Output: `build/distributions/ion-jetbrains-0.7.3.zip`. Install in any JetBrains
 IDE via *Settings | Plugins | ⚙ | Install Plugin from Disk…*.
 
 ## Run a sandbox IDE
@@ -40,6 +40,11 @@ Open any `.ion` file (e.g.
 The plugin depends on [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij)
 (installed automatically as a required dependency). Once `ion-lsp` is on your
 PATH, LSP4IJ launches it for every `.ion` file.
+
+Version 0.7.3 raises the LSP4IJ dependency to a 2025-era build. That matters for
+Ctrl+Q / quick documentation in TextMate-backed `.ion` files; older LSP4IJ
+builds could start the server yet still fail to route hover responses into
+JetBrains documentation popups.
 
 Install `ion-lsp`:
 

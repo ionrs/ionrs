@@ -17,6 +17,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.7.3</h3>
+        <ul>
+            <li>Updates the bundled LSP4IJ dependency baseline so TextMate-backed <code>.ion</code> files receive LSP hover documentation in current JetBrains IDEs.</li>
+        </ul>
         <h3>0.7.2</h3>
         <ul>
             <li>Improves Windows + WSL language-server launch handling so hover, completion, diagnostics, and go-to-definition work when <code>ion-lsp</code> is installed inside the distro.</li>

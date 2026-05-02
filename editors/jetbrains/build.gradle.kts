@@ -61,6 +61,10 @@ intellijPlatform {
 }
 
 tasks {
+    named("instrumentCode") {
+        enabled = false
+    }
+
     wrapper {
         gradleVersion = "8.10.2"
     }

@@ -9,6 +9,15 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-05-02 (JetBrains extension only)
+
+### Fixed
+- JetBrains plugin now targets 2024.2+ and uses LSP4IJ 0.14.2, which restores
+  LSP hover routing for TextMate-backed `.ion` files in current JetBrains IDEs.
+
+### Editor extensions
+- JetBrains 0.7.2 → 0.7.3
+
 ## [0.7.2] — 2026-05-02 (editor extensions only)
 
 ### Fixed
