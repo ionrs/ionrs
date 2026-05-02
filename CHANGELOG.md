@@ -9,6 +9,16 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.5] — 2026-05-02 (JetBrains extension only)
+
+### Fixed
+- JetBrains plugin now registers `.ion` as a native `Ion` file type and maps
+  that file type to LSP4IJ, so the Ion language server attaches reliably in
+  RustRover instead of relying only on TextMate filename matching.
+
+### Editor extensions
+- JetBrains 0.7.4 → 0.7.5
+
 ## [0.7.4] — 2026-05-02 (JetBrains extension only)
 
 ### Fixed
