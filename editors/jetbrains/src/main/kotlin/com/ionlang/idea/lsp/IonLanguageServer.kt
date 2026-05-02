@@ -24,9 +24,11 @@ class IonLanguageServer(project: Project) : ProcessStreamConnectionProvider() {
             )
         }
         LOG.info("Starting Ion language server with command: ${commands?.joinToString(" ")}")
-        val command = commands?.firstOrNull()
+        val commandLine = commands.orEmpty()
+        val command = commandLine.firstOrNull()
             ?: throw CannotStartProcessException("Ion language server command is not configured.")
-        if (resolveOnPath(command) == null) {
+        val resolved = resolveOnPath(command)
+        if (resolved == null) {
             throw CannotStartProcessException(
                 """
                 Ion language server binary '$command' was not found.
@@ -41,7 +43,15 @@ class IonLanguageServer(project: Project) : ProcessStreamConnectionProvider() {
                 """.trimIndent(),
             )
         }
+        if (!commandLine.isWslInvocation() && !File(command).isAbsolute) {
+            val resolvedCommandLine = listOf(resolved.absolutePath) + commandLine.drop(1)
+            LOG.info("Resolved Ion language server command: ${resolvedCommandLine.joinToString(" ")}")
+            super.setCommands(resolvedCommandLine)
+        } else {
+            LOG.info("Resolved Ion language server executable: ${resolved.absolutePath}")
+        }
         super.start()
+        LOG.info("Ion language server process start requested successfully.")
     }
 
     private fun resolveOnPath(command: String): File? {

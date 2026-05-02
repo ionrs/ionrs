@@ -89,9 +89,10 @@
                   implementationClass="com.ionlang.idea.IonFileType"
                   fieldName="INSTANCE"
                   extensions="ion"/>
-        <syntaxHighlighterFactory
+        <lang.syntaxHighlighterFactory
             language="Ion"
             implementationClass="com.ionlang.idea.highlighting.IonSyntaxHighlighterFactory"/>
+        <postStartupActivity implementation="com.ionlang.idea.IonStartupActivity"/>
         <textmate.bundleProvider implementation="com.ionlang.idea.IonTextMateBundleProvider"/>
         <applicationService serviceImplementation="com.ionlang.idea.settings.IonSettings"/>
         <applicationConfigurable
