@@ -23,7 +23,7 @@ cd editors/jetbrains
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/ion-jetbrains-0.7.5.zip`. Install in any JetBrains
+Output: `build/distributions/ion-jetbrains-0.7.6.zip`. Install in any JetBrains
 IDE via *Settings | Plugins | ⚙ | Install Plugin from Disk…*.
 
 ## Run a sandbox IDE
@@ -53,6 +53,9 @@ Version 0.7.4 also normalizes custom WSL commands like
 Version 0.7.5 registers `.ion` as a native JetBrains file type and maps that
 file type directly to LSP4IJ. This avoids cases where TextMate highlighting is
 present but the LSP server is not attached to the editor.
+
+Version 0.7.6 adds native syntax highlighting for that file type and writes the
+resolved `ion-lsp` command to the IDE log when LSP4IJ starts the server.
 
 Install `ion-lsp`:
 

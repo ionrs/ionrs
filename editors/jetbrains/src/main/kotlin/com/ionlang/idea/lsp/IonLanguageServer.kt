@@ -1,6 +1,7 @@
 package com.ionlang.idea.lsp
 
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.diagnostic.Logger
 import com.ionlang.idea.settings.IonSettings
 import com.redhat.devtools.lsp4ij.server.CannotStartProcessException
 import com.redhat.devtools.lsp4ij.server.ProcessStreamConnectionProvider
@@ -9,6 +10,7 @@ import java.io.File
 class IonLanguageServer(project: Project) : ProcessStreamConnectionProvider() {
     init {
         val command = commandForProject(IonSettings.instance.lspPath, project.basePath)
+        LOG.info("Configuring Ion language server for project ${project.basePath}: ${command.joinToString(" ")}")
         super.setCommands(command)
         if (!command.isWslInvocation()) {
             project.basePath?.let { super.setWorkingDirectory(it) }
@@ -21,6 +23,7 @@ class IonLanguageServer(project: Project) : ProcessStreamConnectionProvider() {
                 "Ion language server is disabled in Settings | Languages & Frameworks | Ion.",
             )
         }
+        LOG.info("Starting Ion language server with command: ${commands?.joinToString(" ")}")
         val command = commands?.firstOrNull()
             ?: throw CannotStartProcessException("Ion language server command is not configured.")
         if (resolveOnPath(command) == null) {
@@ -59,6 +62,7 @@ class IonLanguageServer(project: Project) : ProcessStreamConnectionProvider() {
     }
 
     companion object {
+        private val LOG = Logger.getInstance(IonLanguageServer::class.java)
         private const val DEFAULT_BINARY = "ion-lsp"
         private const val WSL_DEFAULT_COMMAND = "PATH=\"\$HOME/.cargo/bin:\$PATH\"; export PATH; exec ion-lsp"
 

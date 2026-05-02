@@ -17,6 +17,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.7.6</h3>
+        <ul>
+            <li>Adds native syntax highlighting for the JetBrains <code>Ion</code> file type and logs the resolved <code>ion-lsp</code> command when LSP4IJ starts the server.</li>
+        </ul>
         <h3>0.7.5</h3>
         <ul>
             <li>Registers a native JetBrains <code>Ion</code> file type for <code>.ion</code> files and maps that file type to LSP4IJ, so the language server attaches reliably in RustRover.</li>
@@ -85,6 +89,9 @@
                   implementationClass="com.ionlang.idea.IonFileType"
                   fieldName="INSTANCE"
                   extensions="ion"/>
+        <syntaxHighlighterFactory
+            language="Ion"
+            implementationClass="com.ionlang.idea.highlighting.IonSyntaxHighlighterFactory"/>
         <textmate.bundleProvider implementation="com.ionlang.idea.IonTextMateBundleProvider"/>
         <applicationService serviceImplementation="com.ionlang.idea.settings.IonSettings"/>
         <applicationConfigurable

@@ -9,6 +9,18 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.6] — 2026-05-02 (JetBrains extension only)
+
+### Fixed
+- JetBrains plugin now provides native syntax highlighting for the registered
+  `Ion` file type, restoring colors after `.ion` stopped being highlighted by
+  TextMate-only association.
+- Ion LSP startup now logs the resolved command in IDE logs, making attachment
+  issues visible.
+
+### Editor extensions
+- JetBrains 0.7.5 → 0.7.6
+
 ## [0.7.5] — 2026-05-02 (JetBrains extension only)
 
 ### Fixed
