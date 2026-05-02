@@ -23,7 +23,7 @@ cd editors/jetbrains
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/ion-jetbrains-0.7.3.zip`. Install in any JetBrains
+Output: `build/distributions/ion-jetbrains-0.7.4.zip`. Install in any JetBrains
 IDE via *Settings | Plugins | ⚙ | Install Plugin from Disk…*.
 
 ## Run a sandbox IDE
@@ -45,6 +45,10 @@ Version 0.7.3 raises the LSP4IJ dependency to a 2025-era build. That matters for
 Ctrl+Q / quick documentation in TextMate-backed `.ion` files; older LSP4IJ
 builds could start the server yet still fail to route hover responses into
 JetBrains documentation popups.
+
+Version 0.7.4 also normalizes custom WSL commands like
+`wsl.exe -d Ubuntu --cd /home/me/project ion-lsp` into a shell launch that adds
+`$HOME/.cargo/bin` to `PATH`, matching where `cargo install` places `ion-lsp`.
 
 Install `ion-lsp`:
 

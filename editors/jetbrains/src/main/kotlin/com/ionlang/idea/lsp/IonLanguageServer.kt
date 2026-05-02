@@ -69,20 +69,15 @@ class IonLanguageServer(project: Project) : ProcessStreamConnectionProvider() {
             val commandLine = configuredPath.trim().ifEmpty { DEFAULT_BINARY }
             if (isWindows() && commandLine == DEFAULT_BINARY) {
                 parseWslProjectPath(projectBasePath)?.let { wslPath ->
-                    return listOf(
-                        windowsWslExecutable(),
-                        "-d",
-                        wslPath.distro,
-                        "--cd",
-                        wslPath.linuxPath,
-                        "--",
-                        "sh",
-                        "-c",
-                        WSL_DEFAULT_COMMAND,
-                    )
+                    return wslShellCommand(windowsWslExecutable(), wslPath.distro, wslPath.linuxPath)
                 }
             }
-            return commandPartsFromSetting(commandLine).ifEmpty { listOf(DEFAULT_BINARY) }
+
+            val parts = commandPartsFromSetting(commandLine).ifEmpty { listOf(DEFAULT_BINARY) }
+            if (isWindows() && parts.isWslInvocation()) {
+                normalizeWslCommand(parts, projectBasePath)?.let { return it }
+            }
+            return parts
         }
 
         private fun windowsWslExecutable(): String {
@@ -101,6 +96,47 @@ class IonLanguageServer(project: Project) : ProcessStreamConnectionProvider() {
 
         private fun executableName(command: String): String =
             command.substringAfterLast('\\').substringAfterLast('/')
+
+        private fun normalizeWslCommand(parts: List<String>, projectBasePath: String?): List<String>? {
+            if (parts.size <= 1) return null
+            val hasExplicitCommandSeparator = parts.any { it == "--" }
+            val alreadyUsesShell = parts.windowed(3).any { (_, shell, flag) ->
+                executableName(shell).equals("sh", ignoreCase = true) && flag == "-c"
+            }
+            if (hasExplicitCommandSeparator && alreadyUsesShell) return null
+
+            val launchesIonDirectly = parts.any { executableName(it) == DEFAULT_BINARY }
+            if (!launchesIonDirectly) return null
+
+            val distro = valueAfter(parts, "-d") ?: valueAfter(parts, "--distribution")
+            val configuredCd = valueAfter(parts, "--cd")
+            val inferredWslPath = parseWslProjectPath(projectBasePath)
+            val linuxPath = configuredCd ?: inferredWslPath?.linuxPath
+            return wslShellCommand(parts.first(), distro ?: inferredWslPath?.distro, linuxPath)
+        }
+
+        private fun valueAfter(parts: List<String>, option: String): String? {
+            val index = parts.indexOf(option)
+            if (index < 0 || index + 1 >= parts.size) return null
+            return parts[index + 1]
+        }
+
+        private fun wslShellCommand(executable: String, distro: String?, linuxPath: String?): List<String> =
+            buildList {
+                add(executable)
+                if (!distro.isNullOrBlank()) {
+                    add("-d")
+                    add(distro)
+                }
+                if (!linuxPath.isNullOrBlank()) {
+                    add("--cd")
+                    add(linuxPath)
+                }
+                add("--")
+                add("sh")
+                add("-c")
+                add(WSL_DEFAULT_COMMAND)
+            }
 
         private fun commandPartsFromSetting(value: String): List<String> {
             val parts = splitCommandLine(value)

@@ -9,6 +9,17 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-05-02 (JetBrains extension only)
+
+### Fixed
+- JetBrains plugin now normalizes custom Windows + WSL `ion-lsp` commands
+  through a shell with `$HOME/.cargo/bin` on `PATH`, fixing LSP startup and
+  hover documentation when users configured commands such as
+  `wsl.exe -d Ubuntu --cd /project ion-lsp`.
+
+### Editor extensions
+- JetBrains 0.7.3 → 0.7.4
+
 ## [0.7.3] — 2026-05-02 (JetBrains extension only)
 
 ### Fixed
