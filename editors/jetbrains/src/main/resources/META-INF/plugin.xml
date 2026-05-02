@@ -17,6 +17,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.7.2</h3>
+        <ul>
+            <li>Improves Windows + WSL language-server launch handling so hover, completion, diagnostics, and go-to-definition work when <code>ion-lsp</code> is installed inside the distro.</li>
+            <li>Starts the WSL language server through a shell with <code>$HOME/.cargo/bin</code> on <code>PATH</code>, matching the default <code>cargo install</code> location.</li>
+        </ul>
         <h3>0.4.0</h3>
         <ul>
             <li>Highlights and LSP support for the new <code>log::</code> module — <code>log::trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>, plus <code>set_level</code> / <code>level</code> / <code>enabled</code>. Hover overview describes the compile-time stripping cap.</li>

@@ -23,7 +23,7 @@ cd editors/jetbrains
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/ion-jetbrains-0.4.0.zip`. Install in any JetBrains
+Output: `build/distributions/ion-jetbrains-0.7.2.zip`. Install in any JetBrains
 IDE via *Settings | Plugins | ⚙ | Install Plugin from Disk…*.
 
 ## Run a sandbox IDE
@@ -54,12 +54,18 @@ Adjust the binary path or disable LSP entirely under
 
 If your IDE runs on Windows and the project lives in WSL
 (`\\wsl.localhost\...`), the IDE process spawns from Windows and won't see
-binaries installed inside WSL. Either:
+binaries installed inside WSL. The plugin now detects WSL UNC project paths and,
+when the LSP path is left as `ion-lsp`, launches:
+
+```text
+wsl.exe -d <distro> --cd <project-path> -- sh -c 'PATH="$HOME/.cargo/bin:$PATH"; export PATH; exec ion-lsp'
+```
+
+You can also:
 
 - install `ion-lsp.exe` on the Windows side, **or**
-- set the LSP path to `wsl` and the binary discovery falls through to the
-  Windows `wsl.exe` shim — pair this with a custom invocation that runs
-  `ion-lsp` inside the distro, **or**
+- set the LSP path to a full command line such as
+  `wsl.exe -d Ubuntu --cd /home/me/project -- sh -c 'PATH="$HOME/.cargo/bin:$PATH"; export PATH; exec ion-lsp'`, **or**
 - turn off "Enable Ion language server" in the Ion settings panel and use the
   plugin for syntax highlighting only.
 

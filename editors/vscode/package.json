@@ -2,7 +2,7 @@
   "name": "ion-lang",
   "displayName": "Ion Language",
   "description": "Syntax highlighting and LSP support for the Ion scripting language",
-  "version": "0.7.0",
+  "version": "0.7.2",
   "publisher": "ionlang",
   "license": "MIT",
   "repository": {
@@ -12,7 +12,12 @@
   "engines": {
     "vscode": "^1.75.0"
   },
-  "categories": ["Programming Languages"],
+  "extensionKind": [
+    "workspace"
+  ],
+  "categories": [
+    "Programming Languages"
+  ],
   "activationEvents": [
     "onLanguage:ion"
   ],
@@ -21,8 +26,13 @@
     "languages": [
       {
         "id": "ion",
-        "aliases": ["Ion", "ion"],
-        "extensions": [".ion"],
+        "aliases": [
+          "Ion",
+          "ion"
+        ],
+        "extensions": [
+          ".ion"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -39,7 +49,15 @@
         "ion.lsp.path": {
           "type": "string",
           "default": "ion-lsp",
-          "description": "Path to the ion-lsp binary"
+          "description": "Path to the ion-lsp binary. Can also be a quoted command line, for example: wsl ion-lsp"
+        },
+        "ion.lsp.args": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional arguments passed to the ion-lsp command"
         },
         "ion.lsp.enabled": {
           "type": "boolean",

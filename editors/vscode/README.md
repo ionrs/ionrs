@@ -42,6 +42,18 @@ The extension automatically connects to `ion-lsp` on the PATH. To use a custom p
 }
 ```
 
+For Windows + WSL, install the extension in the WSL workspace side of VS Code.
+The extension is declared as a workspace extension, so it runs in WSL and uses
+the WSL `ion-lsp` by default. If you run it locally on Windows instead, invoke
+WSL explicitly:
+
+```json
+{
+  "ion.lsp.path": "wsl",
+  "ion.lsp.args": ["ion-lsp"]
+}
+```
+
 To disable the LSP (syntax highlighting still works):
 
 ```json
@@ -53,7 +65,7 @@ To disable the LSP (syntax highlighting still works):
 ## Install from .vsix
 
 ```bash
-code --install-extension ion-lang-0.4.0.vsix
+code --install-extension ion-lang-0.7.2.vsix
 ```
 
 ## Development

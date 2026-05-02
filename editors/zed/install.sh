@@ -119,3 +119,9 @@ echo ""
 echo "  Restart Zed to load the extension."
 echo "  For LSP support, ensure ion-lsp is on your PATH:"
 echo "    cargo install --path $REPO_ROOT/ion-lsp"
+echo ""
+echo "  If Zed cannot see that PATH, configure the server explicitly:"
+echo '    "lsp": { "ion-lsp": { "binary": { "path": "/home/me/.cargo/bin/ion-lsp" } } }'
+echo ""
+echo "  For Windows + WSL projects, use:"
+echo '    "lsp": { "ion-lsp": { "binary": { "path": "wsl.exe", "arguments": ["ion-lsp"] } } }'

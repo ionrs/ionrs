@@ -9,6 +9,23 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-05-02 (editor extensions only)
+
+### Fixed
+- VS Code and JetBrains editor launchers now handle Windows + WSL projects when
+  spawning `ion-lsp`, so hover/completion features work when the server is
+  installed inside the distro.
+- Zed now honors `[lsp.ion-lsp.binary]` settings, detects WSL UNC worktrees, and
+  falls back to an executable `$HOME/.cargo/bin/ion-lsp` when Zed's PATH misses
+  Cargo-installed tools.
+- Zed extension builds now follow current Zed docs with `zed_extension_api`
+  0.7.0, requiring Zed 0.205.x or newer for dev-extension installs.
+
+### Editor extensions
+- VS Code 0.7.0 → 0.7.2
+- Zed 0.7.0 → 0.7.2
+- JetBrains 0.7.0 → 0.7.2
+
 ## [0.7.1] — 2026-05-02 (`ion-lsp` only)
 
 ### Added
