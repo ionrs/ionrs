@@ -10,6 +10,9 @@ use std::sync::Arc;
 use crate::module::Module;
 use crate::value::Value;
 
+#[cfg(feature = "semver")]
+use semver::{BuildMetadata, Prerelease, Version, VersionReq};
+
 /// Output stream requested by Ion's `io` stdlib module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputStream {
@@ -551,6 +554,232 @@ pub fn string_module() -> Module {
     m
 }
 
+// ── semver ───────────────────────────────────────────────────────────────
+//
+// The `semver::` module is feature-gated. Versions cross the language
+// boundary as dicts shaped `#{major, minor, patch, pre, build}` so scripts
+// can inspect fields directly and round-trip through `json::encode`.
+
+#[cfg(feature = "semver")]
+fn semver_version_to_dict(v: &Version) -> Value {
+    let mut d = indexmap::IndexMap::new();
+    d.insert("major".to_string(), Value::Int(v.major as i64));
+    d.insert("minor".to_string(), Value::Int(v.minor as i64));
+    d.insert("patch".to_string(), Value::Int(v.patch as i64));
+    d.insert("pre".to_string(), Value::Str(v.pre.as_str().to_string()));
+    d.insert("build".to_string(), Value::Str(v.build.as_str().to_string()));
+    Value::Dict(d)
+}
+
+/// Coerce a `Value` (string or dict) into a parsed `Version`. Used by every
+/// semver function that compares or rewrites a version.
+#[cfg(feature = "semver")]
+fn semver_parse_arg(v: &Value, fn_name: &str) -> Result<Version, String> {
+    match v {
+        Value::Str(s) => {
+            Version::parse(s).map_err(|e| format!("semver::{}: {}", fn_name, e))
+        }
+        Value::Dict(map) => {
+            let major = map
+                .get("major")
+                .and_then(Value::as_int)
+                .ok_or_else(|| format!("semver::{}: dict missing integer 'major'", fn_name))?;
+            let minor = map
+                .get("minor")
+                .and_then(Value::as_int)
+                .ok_or_else(|| format!("semver::{}: dict missing integer 'minor'", fn_name))?;
+            let patch = map
+                .get("patch")
+                .and_then(Value::as_int)
+                .ok_or_else(|| format!("semver::{}: dict missing integer 'patch'", fn_name))?;
+            if major < 0 || minor < 0 || patch < 0 {
+                return Err(format!(
+                    "semver::{}: version components must be non-negative",
+                    fn_name
+                ));
+            }
+            let pre_str = map.get("pre").and_then(Value::as_str).unwrap_or("");
+            let build_str = map.get("build").and_then(Value::as_str).unwrap_or("");
+            let pre = if pre_str.is_empty() {
+                Prerelease::EMPTY
+            } else {
+                Prerelease::new(pre_str).map_err(|e| {
+                    format!("semver::{}: invalid pre-release '{}': {}", fn_name, pre_str, e)
+                })?
+            };
+            let build = if build_str.is_empty() {
+                BuildMetadata::EMPTY
+            } else {
+                BuildMetadata::new(build_str).map_err(|e| {
+                    format!(
+                        "semver::{}: invalid build metadata '{}': {}",
+                        fn_name, build_str, e
+                    )
+                })?
+            };
+            Ok(Version {
+                major: major as u64,
+                minor: minor as u64,
+                patch: patch as u64,
+                pre,
+                build,
+            })
+        }
+        _ => Err(format!(
+            "semver::{}: expected string or dict, got {}",
+            fn_name,
+            v.type_name()
+        )),
+    }
+}
+
+/// Build the `semver` stdlib module.
+///
+/// Functions: parse, is_valid, format, compare, eq, gt, gte, lt, lte,
+///            satisfies, bump_major, bump_minor, bump_patch
+#[cfg(feature = "semver")]
+pub fn semver_module() -> Module {
+    let mut m = Module::new("semver");
+
+    m.register_fn("parse", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("semver::parse takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("semver::parse requires a string"))?;
+        let v = Version::parse(s).map_err(|e| format!("semver::parse: {}", e))?;
+        Ok(semver_version_to_dict(&v))
+    });
+
+    m.register_fn("is_valid", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("semver::is_valid takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("semver::is_valid requires a string"))?;
+        Ok(Value::Bool(Version::parse(s).is_ok()))
+    });
+
+    m.register_fn("format", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("semver::format takes 1 argument"));
+        }
+        let v = semver_parse_arg(&args[0], "format")?;
+        Ok(Value::Str(v.to_string()))
+    });
+
+    m.register_fn("compare", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("semver::compare takes 2 arguments"));
+        }
+        let a = semver_parse_arg(&args[0], "compare")?;
+        let b = semver_parse_arg(&args[1], "compare")?;
+        Ok(Value::Int(match a.cmp(&b) {
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+        }))
+    });
+
+    m.register_fn("eq", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("semver::eq takes 2 arguments"));
+        }
+        let a = semver_parse_arg(&args[0], "eq")?;
+        let b = semver_parse_arg(&args[1], "eq")?;
+        Ok(Value::Bool(a == b))
+    });
+
+    m.register_fn("gt", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("semver::gt takes 2 arguments"));
+        }
+        let a = semver_parse_arg(&args[0], "gt")?;
+        let b = semver_parse_arg(&args[1], "gt")?;
+        Ok(Value::Bool(a > b))
+    });
+
+    m.register_fn("gte", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("semver::gte takes 2 arguments"));
+        }
+        let a = semver_parse_arg(&args[0], "gte")?;
+        let b = semver_parse_arg(&args[1], "gte")?;
+        Ok(Value::Bool(a >= b))
+    });
+
+    m.register_fn("lt", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("semver::lt takes 2 arguments"));
+        }
+        let a = semver_parse_arg(&args[0], "lt")?;
+        let b = semver_parse_arg(&args[1], "lt")?;
+        Ok(Value::Bool(a < b))
+    });
+
+    m.register_fn("lte", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("semver::lte takes 2 arguments"));
+        }
+        let a = semver_parse_arg(&args[0], "lte")?;
+        let b = semver_parse_arg(&args[1], "lte")?;
+        Ok(Value::Bool(a <= b))
+    });
+
+    m.register_fn("satisfies", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!(
+                "semver::satisfies takes 2 arguments: version, requirement"
+            ));
+        }
+        let v = semver_parse_arg(&args[0], "satisfies")?;
+        let req_str = args[1]
+            .as_str()
+            .ok_or_else(|| ion_str!("semver::satisfies requirement must be a string"))?;
+        let req = VersionReq::parse(req_str)
+            .map_err(|e| format!("semver::satisfies: invalid requirement: {}", e))?;
+        Ok(Value::Bool(req.matches(&v)))
+    });
+
+    m.register_fn("bump_major", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("semver::bump_major takes 1 argument"));
+        }
+        let v = semver_parse_arg(&args[0], "bump_major")?;
+        let bumped = Version::new(v.major + 1, 0, 0);
+        Ok(Value::Str(bumped.to_string()))
+    });
+
+    m.register_fn("bump_minor", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("semver::bump_minor takes 1 argument"));
+        }
+        let v = semver_parse_arg(&args[0], "bump_minor")?;
+        let bumped = Version::new(v.major, v.minor + 1, 0);
+        Ok(Value::Str(bumped.to_string()))
+    });
+
+    m.register_fn("bump_patch", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("semver::bump_patch takes 1 argument"));
+        }
+        let v = semver_parse_arg(&args[0], "bump_patch")?;
+        // If the input has a pre-release, the bumped value is the same
+        // numeric triple with the pre-release stripped (1.2.3-alpha → 1.2.3).
+        // Otherwise increment patch.
+        let bumped = if v.pre.is_empty() {
+            Version::new(v.major, v.minor, v.patch + 1)
+        } else {
+            Version::new(v.major, v.minor, v.patch)
+        };
+        Ok(Value::Str(bumped.to_string()))
+    });
+
+    m
+}
+
 /// Register all stdlib modules in the given environment.
 pub fn register_stdlib(env: &mut crate::env::Env) {
     register_stdlib_with_output(env, missing_output_handler());
@@ -588,4 +817,10 @@ pub fn register_stdlib_with_handlers(
 
     let log = log_module_with_handler(log_handler, level);
     env.define(log.name.clone(), log.to_value(), false);
+
+    #[cfg(feature = "semver")]
+    {
+        let s = semver_module();
+        env.define(s.name.clone(), s.to_value(), false);
+    }
 }

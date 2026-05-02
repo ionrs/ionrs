@@ -1009,6 +1009,39 @@ scripts can use `io::print`, `io::println`, or `io::eprintln`.
 |------|-------------|
 | `string::join(list, sep?)` | Join list elements into a string with optional separator |
 
+#### `semver`
+
+Semantic version parsing, comparison, and constraint matching. Versions
+cross the language boundary as dicts shaped `#{major, minor, patch, pre, build}`
+so scripts can inspect fields directly. Most functions accept either a string
+or a parsed dict — parse once for hot loops.
+
+| Name | Description |
+|------|-------------|
+| `semver::parse(s)` | Parse a version string into `#{major, minor, patch, pre, build}`. Errors on invalid input. |
+| `semver::is_valid(s)` | `true` if the string parses as a valid semantic version. |
+| `semver::format(v)` | Render a version (string or dict) back to its canonical string form. |
+| `semver::compare(a, b)` | Three-way ordering: returns `-1`, `0`, or `1`. |
+| `semver::eq(a, b)` | `true` if `a == b` (including pre-release). |
+| `semver::gt(a, b)` / `gte` / `lt` / `lte` | Boolean comparators. |
+| `semver::satisfies(v, req)` | `true` if `v` matches the requirement string (e.g. `^1.0`, `~1.2`, `>=1.0, <2.0`). |
+| `semver::bump_major(v)` | Increment major; zero minor and patch; clear pre-release and build. |
+| `semver::bump_minor(v)` | Increment minor; zero patch; clear pre-release and build. |
+| `semver::bump_patch(v)` | Increment patch — or strip pre-release if present (`1.2.3-alpha → 1.2.3`). |
+
+```
+use semver::*;
+
+let v = parse("1.2.3-alpha.1+build.42")?;
+v["major"]                                        // 1
+satisfies("1.5.0", "^1.0")                        // true
+compare("1.2.3", "1.2.4")                         // -1
+bump_major("1.2.3-alpha")                         // "2.0.0"
+```
+
+The module is enabled by default. Embedders can opt out by depending on
+`ion-core` with `default-features = false`.
+
 ### Registering modules (Rust side)
 
 ```rust

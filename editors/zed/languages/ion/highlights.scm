@@ -75,7 +75,7 @@
   (#match? @function.builtin "^(len|range|enumerate|type_of|str|int|float|bytes|bytes_from_hex|assert|assert_eq|channel|set|cell|sleep|timeout)$"))
 
 ((identifier) @namespace
-  (#match? @namespace "^(math|json|io|string|log)$"))
+  (#match? @namespace "^(math|json|io|string|log|semver)$"))
 
 ; ── Module paths ─────────────────────────────────────────────
 (module_path

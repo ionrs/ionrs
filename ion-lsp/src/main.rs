@@ -619,6 +619,7 @@ fn module_members(module: &str) -> &'static [ModuleMember] {
         "io" => IO_MEMBERS,
         "string" => STRING_MEMBERS,
         "log" => LOG_MEMBERS,
+        "semver" => SEMVER_MEMBERS,
         _ => &[],
     }
 }
@@ -676,7 +677,23 @@ const LOG_MEMBERS: &[ModuleMember] = &[
     ModuleMember { name: "enabled",   signature: "log::enabled(name)",  doc: "Check whether the handler would emit at the given level.", is_const: false },
 ];
 
-const MODULE_NAMES: &[&str] = &["math", "json", "io", "string", "log"];
+const SEMVER_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "parse",      signature: "semver::parse(s) -> dict",                doc: "Parse a version string into `#{major, minor, patch, pre, build}`. Errors on invalid input.", is_const: false },
+    ModuleMember { name: "is_valid",   signature: "semver::is_valid(s) -> bool",             doc: "True if the string parses as a valid semantic version.", is_const: false },
+    ModuleMember { name: "format",     signature: "semver::format(version) -> string",       doc: "Render a version (string or dict) back to its canonical string form.", is_const: false },
+    ModuleMember { name: "compare",    signature: "semver::compare(a, b) -> int",            doc: "Three-way ordering: returns -1 / 0 / 1.", is_const: false },
+    ModuleMember { name: "eq",         signature: "semver::eq(a, b) -> bool",                doc: "True if `a` and `b` are the same version (including pre-release).", is_const: false },
+    ModuleMember { name: "gt",         signature: "semver::gt(a, b) -> bool",                doc: "True if `a > b`.", is_const: false },
+    ModuleMember { name: "gte",        signature: "semver::gte(a, b) -> bool",               doc: "True if `a >= b`.", is_const: false },
+    ModuleMember { name: "lt",         signature: "semver::lt(a, b) -> bool",                doc: "True if `a < b`.", is_const: false },
+    ModuleMember { name: "lte",        signature: "semver::lte(a, b) -> bool",               doc: "True if `a <= b`.", is_const: false },
+    ModuleMember { name: "satisfies",  signature: "semver::satisfies(version, req) -> bool", doc: "True if `version` matches the requirement string (e.g. `^1.0`, `~1.2`, `>=1.0, <2.0`).", is_const: false },
+    ModuleMember { name: "bump_major", signature: "semver::bump_major(v) -> string",         doc: "Increment major; zero minor and patch; clear pre-release and build.", is_const: false },
+    ModuleMember { name: "bump_minor", signature: "semver::bump_minor(v) -> string",         doc: "Increment minor; zero patch; clear pre-release and build.", is_const: false },
+    ModuleMember { name: "bump_patch", signature: "semver::bump_patch(v) -> string",         doc: "Increment patch (or strip pre-release if present); clear build.", is_const: false },
+];
+
+const MODULE_NAMES: &[&str] = &["math", "json", "io", "string", "log", "semver"];
 
 // ---- Type names (shared by hover and completion) ----
 
@@ -993,6 +1010,7 @@ fn format_module_overview(module: &str) -> String {
         "io" => "Standard input/output.",
         "string" => "String utilities.",
         "log" => "Leveled logging — `log::trace` / `debug` / `info` / `warn` / `error`. Compile-time stripped above the cap.",
+        "semver" => "Semantic version parsing, comparison, and constraint matching.",
         _ => "Module.",
     };
     let mut out = format!("**module `{}`** — {}\n\n{} members:\n", module, summary, count);

@@ -9,6 +9,24 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-02
+
+### Added
+- **`semver::` stdlib module** — `parse`, `is_valid`, `format`, `compare`,
+  `eq`/`gt`/`gte`/`lt`/`lte`, `satisfies`, `bump_major`/`bump_minor`/`bump_patch`.
+  Backed by the `semver` crate. Versions round-trip through dicts shaped
+  `#{major, minor, patch, pre, build}`. Enabled by default; embedders can opt
+  out with `default-features = false` on `ion-core`.
+- New `semver` cargo feature on `ion-core` (in `default`).
+- LSP hover/completion learn the `semver::` namespace.
+- Tree-sitter, VS Code, JetBrains, and Zed grammars recognise `semver` as a
+  builtin module name.
+
+### Editor extensions
+- VS Code 0.5.0 → 0.6.0
+- Zed 0.5.0 → 0.6.0
+- JetBrains 0.5.0 → 0.6.0
+
 ## [0.5.0] — 2026-05-02
 
 ### Added

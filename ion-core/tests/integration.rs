@@ -4438,3 +4438,208 @@ fn test_vm_preserves_host_builtin_shadowing() {
     engine.register_fn("len", |_args| Ok(Value::Int(99)));
     assert_eq!(engine.vm_eval("len([1, 2, 3])").unwrap(), Value::Int(99));
 }
+
+// --- semver stdlib ---
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_parse() {
+    let v = eval(r#"semver::parse("1.2.3-alpha.1+build.42")"#);
+    let Value::Dict(map) = v else {
+        panic!("expected dict, got {:?}", v);
+    };
+    assert_eq!(map.get("major"), Some(&Value::Int(1)));
+    assert_eq!(map.get("minor"), Some(&Value::Int(2)));
+    assert_eq!(map.get("patch"), Some(&Value::Int(3)));
+    assert_eq!(map.get("pre"), Some(&Value::Str("alpha.1".to_string())));
+    assert_eq!(map.get("build"), Some(&Value::Str("build.42".to_string())));
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_parse_invalid() {
+    let mut engine = Engine::new();
+    let result = engine.eval(r#"semver::parse("not.a.version")"#);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("semver::parse"));
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_is_valid() {
+    assert_eq!(eval(r#"semver::is_valid("1.2.3")"#), Value::Bool(true));
+    assert_eq!(
+        eval(r#"semver::is_valid("1.2.3-rc.1+meta")"#),
+        Value::Bool(true)
+    );
+    assert_eq!(eval(r#"semver::is_valid("1.2")"#), Value::Bool(false));
+    assert_eq!(eval(r#"semver::is_valid("abc")"#), Value::Bool(false));
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_format() {
+    // string → string round trip preserves canonical form
+    assert_eq!(
+        eval(r#"semver::format("1.2.3-rc.1")"#),
+        Value::Str("1.2.3-rc.1".to_string())
+    );
+    // dict → string
+    assert_eq!(
+        eval(r#"semver::format(#{major: 1, minor: 2, patch: 3, pre: "", build: ""})"#),
+        Value::Str("1.2.3".to_string())
+    );
+    assert_eq!(
+        eval(r#"semver::format(#{major: 0, minor: 1, patch: 0, pre: "alpha", build: ""})"#),
+        Value::Str("0.1.0-alpha".to_string())
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_compare() {
+    assert_eq!(eval(r#"semver::compare("1.2.3", "1.2.4")"#), Value::Int(-1));
+    assert_eq!(eval(r#"semver::compare("1.2.3", "1.2.3")"#), Value::Int(0));
+    assert_eq!(eval(r#"semver::compare("2.0.0", "1.9.9")"#), Value::Int(1));
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_compare_pre_release() {
+    // Pre-release versions are *less than* the corresponding release
+    assert_eq!(
+        eval(r#"semver::compare("1.0.0-alpha", "1.0.0")"#),
+        Value::Int(-1)
+    );
+    assert_eq!(
+        eval(r#"semver::compare("1.0.0-alpha", "1.0.0-beta")"#),
+        Value::Int(-1)
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_comparators() {
+    assert_eq!(eval(r#"semver::eq("1.2.3", "1.2.3")"#), Value::Bool(true));
+    assert_eq!(eval(r#"semver::eq("1.2.3", "1.2.4")"#), Value::Bool(false));
+    assert_eq!(eval(r#"semver::gt("2.0.0", "1.9.9")"#), Value::Bool(true));
+    assert_eq!(eval(r#"semver::gt("1.0.0", "1.0.0")"#), Value::Bool(false));
+    assert_eq!(eval(r#"semver::gte("1.0.0", "1.0.0")"#), Value::Bool(true));
+    assert_eq!(eval(r#"semver::lt("1.0.0", "2.0.0")"#), Value::Bool(true));
+    assert_eq!(eval(r#"semver::lte("1.0.0", "1.0.0")"#), Value::Bool(true));
+    assert_eq!(eval(r#"semver::lte("2.0.0", "1.0.0")"#), Value::Bool(false));
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_satisfies_caret() {
+    assert_eq!(
+        eval(r#"semver::satisfies("1.5.0", "^1.0")"#),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval(r#"semver::satisfies("2.0.0", "^1.0")"#),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        eval(r#"semver::satisfies("0.9.9", "^1.0")"#),
+        Value::Bool(false)
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_satisfies_tilde() {
+    assert_eq!(
+        eval(r#"semver::satisfies("1.2.9", "~1.2")"#),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval(r#"semver::satisfies("1.3.0", "~1.2")"#),
+        Value::Bool(false)
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_satisfies_invalid_req() {
+    let mut engine = Engine::new();
+    let result = engine.eval(r#"semver::satisfies("1.0.0", "garbage??")"#);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("semver::satisfies"));
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_bump_major_clears_pre_build() {
+    // Pre-release and build metadata must be discarded; minor/patch zeroed
+    assert_eq!(
+        eval(r#"semver::bump_major("1.2.3-rc.1+meta")"#),
+        Value::Str("2.0.0".to_string())
+    );
+    assert_eq!(
+        eval(r#"semver::bump_major("0.9.9")"#),
+        Value::Str("1.0.0".to_string())
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_bump_minor() {
+    assert_eq!(
+        eval(r#"semver::bump_minor("1.2.3")"#),
+        Value::Str("1.3.0".to_string())
+    );
+    assert_eq!(
+        eval(r#"semver::bump_minor("1.2.3-rc.1")"#),
+        Value::Str("1.3.0".to_string())
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_bump_patch() {
+    // Plain version → patch increments
+    assert_eq!(
+        eval(r#"semver::bump_patch("1.2.3")"#),
+        Value::Str("1.2.4".to_string())
+    );
+    // Pre-release present → strip pre-release, keep numeric triple
+    assert_eq!(
+        eval(r#"semver::bump_patch("1.2.3-alpha")"#),
+        Value::Str("1.2.3".to_string())
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_accepts_dict_arg() {
+    // Comparing/formatting against a parsed dict should work the same as
+    // against a string. This is the "parse once, reuse many times" path.
+    assert_eq!(
+        eval(r#"semver::compare(semver::parse("1.0.0"), "1.0.1")"#),
+        Value::Int(-1)
+    );
+    assert_eq!(
+        eval(r#"semver::format(semver::parse("1.2.3-rc.1+meta"))"#),
+        Value::Str("1.2.3-rc.1+meta".to_string())
+    );
+    assert_eq!(
+        eval(r#"semver::satisfies(semver::parse("1.5.0"), "^1.0")"#),
+        Value::Bool(true)
+    );
+}
+
+#[cfg(feature = "semver")]
+#[test]
+fn test_stdlib_semver_use_import() {
+    // Aliased imports work — exercises both the alias feature shipped in
+    // 0.5.0 and that semver functions register correctly under `use`.
+    let mut engine = Engine::new();
+    assert_eq!(
+        engine
+            .eval(r#"use semver::{satisfies as ok}; ok("1.2.3", "^1.0")"#)
+            .unwrap(),
+        Value::Bool(true)
+    );
+}
