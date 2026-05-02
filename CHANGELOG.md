@@ -9,6 +9,29 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-05-02 (`ion-lsp` only)
+
+### Added
+- **Workspace-provided Ion docs for `ion-lsp`** — host runtimes can provide
+  `.json` doc manifests for modules such as `sensor`, `host`, `ipc`, and
+  `win32` without forking editor plugins or hard-coding runtime-specific docs
+  into generic Ion.
+- Manifests are versioned with `ionDocVersion: 1` and load from
+  `<workspace>/.ion/ion-docs/*.json`, `<workspace>/ion-docs/*.json`, and
+  `ION_LSP_DOCS` paths.
+- External docs support module overview hover, member hover, completion after
+  `module::`, nested module completion such as `sensor::session::`, and
+  function/constant completion kinds.
+
+### Changed
+- LSP hover/completion docs now flow through a shared documentation catalog.
+  Built-in stdlib docs load first; external docs may add modules or override
+  built-in module/member keys.
+
+### Fixed
+- Invalid or missing external doc manifests no longer risk crashing the LSP;
+  load failures are reported as diagnostic-safe stderr warnings.
+
 ## [0.7.0] — 2026-05-02
 
 ### Added
