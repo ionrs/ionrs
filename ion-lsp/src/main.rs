@@ -620,6 +620,9 @@ fn module_members(module: &str) -> &'static [ModuleMember] {
         "string" => STRING_MEMBERS,
         "log" => LOG_MEMBERS,
         "semver" => SEMVER_MEMBERS,
+        "os" => OS_MEMBERS,
+        "path" => PATH_MEMBERS,
+        "fs" => FS_MEMBERS,
         _ => &[],
     }
 }
@@ -693,7 +696,59 @@ const SEMVER_MEMBERS: &[ModuleMember] = &[
     ModuleMember { name: "bump_patch", signature: "semver::bump_patch(v) -> string",         doc: "Increment patch (or strip pre-release if present); clear build.", is_const: false },
 ];
 
-const MODULE_NAMES: &[&str] = &["math", "json", "io", "string", "log", "semver"];
+const OS_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "name",          signature: "os::name",                              doc: "Target OS as reported by `std::env::consts::OS` (e.g. \"linux\", \"macos\", \"windows\").", is_const: true },
+    ModuleMember { name: "arch",          signature: "os::arch",                              doc: "Target architecture (e.g. \"x86_64\", \"aarch64\", \"arm\").", is_const: true },
+    ModuleMember { name: "family",        signature: "os::family",                            doc: "OS family — \"unix\" or \"windows\".", is_const: true },
+    ModuleMember { name: "pointer_width", signature: "os::pointer_width",                     doc: "Pointer width in bits (32 or 64).", is_const: true },
+    ModuleMember { name: "dll_extension", signature: "os::dll_extension",                     doc: "Dynamic-library extension without the leading dot (\"so\", \"dylib\", \"dll\").", is_const: true },
+    ModuleMember { name: "exe_extension", signature: "os::exe_extension",                     doc: "Executable extension without the leading dot (\"\" on Unix, \"exe\" on Windows).", is_const: true },
+    ModuleMember { name: "env_var",       signature: "os::env_var(name [, default]) -> string", doc: "Read an env var. Errors if missing; the optional 2nd arg is returned instead.", is_const: false },
+    ModuleMember { name: "has_env_var",   signature: "os::has_env_var(name) -> bool",         doc: "True if the named env var is set in the current process.", is_const: false },
+    ModuleMember { name: "env_vars",      signature: "os::env_vars() -> dict",                doc: "Snapshot of all env vars as a `dict<string, string>`.", is_const: false },
+    ModuleMember { name: "cwd",           signature: "os::cwd() -> string",                   doc: "Current working directory.", is_const: false },
+    ModuleMember { name: "pid",           signature: "os::pid() -> int",                      doc: "Current process id.", is_const: false },
+    ModuleMember { name: "args",          signature: "os::args() -> list<string>",            doc: "Script-level arguments (host-injected via `Engine::set_args`; default `[]`).", is_const: false },
+    ModuleMember { name: "temp_dir",      signature: "os::temp_dir() -> string",              doc: "Platform temporary directory.", is_const: false },
+];
+
+const PATH_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "sep",            signature: "path::sep",                                  doc: "Platform path separator — `/` on Unix, `\\` on Windows.", is_const: true },
+    ModuleMember { name: "join",           signature: "path::join(a, b, ...) -> string",            doc: "Variadic path join using the platform separator.", is_const: false },
+    ModuleMember { name: "parent",         signature: "path::parent(p) -> string",                  doc: "Directory containing `p`. Empty string if `p` has no parent.", is_const: false },
+    ModuleMember { name: "basename",       signature: "path::basename(p) -> string",                doc: "Final component of `p`.", is_const: false },
+    ModuleMember { name: "stem",           signature: "path::stem(p) -> string",                    doc: "Basename of `p` with the extension stripped.", is_const: false },
+    ModuleMember { name: "extension",      signature: "path::extension(p) -> string",               doc: "Extension of `p` without the leading dot. Empty string if none.", is_const: false },
+    ModuleMember { name: "with_extension", signature: "path::with_extension(p, ext) -> string",     doc: "Replace (or add) the extension on `p`.", is_const: false },
+    ModuleMember { name: "is_absolute",    signature: "path::is_absolute(p) -> bool",               doc: "True if `p` is absolute on the current platform.", is_const: false },
+    ModuleMember { name: "is_relative",    signature: "path::is_relative(p) -> bool",               doc: "True if `p` is relative on the current platform.", is_const: false },
+    ModuleMember { name: "components",     signature: "path::components(p) -> list<string>",        doc: "Split `p` into its components.", is_const: false },
+    ModuleMember { name: "normalize",      signature: "path::normalize(p) -> string",               doc: "Lexically normalise `p` — collapse `.` and `..` without consulting the filesystem.", is_const: false },
+];
+
+const FS_MEMBERS: &[ModuleMember] = &[
+    ModuleMember { name: "read",           signature: "fs::read(path) -> string",                   doc: "Read the file at `path` as UTF-8 text.", is_const: false },
+    ModuleMember { name: "read_bytes",     signature: "fs::read_bytes(path) -> bytes",              doc: "Read the file at `path` as raw bytes.", is_const: false },
+    ModuleMember { name: "write",          signature: "fs::write(path, contents)",                  doc: "Write `contents` (string or bytes) to `path`, replacing the existing file.", is_const: false },
+    ModuleMember { name: "append",         signature: "fs::append(path, contents)",                 doc: "Append `contents` (string or bytes) to `path`. Creates the file if missing.", is_const: false },
+    ModuleMember { name: "exists",         signature: "fs::exists(path) -> bool",                   doc: "True if `path` exists.", is_const: false },
+    ModuleMember { name: "is_file",        signature: "fs::is_file(path) -> bool",                  doc: "True if `path` is an existing regular file.", is_const: false },
+    ModuleMember { name: "is_dir",         signature: "fs::is_dir(path) -> bool",                   doc: "True if `path` is an existing directory.", is_const: false },
+    ModuleMember { name: "list_dir",       signature: "fs::list_dir(path) -> list<string>",         doc: "Names of the entries directly inside the directory at `path` (non-recursive).", is_const: false },
+    ModuleMember { name: "create_dir",     signature: "fs::create_dir(path)",                       doc: "Create a single directory. Errors if any parent is missing.", is_const: false },
+    ModuleMember { name: "create_dir_all", signature: "fs::create_dir_all(path)",                   doc: "Create the directory and any missing parents.", is_const: false },
+    ModuleMember { name: "remove_file",    signature: "fs::remove_file(path)",                      doc: "Delete the file at `path`.", is_const: false },
+    ModuleMember { name: "remove_dir",     signature: "fs::remove_dir(path)",                       doc: "Delete the directory at `path`. Errors if not empty.", is_const: false },
+    ModuleMember { name: "remove_dir_all", signature: "fs::remove_dir_all(path)",                   doc: "Recursively delete the directory at `path` and all its contents.", is_const: false },
+    ModuleMember { name: "rename",         signature: "fs::rename(from, to)",                       doc: "Rename / move `from` to `to`.", is_const: false },
+    ModuleMember { name: "copy",           signature: "fs::copy(from, to) -> int",                  doc: "Copy `from` to `to`; returns bytes copied.", is_const: false },
+    ModuleMember { name: "metadata",       signature: "fs::metadata(path) -> dict",                 doc: "Return `#{size, is_file, is_dir, readonly, modified}`.", is_const: false },
+    ModuleMember { name: "canonicalize",   signature: "fs::canonicalize(path) -> string",           doc: "Resolve symlinks and normalise `path` against the filesystem.", is_const: false },
+];
+
+const MODULE_NAMES: &[&str] = &[
+    "math", "json", "io", "string", "log", "semver", "os", "path", "fs",
+];
 
 // ---- Type names (shared by hover and completion) ----
 
@@ -1011,6 +1066,9 @@ fn format_module_overview(module: &str) -> String {
         "string" => "String utilities.",
         "log" => "Leveled logging — `log::trace` / `debug` / `info` / `warn` / `error`. Compile-time stripped above the cap.",
         "semver" => "Semantic version parsing, comparison, and constraint matching.",
+        "os" => "OS / arch detection, environment variables, and process info.",
+        "path" => "Pure-string path manipulation (no I/O).",
+        "fs" => "Filesystem I/O. Sync (`std::fs`) or async (`tokio::fs`) impl picked by the build's runtime feature.",
         _ => "Module.",
     };
     let mut out = format!("**module `{}`** — {}\n\n{} members:\n", module, summary, count);

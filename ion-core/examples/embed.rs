@@ -1,10 +1,26 @@
 //! Example: embedding Ion in a Rust application.
 //!
 //! Run with: cargo run --example embed
+//!
+//! This example uses sync `Engine::eval`, so it only compiles in the default
+//! (sync) build. Under `--features async-runtime` the file falls back to a
+//! stub `fn main` that prints a hint — async embedders should look at
+//! `examples/tokio_host.rs` instead.
 
+#[cfg(feature = "async-runtime")]
+fn main() {
+    eprintln!(
+        "the `embed` example is sync-only — see `tokio_host` for the async \
+         equivalent, or rebuild without `--features async-runtime`."
+    );
+}
+
+#[cfg(not(feature = "async-runtime"))]
 use ion_core::engine::Engine;
+#[cfg(not(feature = "async-runtime"))]
 use ion_core::value::Value;
 
+#[cfg(not(feature = "async-runtime"))]
 fn main() {
     let mut engine = Engine::new();
 

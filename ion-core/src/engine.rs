@@ -19,6 +19,7 @@ pub struct Engine {
     output: Arc<dyn OutputHandler>,
     log_handler: Arc<dyn LogHandler>,
     log_level: Arc<AtomicLogLevel>,
+    script_args: Arc<Vec<String>>,
     #[cfg(feature = "async-runtime")]
     external_queue: crate::async_runtime::ExternalQueue,
 }
@@ -72,13 +73,27 @@ impl Engine {
             output,
             log_handler,
             log_level,
+            script_args: Arc::new(Vec::new()),
             #[cfg(feature = "async-runtime")]
             external_queue: crate::async_runtime::ExternalQueue::new(),
         }
     }
 
     /// Evaluate a script, returning the last expression's value.
+    ///
+    /// Removed when the `async-runtime` feature is enabled — async builds
+    /// must use [`Engine::eval_async`]. The two runtimes are deliberately
+    /// mutually exclusive so non-coloured stdlib functions (`fs::*`,
+    /// `io::print*`) have one implementation per build.
+    #[cfg(not(feature = "async-runtime"))]
     pub fn eval(&mut self, source: &str) -> Result<Value, IonError> {
+        self.eval_sync_internal(source)
+    }
+
+    /// Crate-private sync evaluator. Used by both the public [`Engine::eval`]
+    /// (in sync builds) and by the async runtime's pure-sync fallback for
+    /// programs that don't touch async host functions.
+    pub(crate) fn eval_sync_internal(&mut self, source: &str) -> Result<Value, IonError> {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize()?;
         let mut parser = Parser::new(tokens);
@@ -173,6 +188,31 @@ impl Engine {
         self.interpreter
             .env
             .define(io.name.clone(), io.to_value(), false);
+    }
+
+    /// Inject script-level arguments reachable from Ion as `os::args()`.
+    /// Re-registers the `os::` module so subsequent `os::args()` calls
+    /// see the new list. The default (when this is never called) is `[]`.
+    pub fn set_args(&mut self, args: Vec<String>) {
+        self.script_args = Arc::new(args);
+        #[cfg(feature = "os")]
+        {
+            let os = crate::stdlib::os_module_with_args(Arc::clone(&self.script_args));
+            self.interpreter
+                .env
+                .define(os.name.clone(), os.to_value(), false);
+        }
+    }
+
+    /// Builder counterpart of [`Engine::set_args`].
+    pub fn with_args(mut self, args: Vec<String>) -> Self {
+        self.set_args(args);
+        self
+    }
+
+    /// Currently configured script args (what `os::args()` returns).
+    pub fn args(&self) -> &[String] {
+        &self.script_args
     }
 
     /// Install a host log handler. Surviving `log::*` callsites dispatch into
@@ -295,7 +335,9 @@ impl Engine {
 
     /// Evaluate a script via the bytecode VM. Falls back to tree-walk for
     /// unsupported features (concurrency).
-    #[cfg(feature = "vm")]
+    ///
+    /// Removed under `async-runtime` (see [`Engine::eval`]).
+    #[cfg(all(feature = "vm", not(feature = "async-runtime")))]
     pub fn vm_eval(&mut self, source: &str) -> Result<Value, IonError> {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize()?;

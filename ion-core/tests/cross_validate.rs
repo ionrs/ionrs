@@ -1,6 +1,7 @@
 //! Cross-validation: run scripts through both tree-walk and VM,
 //! assert identical results. Catches divergence between execution paths.
-#![cfg(feature = "vm")]
+//! Sync-build only.
+#![cfg(all(feature = "vm", not(feature = "async-runtime")))]
 #![allow(clippy::approx_constant)]
 
 use ion_core::engine::Engine;

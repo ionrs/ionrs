@@ -1042,6 +1042,142 @@ bump_major("1.2.3-alpha")                         // "2.0.0"
 The module is enabled by default. Embedders can opt out by depending on
 `ion-core` with `default-features = false`.
 
+#### `os`
+
+OS / arch detection, environment variables, and process info. Pure-`std`,
+no extra dependencies. Detection values are module-level constants
+(read with `os::name`, no parens).
+
+| Name | Description |
+|------|-------------|
+| `os::name` | Target OS — `"linux"`, `"macos"`, `"windows"`, `"freebsd"`, … |
+| `os::arch` | Target architecture — `"x86_64"`, `"aarch64"`, `"arm"`, … |
+| `os::family` | OS family — `"unix"` or `"windows"`. |
+| `os::pointer_width` | Pointer width in bits (`32` or `64`). |
+| `os::dll_extension` | Dynamic-library extension without dot — `"so"`, `"dylib"`, `"dll"`. |
+| `os::exe_extension` | Executable extension without dot — `""` on Unix, `"exe"` on Windows. |
+| `os::env_var(name [, default])` | Read an env var. Errors if missing; the optional 2nd arg is returned instead. |
+| `os::has_env_var(name)` | `true` if the named env var is set. |
+| `os::env_vars()` | Snapshot of all env vars as a `dict<string, string>`. |
+| `os::cwd()` | Current working directory. |
+| `os::pid()` | Current process id. |
+| `os::args()` | Script arguments (host-injected via `Engine::set_args`; default `[]`). |
+| `os::temp_dir()` | Platform temporary directory. |
+
+```
+use os::*;
+
+io::println(os::name, os::arch, os::family);
+
+let home = env_var("HOME", "/");
+let port_str = env_var("PORT", "8080");
+
+if os::family == "unix" {
+    io::println("running on unix");
+}
+
+io::println("script args:", args());
+```
+
+`os::args()` reflects whatever the host passed to `Engine::set_args`. The
+`ion` CLI populates it with whatever follows the script path —
+`ion script.ion alpha beta` makes `os::args()` return `["alpha", "beta"]`.
+
+The module is enabled by default. Embedders can opt out by depending on
+`ion-core` with `default-features = false` (e.g. to forbid scripts from
+reading environment variables).
+
+#### `path`
+
+Pure-string path manipulation. No I/O, no external dependencies, always
+available — these are composition primitives for working with paths
+before (or after) handing them to `fs::` or the host. All operations work
+on strings and return strings; the platform separator is exposed as
+`path::sep` so scripts can stay portable.
+
+| Name | Description |
+|------|-------------|
+| `path::sep` | Platform path separator — `/` on Unix, `\` on Windows. |
+| `path::join(a, b, ...)` | Variadic join using the platform separator. |
+| `path::parent(p)` | Directory containing `p`. Empty string if `p` has no parent. |
+| `path::basename(p)` | Final component of `p`. |
+| `path::stem(p)` | Basename of `p` with the extension stripped. |
+| `path::extension(p)` | Extension of `p` without the leading dot. Empty string if none. |
+| `path::with_extension(p, ext)` | Replace (or add) the extension on `p`. |
+| `path::is_absolute(p)` | `true` if `p` is absolute on the current platform. |
+| `path::is_relative(p)` | `true` if `p` is relative on the current platform. |
+| `path::components(p)` | Split `p` into its components. |
+| `path::normalize(p)` | Lexically normalise — collapse `.` and `..` without touching the filesystem. |
+
+```
+use path::*;
+
+io::println(join("src", "lib", "main.ion"));   // src/lib/main.ion (Unix)
+io::println(extension("config.toml"));         // toml
+io::println(stem("config.toml"));              // config
+io::println(with_extension("notes.md", "txt"));// notes.txt
+io::println(normalize("a/./b/../c"));          // a/c
+```
+
+#### `fs`
+
+Filesystem I/O. The script-level surface (`fs::read`, `fs::write`, …) is
+identical regardless of build mode; only the underlying implementation
+differs. Ion is non-coloured: scripts call these like any other function.
+
+* In a **sync build** (default), each `fs::*` call goes through `std::fs`
+  on the calling thread.
+* In an **async build** (`async-runtime` feature), each `fs::*` call goes
+  through `tokio::fs` and cooperates with the executor instead of blocking.
+
+The two modes are **mutually exclusive** at the cargo-feature level — pick
+one when you build `ion-core`. The same script runs unchanged in either.
+
+| Name | Description |
+|------|-------------|
+| `fs::read(path)` | Read the file as UTF-8 text. |
+| `fs::read_bytes(path)` | Read the file as raw `bytes`. |
+| `fs::write(path, contents)` | Write `contents` (string or bytes) to `path`, replacing the existing file. |
+| `fs::append(path, contents)` | Append to (or create) `path`. |
+| `fs::exists(path)` | `true` if `path` exists. |
+| `fs::is_file(path)` | `true` if `path` is an existing regular file. |
+| `fs::is_dir(path)` | `true` if `path` is an existing directory. |
+| `fs::list_dir(path)` | List the entry names directly under `path` (non-recursive). |
+| `fs::create_dir(path)` | Create one directory; errors if a parent is missing. |
+| `fs::create_dir_all(path)` | Create the directory and any missing parents. |
+| `fs::remove_file(path)` | Delete the file at `path`. |
+| `fs::remove_dir(path)` | Delete the directory at `path`; errors if not empty. |
+| `fs::remove_dir_all(path)` | Recursively delete `path` and its contents. |
+| `fs::rename(from, to)` | Rename / move `from` to `to`. |
+| `fs::copy(from, to)` | Copy `from` to `to`; returns bytes copied. |
+| `fs::metadata(path)` | Returns `#{size, is_file, is_dir, readonly, modified}`. |
+| `fs::canonicalize(path)` | Resolve symlinks against the filesystem and normalise. |
+
+```
+use fs::*;
+use path::*;
+
+let cfg_path = join(os::cwd(), "config.toml");
+if exists(cfg_path) {
+    let raw = read(cfg_path);
+    io::println("loaded:", raw);
+} else {
+    write(cfg_path, "key = \"value\"");
+}
+
+for name in list_dir(os::cwd()) {
+    if extension(name) == "ion" {
+        io::println(name);
+    }
+}
+```
+
+The `fs` feature is enabled by default. Disable it with
+`default-features = false` for sandboxed embedders. Note that
+`Engine::eval` is removed under `async-runtime` — use `Engine::eval_async`
+in async builds. The two are deliberately mutually exclusive so non-coloured
+calls like `fs::read` resolve to one implementation per build.
+
 ### Registering modules (Rust side)
 
 ```rust

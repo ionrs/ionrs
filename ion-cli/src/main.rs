@@ -7,37 +7,49 @@ use std::io::{self, BufRead, Write};
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    // Parse flags
+    // Parse flags. Once a script path is found, everything after it
+    // (including dash-prefixed args) is captured as script args reachable
+    // from Ion as `os::args()`. This matches Python/Node behaviour.
     let mut use_vm = false;
     let mut script_path: Option<String> = None;
+    let mut script_args: Vec<String> = Vec::new();
 
     let mut i = 1;
     while i < args.len() {
-        match args[i].as_str() {
+        let arg = &args[i];
+        if script_path.is_some() {
+            // After the script path, capture verbatim — flags belong to the script.
+            script_args.push(arg.clone());
+        } else if arg == "--vm" {
             #[cfg(feature = "vm")]
-            "--vm" => use_vm = true,
-            arg if !arg.starts_with('-') => {
-                script_path = Some(arg.to_string());
+            {
+                use_vm = true;
             }
-            other => {
-                eprintln!("Unknown flag: {}", other);
-                #[cfg(feature = "vm")]
-                eprintln!("Usage: ion [--vm] [script.ion]");
-                #[cfg(not(feature = "vm"))]
-                eprintln!("Usage: ion [script.ion]");
+            #[cfg(not(feature = "vm"))]
+            {
+                eprintln!("--vm flag is unavailable: built without the `vm` feature");
                 std::process::exit(1);
             }
+        } else if !arg.starts_with('-') {
+            script_path = Some(arg.clone());
+        } else {
+            eprintln!("Unknown flag: {}", arg);
+            #[cfg(feature = "vm")]
+            eprintln!("Usage: ion [--vm] [script.ion [args...]]");
+            #[cfg(not(feature = "vm"))]
+            eprintln!("Usage: ion [script.ion [args...]]");
+            std::process::exit(1);
         }
         i += 1;
     }
 
     match script_path {
-        Some(path) => run_file(&path, use_vm),
+        Some(path) => run_file(&path, use_vm, script_args),
         None => run_repl(use_vm),
     }
 }
 
-fn run_file(path: &str, use_vm: bool) {
+fn run_file(path: &str, use_vm: bool, script_args: Vec<String>) {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -47,6 +59,12 @@ fn run_file(path: &str, use_vm: bool) {
     };
 
     let mut engine = Engine::with_output(StdOutput);
+    engine.set_args(script_args);
+
+    // The runtime mode is fixed at build time — `async-runtime` and the
+    // default sync build are mutually exclusive in ion-core, so exactly one
+    // arm here is compiled.
+    #[cfg(not(feature = "async-runtime"))]
     let result = if use_vm {
         #[cfg(feature = "vm")]
         {
@@ -58,6 +76,18 @@ fn run_file(path: &str, use_vm: bool) {
         }
     } else {
         engine.eval(&source)
+    };
+
+    #[cfg(feature = "async-runtime")]
+    let result = {
+        // `use_vm` is meaningless under async-runtime — the async path always
+        // goes through the bytecode VM internally.
+        let _ = use_vm;
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build tokio runtime for ion CLI");
+        rt.block_on(engine.eval_async(&source))
     };
 
     match result {
@@ -78,6 +108,14 @@ fn run_repl(use_vm: bool) {
 
     let mut engine = Engine::with_output(StdOutput);
     let mut vm_mode = use_vm;
+
+    // Build a tokio runtime once for the whole REPL session under
+    // async-runtime; each line is `block_on`-ed against it.
+    #[cfg(feature = "async-runtime")]
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build tokio runtime for ion REPL");
     let stdin = io::stdin();
     let mut input_buf = String::new();
     let mut brace_depth: i32 = 0;
@@ -151,6 +189,7 @@ fn run_repl(use_vm: bool) {
             continue;
         }
 
+        #[cfg(not(feature = "async-runtime"))]
         let result = if vm_mode {
             #[cfg(feature = "vm")]
             {
@@ -162,6 +201,15 @@ fn run_repl(use_vm: bool) {
             }
         } else {
             engine.eval(&source)
+        };
+
+        #[cfg(feature = "async-runtime")]
+        let result = {
+            // `vm_mode` doesn't apply under async — the async runtime always
+            // compiles to bytecode. Read the binding so the REPL toggle still
+            // type-checks.
+            let _ = vm_mode;
+            rt.block_on(engine.eval_async(&source))
         };
 
         match result {

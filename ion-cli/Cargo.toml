@@ -1,6 +1,6 @@
 [package]
 name = "ionlang-cli"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "CLI runner and REPL for the Ion scripting language"
 license = "MIT"
@@ -16,6 +16,11 @@ path = "src/main.rs"
 [features]
 default = ["vm"]
 vm = ["ion-core/vm"]
+# Build the CLI against ion-core's async runtime. With this on, the CLI
+# spins up a current-thread tokio runtime and drives `Engine::eval_async`;
+# without it, scripts run through `Engine::eval` synchronously.
+async-runtime = ["ion-core/async-runtime", "dep:tokio"]
 
 [dependencies]
-ion-core = { version = "0.6.0", path = "../ion-core", default-features = true }
+ion-core = { version = "0.7.0", path = "../ion-core", default-features = true }
+tokio = { version = "1", features = ["rt", "macros"], optional = true }

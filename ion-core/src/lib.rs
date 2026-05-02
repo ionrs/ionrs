@@ -8,11 +8,16 @@
 //! # Quick Start
 //!
 //! ```rust
+//! # #[cfg(not(feature = "async-runtime"))]
+//! # fn main() {
 //! use ion_core::engine::Engine;
 //!
 //! let mut engine = Engine::new();
 //! let result = engine.eval("1 + 2").unwrap();
 //! assert_eq!(result, ion_core::value::Value::Int(3));
+//! # }
+//! # #[cfg(feature = "async-runtime")]
+//! # fn main() {}
 //! ```
 //!
 //! # Features

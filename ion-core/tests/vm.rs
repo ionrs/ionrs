@@ -1,5 +1,6 @@
-//! Tests for the bytecode VM execution path.
-#![cfg(feature = "vm")]
+//! Tests for the bytecode VM execution path. Sync-build only — async
+//! builds compile through the same VM internally but use `eval_async`.
+#![cfg(all(feature = "vm", not(feature = "async-runtime")))]
 #![allow(clippy::approx_constant)]
 
 use ion_core::engine::Engine;

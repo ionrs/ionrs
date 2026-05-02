@@ -8,6 +8,12 @@
 //! - that compile-time elision drops calls above [`COMPILE_LOG_CAP`]
 //!   (the `cap_strip_above_threshold` test exercises whichever cap the
 //!   surrounding build picked — toggle features to verify variants).
+//!
+//! Sync-build only — async builds drive `log::*` through `eval_async` and
+//! the `Mutex<Vec<Value>>` recording handler used here can't be `Send` once
+//! `Value` carries an `AsyncBuiltinClosureFn` (Rc-backed under async).
+
+#![cfg(not(feature = "async-runtime"))]
 
 use std::sync::{Arc, Mutex};
 

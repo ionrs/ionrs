@@ -7354,7 +7354,7 @@ async fn eval_async_bridge(engine: &mut Engine, source: &str) -> Result<Value, I
     let mut parser = Parser::new(tokens);
     let program = parser.parse_program()?;
     if !program_references_async_host(&program, &engine.interpreter().env) {
-        return engine.eval(source);
+        return engine.eval_sync_internal(source);
     }
 
     let interpreter = engine.interpreter_mut();
@@ -7372,7 +7372,7 @@ async fn eval_async_entry(engine: &mut Engine, source: &str) -> Result<Value, Io
     let mut async_env = engine.interpreter().env.clone();
     install_async_runtime_builtins(&mut async_env);
     if !program_references_async_host(&program, &async_env) {
-        return engine.eval(source);
+        return engine.eval_sync_internal(source);
     }
 
     let (chunk, fn_chunks) = Compiler::new().compile_program(&program)?;
@@ -7541,7 +7541,7 @@ impl<'a> IonRuntime<'a> {
             .engine
             .take()
             .expect("IonEvalFuture polled after completion");
-        Poll::Ready(engine.eval(source))
+        Poll::Ready(engine.eval_sync_internal(source))
     }
 
     fn enqueue_external_requests(&mut self, requests: Vec<ExternalRequest>) {

@@ -1,4 +1,7 @@
-//! Edge case and adversarial tests for correctness.
+//! Edge case and adversarial tests for correctness. Sync-build only —
+//! async builds use `Engine::eval_async`.
+
+#![cfg(not(feature = "async-runtime"))]
 
 use ion_core::engine::Engine;
 use ion_core::value::Value;

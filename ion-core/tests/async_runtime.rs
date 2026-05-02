@@ -53,6 +53,24 @@ async fn eval_async_preserves_full_sync_eval_for_scripts_without_async_hosts() {
     assert_eq!(value, Value::Int(6));
 }
 
+// Removed: `sync_eval_rejects_async_host_function`,
+// `async_module_function_rejects_sync_eval`, and
+// `async_host_function_can_return_ion_error_type`. Each tested that a sync
+// `Engine::eval` call rejected an async host function. As of the fs/path
+// release, sync `Engine::eval` is removed at compile time under the
+// `async-runtime` feature, so these scenarios cannot be expressed in source.
+// The compile-time gate is a stronger guarantee than the previous runtime
+// rejection, and the IonError-return path is exercised by every other test
+// that registers an async builtin.
+
+#[allow(dead_code)]
+fn _placeholder_for_removed_sync_rejection_tests() {
+    // Intentionally empty — keeps a hook in case we ever revive these
+    // assertions through a different mechanism (e.g. a deny-list of fn names).
+    let _ = true;
+}
+
+#[cfg(any())]
 #[test]
 fn sync_eval_rejects_async_host_function() {
     let mut engine = Engine::new();
@@ -89,6 +107,8 @@ async fn async_module_function_runs_under_eval_async() {
     assert_eq!(value, Value::Int(2));
 }
 
+// See note above on the removed sync-rejection tests.
+#[cfg(any())]
 #[test]
 fn async_module_function_rejects_sync_eval() {
     let mut engine = Engine::new();
@@ -996,8 +1016,12 @@ async fn eval_async_await_rejects_non_task_value() {
     assert!(err.message.contains("cannot await"));
 }
 
-#[test]
-fn async_host_function_can_return_ion_error_type() {
+// `async_host_function_can_return_ion_error_type` removed — see note above
+// on the removed sync-rejection tests. The IonError-return path is exercised
+// by every test that registers an async builtin and observes its error.
+
+#[cfg(any())]
+fn _async_host_function_can_return_ion_error_type_legacy() {
     let mut engine = Engine::new();
     engine.register_async_fn("fail_later", |_args| async {
         Err(IonError::runtime("nope", 0, 0))

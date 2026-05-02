@@ -1,3 +1,7 @@
+// This is the sync-build integration suite. Async builds (`async-runtime`
+// feature) drop sync `Engine::eval` and use `Engine::eval_async` instead;
+// the async-side stdlib coverage lives in `integration_async.rs`.
+#![cfg(not(feature = "async-runtime"))]
 #![allow(clippy::approx_constant)]
 
 use ion_core::engine::Engine;
@@ -4642,4 +4646,576 @@ fn test_stdlib_semver_use_import() {
             .unwrap(),
         Value::Bool(true)
     );
+}
+
+// --- os stdlib ---
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_name_nonempty() {
+    let v = eval("os::name");
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(!s.is_empty());
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_arch_nonempty() {
+    let v = eval("os::arch");
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(!s.is_empty());
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_family_is_known() {
+    let v = eval("os::family");
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(s == "unix" || s == "windows", "unexpected family: {}", s);
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_pointer_width() {
+    assert!(matches!(eval("os::pointer_width"), Value::Int(32) | Value::Int(64)));
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_extensions() {
+    // Both extension constants are strings (possibly empty on Unix for exe).
+    assert!(matches!(eval("os::dll_extension"), Value::Str(_)));
+    assert!(matches!(eval("os::exe_extension"), Value::Str(_)));
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_env_var_present() {
+    // Use a unique name so parallel tests don't race.
+    // SAFETY: set_var is unsafe in newer Rust editions; we're on 2021.
+    std::env::set_var("ION_OS_TEST_PRESENT_xK7", "hello");
+    assert_eq!(
+        eval(r#"os::env_var("ION_OS_TEST_PRESENT_xK7")"#),
+        Value::Str("hello".to_string())
+    );
+    std::env::remove_var("ION_OS_TEST_PRESENT_xK7");
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_env_var_missing() {
+    let mut engine = Engine::new();
+    let result = engine.eval(r#"os::env_var("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS")"#);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().message;
+    assert!(msg.contains("os::env_var"), "got: {}", msg);
+    assert!(msg.contains("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS"), "got: {}", msg);
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_env_var_default() {
+    // 2-arg form returns the default when the var is absent.
+    assert_eq!(
+        eval(r#"os::env_var("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS", "fallback")"#),
+        Value::Str("fallback".to_string())
+    );
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_has_env_var() {
+    std::env::set_var("ION_OS_TEST_HAS_xK7", "1");
+    assert_eq!(
+        eval(r#"os::has_env_var("ION_OS_TEST_HAS_xK7")"#),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval(r#"os::has_env_var("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS")"#),
+        Value::Bool(false)
+    );
+    std::env::remove_var("ION_OS_TEST_HAS_xK7");
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_env_vars_dict() {
+    // Should return a dict; the test process always has at least one env var
+    // (PATH on Unix, Path on Windows; even the Cargo runner sets a bunch).
+    let v = eval("os::env_vars()");
+    let Value::Dict(map) = v else {
+        panic!("expected dict, got {:?}", v);
+    };
+    assert!(!map.is_empty(), "env_vars() returned an empty dict");
+    // All values should be strings.
+    for (_, val) in &map {
+        assert!(
+            matches!(val, Value::Str(_)),
+            "env_vars value not a string: {:?}",
+            val
+        );
+    }
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_cwd() {
+    let v = eval("os::cwd()");
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(!s.is_empty());
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_pid() {
+    let v = eval("os::pid()");
+    let Value::Int(pid) = v else {
+        panic!("expected int, got {:?}", v);
+    };
+    assert!(pid > 0, "pid should be positive, got {}", pid);
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_temp_dir() {
+    let v = eval("os::temp_dir()");
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(!s.is_empty());
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_args_default_empty() {
+    // Without `set_args`, `os::args()` returns an empty list.
+    let mut engine = Engine::new();
+    let result = engine.eval("os::args()").unwrap();
+    assert_eq!(result, Value::List(Vec::new()));
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_args_after_set_args() {
+    let mut engine = Engine::new();
+    engine.set_args(vec!["alpha".into(), "beta".into(), "--flag".into()]);
+    let result = engine.eval("os::args()").unwrap();
+    assert_eq!(
+        result,
+        Value::List(vec![
+            Value::Str("alpha".into()),
+            Value::Str("beta".into()),
+            Value::Str("--flag".into()),
+        ])
+    );
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_set_args_rebinds_module() {
+    // After re-injection, subsequent calls see the updated args. This
+    // verifies `set_args` re-registers the `os::` module rather than
+    // updating stale closure captures.
+    let mut engine = Engine::new();
+    engine.set_args(vec!["first".into()]);
+    assert_eq!(
+        engine.eval("os::args()").unwrap(),
+        Value::List(vec![Value::Str("first".into())])
+    );
+    engine.set_args(vec!["second".into(), "third".into()]);
+    assert_eq!(
+        engine.eval("os::args()").unwrap(),
+        Value::List(vec![
+            Value::Str("second".into()),
+            Value::Str("third".into()),
+        ])
+    );
+}
+
+#[cfg(feature = "os")]
+#[test]
+fn test_stdlib_os_arity_errors() {
+    // No-arg functions reject extra arguments.
+    let mut engine = Engine::new();
+    assert!(engine.eval("os::pid(1)").is_err());
+    assert!(engine.eval("os::cwd(1)").is_err());
+    assert!(engine.eval("os::env_vars(1)").is_err());
+    assert!(engine.eval("os::env_var()").is_err());
+    assert!(engine
+        .eval(r#"os::env_var("a", "b", "c")"#)
+        .is_err());
+}
+
+// --- path stdlib ---
+
+#[test]
+fn test_stdlib_path_sep_nonempty() {
+    let v = eval("path::sep");
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(!s.is_empty());
+}
+
+#[test]
+fn test_stdlib_path_join() {
+    // Use platform-agnostic assertions: build with `path::sep` so the test
+    // works on both Unix and Windows.
+    let v = eval(r#"path::join("a", "b", "c")"#);
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(s.contains('a') && s.contains('b') && s.contains('c'));
+    assert!(s.starts_with("a"));
+}
+
+#[test]
+fn test_stdlib_path_basename_stem_extension() {
+    assert_eq!(
+        eval(r#"path::basename("/usr/local/bin/ion")"#),
+        Value::Str("ion".to_string())
+    );
+    assert_eq!(
+        eval(r#"path::stem("config.toml")"#),
+        Value::Str("config".to_string())
+    );
+    assert_eq!(
+        eval(r#"path::extension("config.toml")"#),
+        Value::Str("toml".to_string())
+    );
+    assert_eq!(
+        eval(r#"path::extension("README")"#),
+        Value::Str("".to_string())
+    );
+}
+
+#[test]
+fn test_stdlib_path_with_extension() {
+    assert_eq!(
+        eval(r#"path::with_extension("foo.txt", "md")"#),
+        Value::Str("foo.md".to_string())
+    );
+    // Empty extension drops the dot.
+    assert_eq!(
+        eval(r#"path::with_extension("foo.txt", "")"#),
+        Value::Str("foo".to_string())
+    );
+}
+
+#[test]
+fn test_stdlib_path_parent() {
+    let v = eval(r#"path::parent("/a/b/c")"#);
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(s.ends_with("b"));
+}
+
+#[test]
+fn test_stdlib_path_is_absolute_relative() {
+    // Use a leading separator so the test works cross-platform when paths
+    // happen to be checked with the OS's notion of absolute. On Unix `/x`
+    // is absolute; on Windows it's a relative-on-current-drive path. Skip
+    // strict cross-platform assertion and just confirm the two predicates
+    // are inverses on the same input.
+    let v_abs = eval(r#"path::is_absolute("relative/dir")"#);
+    let v_rel = eval(r#"path::is_relative("relative/dir")"#);
+    assert_eq!(v_abs, Value::Bool(false));
+    assert_eq!(v_rel, Value::Bool(true));
+}
+
+#[test]
+fn test_stdlib_path_components() {
+    let v = eval(r#"path::components("a/b/c")"#);
+    let Value::List(items) = v else {
+        panic!("expected list, got {:?}", v);
+    };
+    let strings: Vec<String> = items
+        .iter()
+        .map(|v| match v {
+            Value::Str(s) => s.clone(),
+            _ => panic!("expected strings"),
+        })
+        .collect();
+    assert_eq!(strings, vec!["a", "b", "c"]);
+}
+
+#[test]
+fn test_stdlib_path_normalize() {
+    assert_eq!(
+        eval(r#"path::normalize("a/./b/../c")"#),
+        Value::Str("a/c".to_string())
+    );
+    // Bare `.` collapses to `.`
+    assert_eq!(
+        eval(r#"path::normalize(".")"#),
+        Value::Str(".".to_string())
+    );
+    // Leading `..` is preserved when there's nothing to pop
+    assert_eq!(
+        eval(r#"path::normalize("../a")"#),
+        Value::Str("../a".to_string())
+    );
+}
+
+#[test]
+fn test_stdlib_path_arity_errors() {
+    let mut engine = Engine::new();
+    assert!(engine.eval("path::join()").is_err());
+    assert!(engine.eval("path::basename()").is_err());
+    assert!(engine
+        .eval(r#"path::with_extension("a")"#)
+        .is_err());
+}
+
+// --- fs stdlib (sync build) ---
+//
+// Each test creates a uniquely-named temp directory and cleans up at the
+// end. Names use a counter suffix to avoid races when tests run in parallel.
+
+#[cfg(feature = "fs")]
+fn fs_test_dir(label: &str) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "ion_fs_test_{}_{}_{}",
+        label,
+        std::process::id(),
+        id
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create test dir");
+    dir
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_read_write_roundtrip() {
+    let dir = fs_test_dir("rw");
+    let path = dir.join("hello.txt");
+    let path_s = path.to_string_lossy().to_string();
+    let mut engine = Engine::new();
+    engine
+        .eval(&format!(
+            r#"fs::write("{}", "hello"); fs::read("{}")"#,
+            path_s, path_s
+        ))
+        .unwrap();
+    assert_eq!(
+        engine.eval(&format!(r#"fs::read("{}")"#, path_s)).unwrap(),
+        Value::Str("hello".to_string())
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_read_bytes() {
+    let dir = fs_test_dir("bytes");
+    let path = dir.join("blob.bin");
+    std::fs::write(&path, [0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+    let path_s = path.to_string_lossy().to_string();
+    let v = eval(&format!(r#"fs::read_bytes("{}")"#, path_s));
+    let Value::Bytes(b) = v else {
+        panic!("expected bytes, got {:?}", v);
+    };
+    assert_eq!(b, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_write_bytes() {
+    let dir = fs_test_dir("writebytes");
+    let path = dir.join("out.bin");
+    let path_s = path.to_string_lossy().to_string();
+    // Write Value::Bytes via `bytes_from_hex` builtin.
+    let mut engine = Engine::new();
+    engine
+        .eval(&format!(
+            r#"fs::write("{}", bytes_from_hex("deadbeef"))"#,
+            path_s
+        ))
+        .unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_append() {
+    let dir = fs_test_dir("append");
+    let path = dir.join("log.txt");
+    let path_s = path.to_string_lossy().to_string();
+    let mut engine = Engine::new();
+    engine
+        .eval(&format!(
+            r#"fs::write("{}", "a"); fs::append("{}", "b"); fs::append("{}", "c")"#,
+            path_s, path_s, path_s
+        ))
+        .unwrap();
+    assert_eq!(
+        engine.eval(&format!(r#"fs::read("{}")"#, path_s)).unwrap(),
+        Value::Str("abc".to_string())
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_exists_is_file_is_dir() {
+    let dir = fs_test_dir("exists");
+    let dir_s = dir.to_string_lossy().to_string();
+    let file = dir.join("f.txt");
+    std::fs::write(&file, "x").unwrap();
+    let file_s = file.to_string_lossy().to_string();
+    let missing_s = dir.join("nope.txt").to_string_lossy().to_string();
+    let mut engine = Engine::new();
+    assert_eq!(
+        engine.eval(&format!(r#"fs::exists("{}")"#, file_s)).unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        engine
+            .eval(&format!(r#"fs::exists("{}")"#, missing_s))
+            .unwrap(),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        engine.eval(&format!(r#"fs::is_file("{}")"#, file_s)).unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        engine.eval(&format!(r#"fs::is_dir("{}")"#, dir_s)).unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        engine.eval(&format!(r#"fs::is_dir("{}")"#, file_s)).unwrap(),
+        Value::Bool(false)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_list_dir() {
+    let dir = fs_test_dir("list");
+    let dir_s = dir.to_string_lossy().to_string();
+    std::fs::write(dir.join("a"), "").unwrap();
+    std::fs::write(dir.join("b"), "").unwrap();
+    let v = eval(&format!(r#"fs::list_dir("{}")"#, dir_s));
+    let Value::List(items) = v else {
+        panic!("expected list");
+    };
+    let mut names: Vec<String> = items
+        .iter()
+        .map(|v| match v {
+            Value::Str(s) => s.clone(),
+            _ => panic!("expected strings"),
+        })
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["a".to_string(), "b".to_string()]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_create_remove_dirs() {
+    let root = fs_test_dir("createrm");
+    let nested = root.join("a/b/c");
+    let nested_s = nested.to_string_lossy().to_string();
+    let mut engine = Engine::new();
+    engine
+        .eval(&format!(r#"fs::create_dir_all("{}")"#, nested_s))
+        .unwrap();
+    assert!(nested.exists());
+    engine
+        .eval(&format!(r#"fs::remove_dir_all("{}")"#, root.to_string_lossy()))
+        .unwrap();
+    assert!(!root.exists());
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_rename_copy() {
+    let dir = fs_test_dir("renamecopy");
+    let src = dir.join("src.txt");
+    let dst = dir.join("dst.txt");
+    let copy = dir.join("copy.txt");
+    std::fs::write(&src, "data").unwrap();
+    let mut engine = Engine::new();
+    engine
+        .eval(&format!(
+            r#"fs::rename("{}", "{}")"#,
+            src.to_string_lossy(),
+            dst.to_string_lossy()
+        ))
+        .unwrap();
+    assert!(!src.exists() && dst.exists());
+    let n = engine
+        .eval(&format!(
+            r#"fs::copy("{}", "{}")"#,
+            dst.to_string_lossy(),
+            copy.to_string_lossy()
+        ))
+        .unwrap();
+    assert_eq!(n, Value::Int(4));
+    assert!(copy.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_metadata() {
+    let dir = fs_test_dir("meta");
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "12345").unwrap();
+    let v = eval(&format!(
+        r#"fs::metadata("{}")"#,
+        file.to_string_lossy()
+    ));
+    let Value::Dict(map) = v else {
+        panic!("expected dict, got {:?}", v);
+    };
+    assert_eq!(map.get("size"), Some(&Value::Int(5)));
+    assert_eq!(map.get("is_file"), Some(&Value::Bool(true)));
+    assert_eq!(map.get("is_dir"), Some(&Value::Bool(false)));
+    assert!(matches!(map.get("readonly"), Some(&Value::Bool(_))));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_canonicalize() {
+    let dir = fs_test_dir("canonicalize");
+    let file = dir.join("c.txt");
+    std::fs::write(&file, "").unwrap();
+    let v = eval(&format!(
+        r#"fs::canonicalize("{}")"#,
+        file.to_string_lossy()
+    ));
+    let Value::Str(s) = v else {
+        panic!("expected string, got {:?}", v);
+    };
+    assert!(!s.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_read_missing_file_errors() {
+    let mut engine = Engine::new();
+    let result = engine.eval(r#"fs::read("/this/path/should/not/exist/anywhere/xK7")"#);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("fs::read"));
 }

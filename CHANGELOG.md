@@ -9,6 +9,49 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-02
+
+### Added
+- **`os::` stdlib module** — OS / arch detection (`os::name`, `os::arch`,
+  `os::family`, `os::pointer_width`, `os::dll_extension`, `os::exe_extension`),
+  env vars (`env_var`, `has_env_var`, `env_vars`), and process info (`cwd`,
+  `pid`, `args`, `temp_dir`). Pure-`std`, no new dependencies. Enabled by
+  default; embedders can opt out with `default-features = false` on `ion-core`.
+- `Engine::set_args` / `Engine::with_args` / `Engine::args` to inject script
+  arguments reachable from Ion as `os::args()`. The `ion` CLI now passes
+  positional args after the script path through to `os::args()`.
+- **`path::` stdlib module** — pure-string path manipulation: `sep`, `join`,
+  `parent`, `basename`, `stem`, `extension`, `with_extension`, `is_absolute`,
+  `is_relative`, `components`, `normalize`. No I/O, always-on, no feature gate.
+- **`fs::` stdlib module** — filesystem I/O with `read`, `read_bytes`, `write`,
+  `append`, `exists`, `is_file`, `is_dir`, `list_dir`, `create_dir`,
+  `create_dir_all`, `remove_file`, `remove_dir`, `remove_dir_all`, `rename`,
+  `copy`, `metadata`, `canonicalize`. Single non-coloured surface — same names
+  in sync and async builds. New `fs` cargo feature (in default).
+- LSP hover/completion learn the `os::`, `path::`, and `fs::` namespaces.
+- Tree-sitter, VS Code, JetBrains, and Zed grammars recognise `os`, `path`,
+  and `fs` as builtin module names.
+- `ion` CLI gains an `async-runtime` cargo feature that sets up a
+  current-thread Tokio runtime and drives `Engine::eval_async` for both
+  `run_file` and the REPL.
+
+### Changed
+- **`io::print*` no longer blocks the executor under `async-runtime`.** The
+  `io::` module is now registered with async builtins that dispatch the
+  underlying `OutputHandler::write` call onto Tokio's blocking thread pool
+  via `spawn_blocking`. Sync builds keep the old direct-call path. The
+  `OutputHandler` trait is unchanged; embedder code is unaffected.
+- **`Engine::eval` and `Engine::vm_eval` are removed under `async-runtime`.**
+  The sync and async runtimes are now mutually exclusive at the cargo-feature
+  level — async builds must use `Engine::eval_async`. This guarantees that
+  non-coloured stdlib functions (`fs::read`, `io::println`, …) resolve to one
+  implementation per build.
+
+### Editor extensions
+- VS Code 0.6.0 → 0.7.0
+- Zed 0.6.0 → 0.7.0
+- JetBrains 0.6.0 → 0.7.0
+
 ## [0.6.0] — 2026-05-02
 
 ### Added

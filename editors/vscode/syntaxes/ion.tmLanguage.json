@@ -213,7 +213,7 @@
       "patterns": [
         {
           "name": "support.module.ion",
-          "match": "\\b(math|json|io|string|log|semver)\\b(?=\\s*::)"
+          "match": "\\b(math|json|io|string|log|semver|os|path|fs)\\b(?=\\s*::)"
         },
         {
           "name": "support.function.ion",

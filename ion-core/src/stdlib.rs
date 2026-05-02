@@ -498,7 +498,9 @@ pub fn io_module() -> Module {
     io_module_with_output(missing_output_handler())
 }
 
-/// Build the `io` stdlib module with a host-provided output handler.
+/// Build the `io` stdlib module with a host-provided output handler — sync
+/// build. Calls into [`OutputHandler::write`] directly.
+#[cfg(not(feature = "async-runtime"))]
 pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
     let mut m = Module::new("io");
 
@@ -521,6 +523,59 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
         text.push('\n');
         output.write(OutputStream::Stderr, &text)?;
         Ok(Value::Unit)
+    });
+
+    m
+}
+
+/// Build the `io` stdlib module with a host-provided output handler — async
+/// build. Each `io::print*` call dispatches the (still-sync) handler write
+/// onto Tokio's blocking thread pool via `spawn_blocking`, so a slow stdout
+/// can't stall the executor running other Ion tasks.
+#[cfg(feature = "async-runtime")]
+pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
+    use crate::error::IonError;
+    let mut m = Module::new("io");
+
+    let stdout = Arc::clone(&output);
+    m.register_async_fn("print", move |args| {
+        let stdout = Arc::clone(&stdout);
+        async move {
+            let text = format_output_args(&args);
+            tokio::task::spawn_blocking(move || stdout.write(OutputStream::Stdout, &text))
+                .await
+                .map_err(|e| IonError::runtime(format!("io::print: join error: {}", e), 0, 0))?
+                .map_err(|e| IonError::runtime(format!("io::print: {}", e), 0, 0))?;
+            Ok(Value::Unit)
+        }
+    });
+
+    let stdout = Arc::clone(&output);
+    m.register_async_fn("println", move |args| {
+        let stdout = Arc::clone(&stdout);
+        async move {
+            let mut text = format_output_args(&args);
+            text.push('\n');
+            tokio::task::spawn_blocking(move || stdout.write(OutputStream::Stdout, &text))
+                .await
+                .map_err(|e| IonError::runtime(format!("io::println: join error: {}", e), 0, 0))?
+                .map_err(|e| IonError::runtime(format!("io::println: {}", e), 0, 0))?;
+            Ok(Value::Unit)
+        }
+    });
+
+    let stderr = Arc::clone(&output);
+    m.register_async_fn("eprintln", move |args| {
+        let stderr = Arc::clone(&stderr);
+        async move {
+            let mut text = format_output_args(&args);
+            text.push('\n');
+            tokio::task::spawn_blocking(move || stderr.write(OutputStream::Stderr, &text))
+                .await
+                .map_err(|e| IonError::runtime(format!("io::eprintln: join error: {}", e), 0, 0))?
+                .map_err(|e| IonError::runtime(format!("io::eprintln: {}", e), 0, 0))?;
+            Ok(Value::Unit)
+        }
     });
 
     m
@@ -780,6 +835,838 @@ pub fn semver_module() -> Module {
     m
 }
 
+// ── os ───────────────────────────────────────────────────────────────────
+//
+// The `os::` module is feature-gated. OS / arch detection values are baked
+// in at build time (from `std::env::consts`); env-var and process-info
+// helpers call `std` directly. Script args are host-injected via
+// `Engine::set_args` and reach scripts as `os::args()`.
+
+/// Build the `os` stdlib module with the given script args (used by
+/// `os::args()`). Pass `Arc::new(Vec::new())` for the default empty list.
+#[cfg(feature = "os")]
+pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
+    let mut m = Module::new("os");
+
+    // Detection constants
+    m.set("name", Value::Str(std::env::consts::OS.to_string()));
+    m.set("arch", Value::Str(std::env::consts::ARCH.to_string()));
+    m.set("family", Value::Str(std::env::consts::FAMILY.to_string()));
+    m.set(
+        "dll_extension",
+        Value::Str(std::env::consts::DLL_EXTENSION.to_string()),
+    );
+    m.set(
+        "exe_extension",
+        Value::Str(std::env::consts::EXE_EXTENSION.to_string()),
+    );
+    m.set(
+        "pointer_width",
+        Value::Int((std::mem::size_of::<usize>() * 8) as i64),
+    );
+
+    m.register_fn("env_var", |args: &[Value]| {
+        if args.is_empty() || args.len() > 2 {
+            return Err(ion_str!(
+                "os::env_var takes 1 or 2 arguments: name, [default]"
+            ));
+        }
+        let name = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("os::env_var: name must be a string"))?;
+        match std::env::var(name) {
+            Ok(v) => Ok(Value::Str(v)),
+            Err(_) if args.len() == 2 => Ok(args[1].clone()),
+            Err(e) => Err(format!("os::env_var('{}'): {}", name, e)),
+        }
+    });
+
+    m.register_fn("has_env_var", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("os::has_env_var takes 1 argument"));
+        }
+        let name = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("os::has_env_var: name must be a string"))?;
+        Ok(Value::Bool(std::env::var_os(name).is_some()))
+    });
+
+    m.register_fn("env_vars", |args: &[Value]| {
+        if !args.is_empty() {
+            return Err(ion_str!("os::env_vars takes no arguments"));
+        }
+        let mut d = indexmap::IndexMap::new();
+        for (k, v) in std::env::vars() {
+            d.insert(k, Value::Str(v));
+        }
+        Ok(Value::Dict(d))
+    });
+
+    m.register_fn("cwd", |args: &[Value]| {
+        if !args.is_empty() {
+            return Err(ion_str!("os::cwd takes no arguments"));
+        }
+        std::env::current_dir()
+            .map(|p| Value::Str(p.to_string_lossy().into_owned()))
+            .map_err(|e| format!("os::cwd: {}", e))
+    });
+
+    m.register_fn("pid", |args: &[Value]| {
+        if !args.is_empty() {
+            return Err(ion_str!("os::pid takes no arguments"));
+        }
+        Ok(Value::Int(std::process::id() as i64))
+    });
+
+    m.register_fn("temp_dir", |args: &[Value]| {
+        if !args.is_empty() {
+            return Err(ion_str!("os::temp_dir takes no arguments"));
+        }
+        Ok(Value::Str(
+            std::env::temp_dir().to_string_lossy().into_owned(),
+        ))
+    });
+
+    let args_arc = Arc::clone(&args);
+    m.register_closure("args", move |call_args: &[Value]| {
+        if !call_args.is_empty() {
+            return Err(ion_str!("os::args takes no arguments"));
+        }
+        Ok(Value::List(
+            args_arc.iter().map(|s| Value::Str(s.clone())).collect(),
+        ))
+    });
+
+    m
+}
+
+/// Build the `os::` stdlib module with no script args. Use
+/// `Engine::set_args` afterwards to inject argv reachable as `os::args()`.
+#[cfg(feature = "os")]
+pub fn os_module() -> Module {
+    os_module_with_args(Arc::new(Vec::new()))
+}
+
+// ── path ─────────────────────────────────────────────────────────────────
+//
+// Pure string-level path manipulation. No I/O, no async, no feature gate —
+// this is composition glue that should always be available. Operates on
+// strings and returns strings; `Value::Bytes` paths are not supported.
+
+/// Build the `path::` stdlib module.
+pub fn path_module() -> Module {
+    use std::path::{Path, PathBuf, MAIN_SEPARATOR_STR};
+
+    let mut m = Module::new("path");
+
+    m.set("sep", Value::Str(MAIN_SEPARATOR_STR.to_string()));
+
+    m.register_fn("join", |args: &[Value]| {
+        if args.is_empty() {
+            return Err(ion_str!("path::join takes at least 1 argument"));
+        }
+        let mut buf = PathBuf::new();
+        for (i, arg) in args.iter().enumerate() {
+            let s = arg.as_str().ok_or_else(|| {
+                format!("path::join: argument {} must be a string", i + 1)
+            })?;
+            buf.push(s);
+        }
+        Ok(Value::Str(buf.to_string_lossy().into_owned()))
+    });
+
+    m.register_fn("parent", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("path::parent takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::parent requires a string"))?;
+        Ok(Value::Str(
+            Path::new(s)
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        ))
+    });
+
+    m.register_fn("basename", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("path::basename takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::basename requires a string"))?;
+        Ok(Value::Str(
+            Path::new(s)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        ))
+    });
+
+    m.register_fn("stem", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("path::stem takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::stem requires a string"))?;
+        Ok(Value::Str(
+            Path::new(s)
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        ))
+    });
+
+    m.register_fn("extension", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("path::extension takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::extension requires a string"))?;
+        Ok(Value::Str(
+            Path::new(s)
+                .extension()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        ))
+    });
+
+    m.register_fn("with_extension", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("path::with_extension takes 2 arguments: path, ext"));
+        }
+        let p = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::with_extension: path must be a string"))?;
+        let ext = args[1]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::with_extension: ext must be a string"))?;
+        Ok(Value::Str(
+            Path::new(p)
+                .with_extension(ext)
+                .to_string_lossy()
+                .into_owned(),
+        ))
+    });
+
+    m.register_fn("is_absolute", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("path::is_absolute takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::is_absolute requires a string"))?;
+        Ok(Value::Bool(Path::new(s).is_absolute()))
+    });
+
+    m.register_fn("is_relative", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("path::is_relative takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::is_relative requires a string"))?;
+        Ok(Value::Bool(Path::new(s).is_relative()))
+    });
+
+    m.register_fn("components", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("path::components takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::components requires a string"))?;
+        let comps: Vec<Value> = Path::new(s)
+            .components()
+            .map(|c| Value::Str(c.as_os_str().to_string_lossy().into_owned()))
+            .collect();
+        Ok(Value::List(comps))
+    });
+
+    m.register_fn("normalize", |args: &[Value]| {
+        // Lexical normalisation: collapse `.` and `..` without consulting the
+        // filesystem. Mirrors `path.Clean` from Go / Node's `path.normalize`.
+        if args.len() != 1 {
+            return Err(ion_str!("path::normalize takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("path::normalize requires a string"))?;
+        use std::path::Component;
+        let mut out = PathBuf::new();
+        for c in Path::new(s).components() {
+            match c {
+                Component::Prefix(p) => {
+                    out.push(p.as_os_str());
+                }
+                Component::RootDir => {
+                    out.push(std::path::Component::RootDir);
+                }
+                Component::CurDir => { /* skip */ }
+                Component::ParentDir => {
+                    // Pop the last normal component if any, otherwise keep the `..`
+                    let popped = match out.components().next_back() {
+                        Some(Component::Normal(_)) => out.pop(),
+                        _ => false,
+                    };
+                    if !popped {
+                        out.push("..");
+                    }
+                }
+                Component::Normal(n) => out.push(n),
+            }
+        }
+        let result = if out.as_os_str().is_empty() {
+            ".".to_string()
+        } else {
+            out.to_string_lossy().into_owned()
+        };
+        Ok(Value::Str(result))
+    });
+
+    m
+}
+
+// ── fs ───────────────────────────────────────────────────────────────────
+//
+// Filesystem I/O. The script-level surface (`fs::read`, `fs::write`, …) is
+// identical regardless of build mode; only the underlying impl changes. In
+// a sync build (`async-runtime` off) operations call `std::fs` directly. In
+// an async build they're registered via `register_async_fn` and call
+// `tokio::fs`, so they cooperate with the executor instead of blocking it.
+//
+// `read_bytes` returns `bytes`; everything else returns strings or unit.
+
+#[cfg(feature = "fs")]
+fn fs_metadata_to_dict(md: &std::fs::Metadata) -> Value {
+    let mut d = indexmap::IndexMap::new();
+    d.insert("size".to_string(), Value::Int(md.len() as i64));
+    d.insert("is_file".to_string(), Value::Bool(md.is_file()));
+    d.insert("is_dir".to_string(), Value::Bool(md.is_dir()));
+    d.insert("readonly".to_string(), Value::Bool(md.permissions().readonly()));
+    let modified = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| Value::Int(d.as_secs() as i64))
+        .unwrap_or(Value::Unit);
+    d.insert("modified".to_string(), modified);
+    Value::Dict(d)
+}
+
+#[cfg(all(feature = "fs", not(feature = "async-runtime")))]
+fn fs_arg_str<'a>(args: &'a [Value], fn_name: &str, idx: usize) -> Result<&'a str, String> {
+    args[idx]
+        .as_str()
+        .ok_or_else(|| format!("fs::{}: argument {} must be a string", fn_name, idx + 1))
+}
+
+/// Build the `fs::` stdlib module — sync impl backed by `std::fs`. Used when
+/// the `async-runtime` feature is **not** enabled.
+#[cfg(all(feature = "fs", not(feature = "async-runtime")))]
+pub fn fs_module() -> Module {
+    let mut m = Module::new("fs");
+
+    m.register_fn("read", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::read takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "read", 0)?;
+        std::fs::read_to_string(path)
+            .map(Value::Str)
+            .map_err(|e| format!("fs::read('{}'): {}", path, e))
+    });
+
+    m.register_fn("read_bytes", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::read_bytes takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "read_bytes", 0)?;
+        std::fs::read(path)
+            .map(Value::Bytes)
+            .map_err(|e| format!("fs::read_bytes('{}'): {}", path, e))
+    });
+
+    m.register_fn("write", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("fs::write takes 2 arguments: path, contents"));
+        }
+        let path = fs_arg_str(args, "write", 0)?;
+        let result = match &args[1] {
+            Value::Str(s) => std::fs::write(path, s.as_bytes()),
+            Value::Bytes(b) => std::fs::write(path, b),
+            other => {
+                return Err(format!(
+                    "fs::write: contents must be string or bytes, got {}",
+                    other.type_name()
+                ));
+            }
+        };
+        result
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::write('{}'): {}", path, e))
+    });
+
+    m.register_fn("append", |args: &[Value]| {
+        use std::io::Write;
+        if args.len() != 2 {
+            return Err(ion_str!("fs::append takes 2 arguments: path, contents"));
+        }
+        let path = fs_arg_str(args, "append", 0)?;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| format!("fs::append('{}'): {}", path, e))?;
+        let bytes: &[u8] = match &args[1] {
+            Value::Str(s) => s.as_bytes(),
+            Value::Bytes(b) => b,
+            other => {
+                return Err(format!(
+                    "fs::append: contents must be string or bytes, got {}",
+                    other.type_name()
+                ));
+            }
+        };
+        f.write_all(bytes)
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::append('{}'): {}", path, e))
+    });
+
+    m.register_fn("exists", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::exists takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "exists", 0)?;
+        Ok(Value::Bool(std::path::Path::new(path).exists()))
+    });
+
+    m.register_fn("is_file", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::is_file takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "is_file", 0)?;
+        Ok(Value::Bool(std::path::Path::new(path).is_file()))
+    });
+
+    m.register_fn("is_dir", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::is_dir takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "is_dir", 0)?;
+        Ok(Value::Bool(std::path::Path::new(path).is_dir()))
+    });
+
+    m.register_fn("list_dir", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::list_dir takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "list_dir", 0)?;
+        let entries = std::fs::read_dir(path)
+            .map_err(|e| format!("fs::list_dir('{}'): {}", path, e))?;
+        let mut names = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("fs::list_dir('{}'): {}", path, e))?;
+            names.push(Value::Str(entry.file_name().to_string_lossy().into_owned()));
+        }
+        Ok(Value::List(names))
+    });
+
+    m.register_fn("create_dir", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::create_dir takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "create_dir", 0)?;
+        std::fs::create_dir(path)
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::create_dir('{}'): {}", path, e))
+    });
+
+    m.register_fn("create_dir_all", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::create_dir_all takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "create_dir_all", 0)?;
+        std::fs::create_dir_all(path)
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::create_dir_all('{}'): {}", path, e))
+    });
+
+    m.register_fn("remove_file", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::remove_file takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "remove_file", 0)?;
+        std::fs::remove_file(path)
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::remove_file('{}'): {}", path, e))
+    });
+
+    m.register_fn("remove_dir", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::remove_dir takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "remove_dir", 0)?;
+        std::fs::remove_dir(path)
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::remove_dir('{}'): {}", path, e))
+    });
+
+    m.register_fn("remove_dir_all", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::remove_dir_all takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "remove_dir_all", 0)?;
+        std::fs::remove_dir_all(path)
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::remove_dir_all('{}'): {}", path, e))
+    });
+
+    m.register_fn("rename", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("fs::rename takes 2 arguments: from, to"));
+        }
+        let from = fs_arg_str(args, "rename", 0)?;
+        let to = fs_arg_str(args, "rename", 1)?;
+        std::fs::rename(from, to)
+            .map(|_| Value::Unit)
+            .map_err(|e| format!("fs::rename('{}' -> '{}'): {}", from, to, e))
+    });
+
+    m.register_fn("copy", |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("fs::copy takes 2 arguments: from, to"));
+        }
+        let from = fs_arg_str(args, "copy", 0)?;
+        let to = fs_arg_str(args, "copy", 1)?;
+        std::fs::copy(from, to)
+            .map(|n| Value::Int(n as i64))
+            .map_err(|e| format!("fs::copy('{}' -> '{}'): {}", from, to, e))
+    });
+
+    m.register_fn("metadata", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::metadata takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "metadata", 0)?;
+        let md = std::fs::metadata(path)
+            .map_err(|e| format!("fs::metadata('{}'): {}", path, e))?;
+        Ok(fs_metadata_to_dict(&md))
+    });
+
+    m.register_fn("canonicalize", |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("fs::canonicalize takes 1 argument"));
+        }
+        let path = fs_arg_str(args, "canonicalize", 0)?;
+        std::fs::canonicalize(path)
+            .map(|p| Value::Str(p.to_string_lossy().into_owned()))
+            .map_err(|e| format!("fs::canonicalize('{}'): {}", path, e))
+    });
+
+    m
+}
+
+/// Build the `fs::` stdlib module — async impl backed by `tokio::fs`. Used
+/// when the `async-runtime` feature is enabled. Surface matches the sync
+/// build exactly; scripts call these the same way under `Engine::eval_async`.
+#[cfg(all(feature = "fs", feature = "async-runtime"))]
+pub fn fs_module() -> Module {
+    use crate::error::IonError;
+
+    fn arg_str(args: &[Value], fn_name: &str, idx: usize) -> Result<String, IonError> {
+        args.get(idx)
+            .and_then(Value::as_str)
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                IonError::runtime(
+                    format!("fs::{}: argument {} must be a string", fn_name, idx + 1),
+                    0,
+                    0,
+                )
+            })
+    }
+
+    fn io_err(fn_name: &str, target: &str, e: std::io::Error) -> IonError {
+        IonError::runtime(format!("fs::{}('{}'): {}", fn_name, target, e), 0, 0)
+    }
+
+    let mut m = Module::new("fs");
+
+    m.register_async_fn("read", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::read takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "read", 0)?;
+        tokio::fs::read_to_string(&path)
+            .await
+            .map(Value::Str)
+            .map_err(|e| io_err("read", &path, e))
+    });
+
+    m.register_async_fn("read_bytes", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::read_bytes takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "read_bytes", 0)?;
+        tokio::fs::read(&path)
+            .await
+            .map(Value::Bytes)
+            .map_err(|e| io_err("read_bytes", &path, e))
+    });
+
+    m.register_async_fn("write", |args| async move {
+        if args.len() != 2 {
+            return Err(IonError::runtime(
+                "fs::write takes 2 arguments: path, contents",
+                0,
+                0,
+            ));
+        }
+        let path = arg_str(&args, "write", 0)?;
+        let bytes: Vec<u8> = match &args[1] {
+            Value::Str(s) => s.as_bytes().to_vec(),
+            Value::Bytes(b) => b.clone(),
+            other => {
+                return Err(IonError::runtime(
+                    format!(
+                        "fs::write: contents must be string or bytes, got {}",
+                        other.type_name()
+                    ),
+                    0,
+                    0,
+                ));
+            }
+        };
+        tokio::fs::write(&path, &bytes)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| io_err("write", &path, e))
+    });
+
+    m.register_async_fn("append", |args| async move {
+        use tokio::io::AsyncWriteExt;
+        if args.len() != 2 {
+            return Err(IonError::runtime(
+                "fs::append takes 2 arguments: path, contents",
+                0,
+                0,
+            ));
+        }
+        let path = arg_str(&args, "append", 0)?;
+        let bytes: Vec<u8> = match &args[1] {
+            Value::Str(s) => s.as_bytes().to_vec(),
+            Value::Bytes(b) => b.clone(),
+            other => {
+                return Err(IonError::runtime(
+                    format!(
+                        "fs::append: contents must be string or bytes, got {}",
+                        other.type_name()
+                    ),
+                    0,
+                    0,
+                ));
+            }
+        };
+        let mut f = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await
+            .map_err(|e| io_err("append", &path, e))?;
+        f.write_all(&bytes)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| io_err("append", &path, e))
+    });
+
+    m.register_async_fn("exists", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::exists takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "exists", 0)?;
+        // `tokio::fs::try_exists` on stable. Fall back to a metadata check so
+        // we behave the same as `Path::exists()` did in the sync impl.
+        match tokio::fs::metadata(&path).await {
+            Ok(_) => Ok(Value::Bool(true)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
+            Err(e) => Err(io_err("exists", &path, e)),
+        }
+    });
+
+    m.register_async_fn("is_file", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::is_file takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "is_file", 0)?;
+        match tokio::fs::metadata(&path).await {
+            Ok(md) => Ok(Value::Bool(md.is_file())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
+            Err(e) => Err(io_err("is_file", &path, e)),
+        }
+    });
+
+    m.register_async_fn("is_dir", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::is_dir takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "is_dir", 0)?;
+        match tokio::fs::metadata(&path).await {
+            Ok(md) => Ok(Value::Bool(md.is_dir())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
+            Err(e) => Err(io_err("is_dir", &path, e)),
+        }
+    });
+
+    m.register_async_fn("list_dir", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::list_dir takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "list_dir", 0)?;
+        let mut rd = tokio::fs::read_dir(&path)
+            .await
+            .map_err(|e| io_err("list_dir", &path, e))?;
+        let mut names = Vec::new();
+        loop {
+            match rd.next_entry().await {
+                Ok(Some(entry)) => {
+                    names.push(Value::Str(entry.file_name().to_string_lossy().into_owned()));
+                }
+                Ok(None) => break,
+                Err(e) => return Err(io_err("list_dir", &path, e)),
+            }
+        }
+        Ok(Value::List(names))
+    });
+
+    m.register_async_fn("create_dir", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::create_dir takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "create_dir", 0)?;
+        tokio::fs::create_dir(&path)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| io_err("create_dir", &path, e))
+    });
+
+    m.register_async_fn("create_dir_all", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime(
+                "fs::create_dir_all takes 1 argument",
+                0,
+                0,
+            ));
+        }
+        let path = arg_str(&args, "create_dir_all", 0)?;
+        tokio::fs::create_dir_all(&path)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| io_err("create_dir_all", &path, e))
+    });
+
+    m.register_async_fn("remove_file", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::remove_file takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "remove_file", 0)?;
+        tokio::fs::remove_file(&path)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| io_err("remove_file", &path, e))
+    });
+
+    m.register_async_fn("remove_dir", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::remove_dir takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "remove_dir", 0)?;
+        tokio::fs::remove_dir(&path)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| io_err("remove_dir", &path, e))
+    });
+
+    m.register_async_fn("remove_dir_all", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime(
+                "fs::remove_dir_all takes 1 argument",
+                0,
+                0,
+            ));
+        }
+        let path = arg_str(&args, "remove_dir_all", 0)?;
+        tokio::fs::remove_dir_all(&path)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| io_err("remove_dir_all", &path, e))
+    });
+
+    m.register_async_fn("rename", |args| async move {
+        if args.len() != 2 {
+            return Err(IonError::runtime(
+                "fs::rename takes 2 arguments: from, to",
+                0,
+                0,
+            ));
+        }
+        let from = arg_str(&args, "rename", 0)?;
+        let to = arg_str(&args, "rename", 1)?;
+        tokio::fs::rename(&from, &to)
+            .await
+            .map(|_| Value::Unit)
+            .map_err(|e| {
+                IonError::runtime(format!("fs::rename('{}' -> '{}'): {}", from, to, e), 0, 0)
+            })
+    });
+
+    m.register_async_fn("copy", |args| async move {
+        if args.len() != 2 {
+            return Err(IonError::runtime(
+                "fs::copy takes 2 arguments: from, to",
+                0,
+                0,
+            ));
+        }
+        let from = arg_str(&args, "copy", 0)?;
+        let to = arg_str(&args, "copy", 1)?;
+        tokio::fs::copy(&from, &to)
+            .await
+            .map(|n| Value::Int(n as i64))
+            .map_err(|e| {
+                IonError::runtime(format!("fs::copy('{}' -> '{}'): {}", from, to, e), 0, 0)
+            })
+    });
+
+    m.register_async_fn("metadata", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::metadata takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "metadata", 0)?;
+        let md = tokio::fs::metadata(&path)
+            .await
+            .map_err(|e| io_err("metadata", &path, e))?;
+        Ok(fs_metadata_to_dict(&md))
+    });
+
+    m.register_async_fn("canonicalize", |args| async move {
+        if args.len() != 1 {
+            return Err(IonError::runtime("fs::canonicalize takes 1 argument", 0, 0));
+        }
+        let path = arg_str(&args, "canonicalize", 0)?;
+        tokio::fs::canonicalize(&path)
+            .await
+            .map(|p| Value::Str(p.to_string_lossy().into_owned()))
+            .map_err(|e| io_err("canonicalize", &path, e))
+    });
+
+    m
+}
+
 /// Register all stdlib modules in the given environment.
 pub fn register_stdlib(env: &mut crate::env::Env) {
     register_stdlib_with_output(env, missing_output_handler());
@@ -822,5 +1709,20 @@ pub fn register_stdlib_with_handlers(
     {
         let s = semver_module();
         env.define(s.name.clone(), s.to_value(), false);
+    }
+
+    #[cfg(feature = "os")]
+    {
+        let os = os_module();
+        env.define(os.name.clone(), os.to_value(), false);
+    }
+
+    let path = path_module();
+    env.define(path.name.clone(), path.to_value(), false);
+
+    #[cfg(feature = "fs")]
+    {
+        let fs = fs_module();
+        env.define(fs.name.clone(), fs.to_value(), false);
     }
 }
