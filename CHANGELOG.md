@@ -9,6 +9,24 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-02
+
+### Added
+- **Aliased `use` imports** — `use io::println as say;`, `use math::{add as sum, PI};`.
+  Both single and braced-list forms accept an optional `as <ident>` clause; the
+  original name is used for module lookup, the alias becomes the local binding.
+  Glob imports (`use m::*`) cannot be aliased. Supported by the tree-walking
+  interpreter, the bytecode VM, the LSP (hover shows `use m::name as alias`),
+  and tree-sitter / TextMate highlighting.
+- `as` recognized as a keyword across all editor grammars (tree-sitter, VS Code
+  TextMate, JetBrains TextMate bundle).
+- Tree-sitter grammar gains an `import_item` node with `name`/`alias` fields.
+
+### Editor extensions
+- VS Code 0.4.0 → 0.5.0
+- Zed 0.4.0 → 0.5.0
+- JetBrains 0.4.0 → 0.5.0
+
 ## [0.4.0] — 2026-05-01
 
 ### Added

@@ -1366,15 +1366,15 @@ impl Compiler {
                 self.compile_module_path(path, line, 0)?;
                 self.chunk.emit_op(Op::ImportGlob, line);
             }
-            UseImports::Names(names) => {
-                for name in names {
-                    self.compile_module_path_member(path, name, line, 0)?;
-                    self.emit_define_local(name, false, line);
+            UseImports::Names(items) => {
+                for item in items {
+                    self.compile_module_path_member(path, &item.name, line, 0)?;
+                    self.emit_define_local(item.binding(), false, line);
                 }
             }
-            UseImports::Single(name) => {
-                self.compile_module_path_member(path, name, line, 0)?;
-                self.emit_define_local(name, false, line);
+            UseImports::Single(item) => {
+                self.compile_module_path_member(path, &item.name, line, 0)?;
+                self.emit_define_local(item.binding(), false, line);
             }
         }
         Ok(())

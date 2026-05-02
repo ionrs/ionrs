@@ -710,22 +710,23 @@ impl Interpreter {
                             .into());
                         }
                     }
-                    UseImports::Names(names) => {
+                    UseImports::Names(items) => {
                         if let Value::Dict(map) = &module_val {
-                            for name in names {
-                                let val = map.get(name).ok_or_else(|| {
+                            for item in items {
+                                let val = map.get(&item.name).ok_or_else(|| {
                                     SignalOrError::Error(IonError::name(
                                         format!(
                                             "{}{}{}",
                                             ion_str!("'"),
-                                            name,
+                                            &item.name,
                                             ion_str!("' not found in module")
                                         ),
                                         stmt.span.line,
                                         stmt.span.col,
                                     ))
                                 })?;
-                                self.env.define(name.clone(), val.clone(), false);
+                                self.env
+                                    .define(item.binding().to_string(), val.clone(), false);
                             }
                         } else {
                             return Err(IonError::type_err(
@@ -736,21 +737,22 @@ impl Interpreter {
                             .into());
                         }
                     }
-                    UseImports::Single(name) => {
+                    UseImports::Single(item) => {
                         if let Value::Dict(map) = &module_val {
-                            let val = map.get(name).ok_or_else(|| {
+                            let val = map.get(&item.name).ok_or_else(|| {
                                 SignalOrError::Error(IonError::name(
                                     format!(
                                         "{}{}{}",
                                         ion_str!("'"),
-                                        name,
+                                        &item.name,
                                         ion_str!("' not found in module")
                                     ),
                                     stmt.span.line,
                                     stmt.span.col,
                                 ))
                             })?;
-                            self.env.define(name.clone(), val.clone(), false);
+                            self.env
+                                .define(item.binding().to_string(), val.clone(), false);
                         } else {
                             return Err(IonError::type_err(
                                 ion_str!("use target is not a module"),

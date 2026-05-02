@@ -99,7 +99,7 @@ module.exports = grammar({
       choice(
         "*",
         seq("{", $.import_list, "}"),
-        $.identifier,
+        $.import_item,
         prec.right(seq($.identifier, "::", $.import_path_tail)),
       ),
 
@@ -107,7 +107,13 @@ module.exports = grammar({
       seq($.identifier, repeat1(seq("::", $.identifier))),
 
     import_list: ($) =>
-      seq($.identifier, repeat(seq(",", $.identifier)), optional(",")),
+      seq($.import_item, repeat(seq(",", $.import_item)), optional(",")),
+
+    import_item: ($) =>
+      seq(
+        field("name", $.identifier),
+        optional(seq("as", field("alias", $.identifier))),
+      ),
 
     expression_statement: ($) =>
       seq($._expression, optional(";")),

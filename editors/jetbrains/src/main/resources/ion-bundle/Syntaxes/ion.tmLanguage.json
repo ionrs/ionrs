@@ -182,7 +182,7 @@
       "patterns": [
         {
           "name": "keyword.control.ion",
-          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|async|spawn|await|select|try|catch|use)\\b"
+          "match": "\\b(if|else|while|for|loop|break|continue|return|match|in|async|spawn|await|select|try|catch|use|as)\\b"
         },
         {
           "name": "keyword.declaration.ion",

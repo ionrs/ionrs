@@ -1887,6 +1887,32 @@
     }
   },
   {
+    "type": "import_item",
+    "named": true,
+    "fields": {
+      "alias": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "import_list",
     "named": true,
     "fields": {},
@@ -1895,7 +1921,7 @@
       "required": true,
       "types": [
         {
-          "type": "identifier",
+          "type": "import_item",
           "named": true
         }
       ]
@@ -1911,6 +1937,10 @@
       "types": [
         {
           "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "import_item",
           "named": true
         },
         {
@@ -5299,6 +5329,10 @@
   },
   {
     "type": "any",
+    "named": false
+  },
+  {
+    "type": "as",
     "named": false
   },
   {

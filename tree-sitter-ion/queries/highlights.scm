@@ -21,6 +21,7 @@
   "try"
   "catch"
   "use"
+  "as"
 ] @keyword
 
 [
@@ -86,8 +87,9 @@
 (module_path_import
   (identifier) @namespace)
 
-(import_list
-  (identifier) @variable)
+(import_item
+  name: (identifier) @variable
+  alias: (identifier)? @variable)
 
 ; ── Parameters ───────────────────────────────────────────────
 (parameter

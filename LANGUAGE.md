@@ -925,11 +925,31 @@ use math::add;
 add(1, 2)                  // 3 (no need for math::add)
 ```
 
+### Aliased imports
+
+Use `as` to rebind an imported name to a different local name. Aliases work for
+single imports and inside braced lists; glob imports cannot be aliased.
+
+```
+use io::println as say;            // single import with alias
+use math::add as sum;
+use math::{add as sum, PI};        // mixed: some aliased, some not
+use math::{add as sum, PI as pi};  // all aliased
+```
+
+After aliasing, only the alias is in scope — the original name is not bound:
+```
+use math::add as sum;
+sum(1, 2)                  // 3
+add(1, 2)                  // error: undefined name 'add'
+```
+
 ### Submodule imports
 
 ```
-use net::http::get;        // import from nested module
-use net::http::*;          // glob import from nested module
+use net::http::get;             // import from nested module
+use net::http::get as fetch;    // nested import with alias
+use net::http::*;               // glob import from nested module
 ```
 
 ### Standard library modules

@@ -121,19 +121,50 @@ fn collect_defs_from_stmts(
             StmtKind::ExprStmt { expr, .. } => collect_defs_from_expr(expr, source, defs),
             StmtKind::Use { path, imports } => {
                 let module_path = path.join("::");
-                let names: Vec<String> = match imports {
-                    UseImports::Single(name) => vec![name.clone()],
-                    UseImports::Names(names) => names.clone(),
-                    UseImports::Glob => vec![format!("{}::*", module_path)],
-                };
-                for name in names {
-                    defs.push(Definition {
-                        name: name.clone(),
-                        kind: DefKind::Variable,
-                        line,
-                        col,
-                        detail: format!("use {}::{}", module_path, name),
-                    });
+                match imports {
+                    UseImports::Single(item) => {
+                        let binding = item.binding().to_string();
+                        let detail = match &item.alias {
+                            Some(alias) => {
+                                format!("use {}::{} as {}", module_path, item.name, alias)
+                            }
+                            None => format!("use {}::{}", module_path, item.name),
+                        };
+                        defs.push(Definition {
+                            name: binding,
+                            kind: DefKind::Variable,
+                            line,
+                            col,
+                            detail,
+                        });
+                    }
+                    UseImports::Names(items) => {
+                        for item in items {
+                            let binding = item.binding().to_string();
+                            let detail = match &item.alias {
+                                Some(alias) => {
+                                    format!("use {}::{} as {}", module_path, item.name, alias)
+                                }
+                                None => format!("use {}::{}", module_path, item.name),
+                            };
+                            defs.push(Definition {
+                                name: binding,
+                                kind: DefKind::Variable,
+                                line,
+                                col,
+                                detail,
+                            });
+                        }
+                    }
+                    UseImports::Glob => {
+                        defs.push(Definition {
+                            name: format!("{}::*", module_path),
+                            kind: DefKind::Variable,
+                            line,
+                            col,
+                            detail: format!("use {}::*", module_path),
+                        });
+                    }
                 }
             }
             _ => {}
@@ -926,7 +957,7 @@ fn handle_hover(source: &str, pos: Position) -> Option<Hover> {
         "return" => Some("Return a value from a function early.\n\n```ion\nfn check(x) { if x < 0 { return Err(\"negative\"); } Ok(x) }\n```"),
         "mut" => Some("Mark a binding as mutable.\n\n```ion\nlet mut count = 0;\ncount += 1;\n```"),
         "in" => Some("Used in `for` loops and membership tests.\n\n```ion\nfor x in [1, 2, 3] { io::println(x); }\n```"),
-        "use" => Some("Import names from a module.\n\n```ion\nuse math::add;          // single import\nuse math::{add, PI};    // multiple imports\nuse math::*;            // glob import\n```"),
+        "use" => Some("Import names from a module. Imports may be aliased with `as`.\n\n```ion\nuse math::add;             // single import\nuse math::add as sum;      // single import with alias\nuse math::{add, PI};       // multiple imports\nuse math::{add as sum, PI};// multiple imports, some aliased\nuse math::*;               // glob import (cannot be aliased)\n```"),
         "true" | "false" => Some("Boolean literal."),
         _ => None,
     };

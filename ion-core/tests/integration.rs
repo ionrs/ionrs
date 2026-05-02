@@ -4135,6 +4135,100 @@ fn test_use_member_not_found_error() {
     assert!(result.unwrap_err().message.contains("not found in module"));
 }
 
+// --- Aliased `use` imports ---
+
+#[test]
+fn test_use_single_alias() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("use math::add as sum; sum(3, 4)").unwrap(),
+        Value::Int(7)
+    );
+}
+
+#[test]
+fn test_use_named_alias_partial() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine
+            .eval("use math::{add as sum, PI}; sum(1, 2)")
+            .unwrap(),
+        Value::Int(3)
+    );
+    assert_eq!(
+        engine.eval("use math::{add as sum, PI}; PI").unwrap(),
+        Value::Float(std::f64::consts::PI)
+    );
+}
+
+#[test]
+fn test_use_named_alias_all() {
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine
+            .eval("use math::{add as sum, PI as pi}; sum(1, 2)")
+            .unwrap(),
+        Value::Int(3)
+    );
+    assert_eq!(
+        engine
+            .eval("use math::{add as sum, PI as pi}; pi")
+            .unwrap(),
+        Value::Float(std::f64::consts::PI)
+    );
+}
+
+#[test]
+fn test_use_alias_self() {
+    // `as add` is allowed but redundant; should behave identically to no alias
+    let mut engine = engine_with_math_module();
+    assert_eq!(
+        engine.eval("use math::add as add; add(2, 5)").unwrap(),
+        Value::Int(7)
+    );
+}
+
+#[test]
+fn test_use_alias_original_unbound() {
+    // After aliasing, the original name must NOT be bound in the local scope.
+    let mut engine = engine_with_math_module();
+    let result = engine.eval("use math::add as sum; add(1, 2)");
+    assert!(result.is_err(), "expected `add` to be unbound after alias");
+}
+
+#[test]
+fn test_use_alias_submodule() {
+    let mut engine = Engine::new();
+    let mut net = Module::new("net");
+    let mut http = Module::new("http");
+    http.register_fn("get", |_args: &[Value]| Ok(Value::Str("ok".to_string())));
+    net.register_submodule(http);
+    engine.register_module(net);
+    assert_eq!(
+        engine.eval("use net::http::get as fetch; fetch()").unwrap(),
+        Value::Str("ok".to_string())
+    );
+}
+
+#[test]
+fn test_use_alias_missing_member_reports_original_name() {
+    // Lookup uses the original name; the error message must surface it,
+    // not the alias.
+    let mut engine = engine_with_math_module();
+    let result = engine.eval("use math::nonexistent as x;");
+    assert!(result.is_err());
+    let err = result.unwrap_err().message;
+    assert!(err.contains("nonexistent"), "error should name the original member, got: {err}");
+    assert!(err.contains("not found in module"));
+}
+
+#[test]
+fn test_use_glob_alias_is_parse_error() {
+    // `use m::* as foo;` is not a valid form.
+    let mut engine = engine_with_math_module();
+    assert!(engine.eval("use math::* as foo;").is_err());
+}
+
 // --- Stdlib Modules ---
 
 #[test]

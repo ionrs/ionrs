@@ -400,13 +400,30 @@ pub enum UnaryOp {
     Not,
 }
 
+/// A single name imported by a `use` statement, optionally aliased.
+///
+/// `name` is the member to look up in the module dict; `alias` (when set)
+/// is the local binding name introduced into scope.
+#[derive(Debug, Clone)]
+pub struct ImportItem {
+    pub name: String,
+    pub alias: Option<String>,
+}
+
+impl ImportItem {
+    /// The local binding name: alias if present, otherwise the original name.
+    pub fn binding(&self) -> &str {
+        self.alias.as_deref().unwrap_or(&self.name)
+    }
+}
+
 /// What to import from a module path.
 #[derive(Debug, Clone)]
 pub enum UseImports {
-    /// `use path::*` — import all names
+    /// `use path::*` — import all names. Glob imports cannot be aliased.
     Glob,
-    /// `use path::{a, b, c}` — import specific names
-    Names(Vec<String>),
-    /// `use path::name` — import a single name (sugar for Names(vec![name]))
-    Single(String),
+    /// `use path::{a, b as c}` — import specific names, each optionally aliased.
+    Names(Vec<ImportItem>),
+    /// `use path::name` or `use path::name as alias` — import a single name.
+    Single(ImportItem),
 }

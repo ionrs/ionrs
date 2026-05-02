@@ -479,11 +479,18 @@ impl Parser {
                     span,
                 });
             } else if self.check(&Token::LBrace) {
-                // use path::{a, b, c}
+                // use path::{a, b as c, ...}
                 self.advance();
-                let mut names = Vec::new();
+                let mut items = Vec::new();
                 while !self.check(&Token::RBrace) && !self.is_at_end() {
-                    names.push(self.eat_ident()?);
+                    let name = self.eat_ident()?;
+                    let alias = if self.check(&Token::As) {
+                        self.advance();
+                        Some(self.eat_ident()?)
+                    } else {
+                        None
+                    };
+                    items.push(ImportItem { name, alias });
                     if !self.check(&Token::RBrace) {
                         self.eat(&Token::Comma)?;
                     }
@@ -493,7 +500,7 @@ impl Parser {
                 return Ok(Stmt {
                     kind: StmtKind::Use {
                         path,
-                        imports: UseImports::Names(names),
+                        imports: UseImports::Names(items),
                     },
                     span,
                 });
@@ -503,8 +510,7 @@ impl Parser {
             }
         }
 
-        // `use path::name;` — last segment is the imported name
-        self.eat(&Token::Semicolon)?;
+        // `use path::name;` or `use path::name as alias;` — last path segment is the imported name
         if path.len() < 2 {
             return Err(IonError::parse(
                 ion_str!("use statement requires at least module::name"),
@@ -513,10 +519,17 @@ impl Parser {
             ));
         }
         let name = path.pop().unwrap();
+        let alias = if self.check(&Token::As) {
+            self.advance();
+            Some(self.eat_ident()?)
+        } else {
+            None
+        };
+        self.eat(&Token::Semicolon)?;
         Ok(Stmt {
             kind: StmtKind::Use {
                 path,
-                imports: UseImports::Single(name),
+                imports: UseImports::Single(ImportItem { name, alias }),
             },
             span,
         })
