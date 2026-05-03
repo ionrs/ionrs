@@ -2035,9 +2035,10 @@ fn test_host_enum_match_unit_variant() {
 
 #[test]
 fn test_host_struct_display() {
-    // Phase 2: names are out of the binary, so Display is the opaque
-    // hash form `<struct#hhhh> { #fffff: ... }`. Sidecar (Phase 7)
-    // restores readable names. Field values still appear verbatim.
+    // Phase 7: in debug builds the `h!()` sites auto-register names, so
+    // Display renders readably. In release without a sidecar, the same
+    // value would print `<struct#hhhh> { #fffff: ... }`. Tests run in
+    // debug, so we assert the readable form.
     let mut engine = engine_with_types();
     let val = engine
         .eval(
@@ -2048,7 +2049,7 @@ fn test_host_struct_display() {
         )
         .unwrap();
     if let Value::Str(s) = &val {
-        assert!(s.contains("<struct#"), "got: {}", s);
+        assert!(s.contains("Config"), "got: {}", s);
         assert!(s.contains("localhost"), "got: {}", s);
     } else {
         panic!("expected string");
@@ -2057,15 +2058,10 @@ fn test_host_struct_display() {
 
 #[test]
 fn test_host_enum_display() {
-    // Phase 2: opaque form until sidecar restores `Color::Red`.
+    // Phase 7: debug-mode auto-registration restores `Color::Red`.
     let mut engine = engine_with_types();
     let val = engine.eval(r#"f"{Color::Red}""#).unwrap();
-    if let Value::Str(s) = &val {
-        assert!(s.starts_with("<enum#"), "got: {}", s);
-        assert!(s.contains("::<v#"), "got: {}", s);
-    } else {
-        panic!("expected string");
-    }
+    assert_eq!(val, Value::Str("Color::Red".into()));
 }
 
 #[test]

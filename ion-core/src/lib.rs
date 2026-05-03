@@ -120,6 +120,7 @@ pub mod error;
 pub mod hash;
 pub mod host_types;
 pub mod intern;
+pub mod names;
 pub mod interpreter;
 pub mod lexer;
 pub mod log;

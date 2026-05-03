@@ -46,19 +46,35 @@ pub const fn mix(a: u64, b: u64) -> u64 {
     h
 }
 
-/// Hash a string literal at compile time. Expands to a `const u64` so the
-/// literal text is dropped after macro expansion and only the integer
-/// survives in the compiled binary.
+/// Hash a string literal at compile time. Expands to a `u64` expression
+/// whose value is the FNV-1a hash of `$s` — the literal is folded by the
+/// compiler and does not survive in the **release** binary.
+///
+/// In **debug builds** (`cfg(debug_assertions)`), the macro additionally
+/// registers `(hash, $s)` with [`crate::names`] on first execution, via a
+/// per-site `Once`. This gives readable diagnostics in tests and dev
+/// builds without touching release performance or binary size — see
+/// `HIDE_NAMES_PLAN.md` §10.
+///
+/// **Const contexts:** the debug-build registration uses `Once::call_once`
+/// which is not `const`, so under `cfg(debug_assertions)` the macro cannot
+/// be used in `const`/`static` positions. Use [`crate::hash::h`] (the bare
+/// `const fn`) directly when a constant is required.
 ///
 /// ```
 /// use ion_core::h;
-/// const COLOR_HASH: u64 = h!("Color");
-/// assert_eq!(COLOR_HASH, ion_core::hash::h("Color"));
+/// let color_hash: u64 = h!("Color");
+/// assert_eq!(color_hash, ion_core::hash::h("Color"));
 /// ```
 #[macro_export]
 macro_rules! h {
     ($s:expr) => {{
         const __ION_HASH: u64 = $crate::hash::h($s);
+        #[cfg(debug_assertions)]
+        {
+            static __ION_REG: ::std::sync::Once = ::std::sync::Once::new();
+            __ION_REG.call_once(|| $crate::names::register(__ION_HASH, $s));
+        }
         __ION_HASH
     }};
 }
@@ -67,11 +83,25 @@ macro_rules! h {
 /// constructing the joined string. Equivalent to `h!(concat!(a, "::", b))`
 /// in observable output but computed via [`mix`] to avoid emitting the
 /// concatenated literal anywhere.
+///
+/// In debug builds, also registers `(qualified_hash, "mod::name")` with
+/// [`crate::names`] for readable diagnostics. The joined string is only
+/// constructed on the first call per site; release builds skip it entirely.
 #[macro_export]
 macro_rules! qh {
     ($mod:expr, $name:expr) => {{
         const __ION_QHASH: u64 =
             $crate::hash::mix($crate::hash::h($mod), $crate::hash::h($name));
+        #[cfg(debug_assertions)]
+        {
+            static __ION_REG: ::std::sync::Once = ::std::sync::Once::new();
+            __ION_REG.call_once(|| {
+                let joined: &'static str = ::std::boxed::Box::leak(
+                    format!("{}::{}", $mod, $name).into_boxed_str(),
+                );
+                $crate::names::register(__ION_QHASH, joined);
+            });
+        }
         __ION_QHASH
     }};
 }
@@ -89,9 +119,9 @@ mod tests {
     }
 
     #[test]
-    fn h_macro_is_const() {
-        const X: u64 = h!("Color");
-        assert_eq!(X, h("Color"));
+    fn h_macro_matches_const_fn() {
+        let x: u64 = h!("Color");
+        assert_eq!(x, h("Color"));
     }
 
     #[test]
@@ -121,7 +151,7 @@ mod tests {
 
     #[test]
     fn qh_matches_mix() {
-        const Q: u64 = qh!("math", "abs");
-        assert_eq!(Q, mix(h("math"), h("abs")));
+        let q: u64 = qh!("math", "abs");
+        assert_eq!(q, mix(h("math"), h("abs")));
     }
 }

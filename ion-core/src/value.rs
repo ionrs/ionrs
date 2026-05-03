@@ -380,17 +380,27 @@ impl fmt::Display for Value {
                 Err(e) => write!(f, "Err({})", e),
             },
             Value::Fn(func) => write!(f, "<fn {}>", func.name),
-            Value::BuiltinFn { qualified_hash, .. } => {
-                write!(f, "<builtin #{:016x}>", qualified_hash)
-            }
+            Value::BuiltinFn { qualified_hash, .. } => match crate::names::lookup(*qualified_hash) {
+                Some(name) => write!(f, "<builtin {}>", name),
+                None => write!(f, "<builtin #{:016x}>", qualified_hash),
+            },
             Value::BuiltinClosure { qualified_hash, .. } => {
-                write!(f, "<builtin #{:016x}>", qualified_hash)
+                match crate::names::lookup(*qualified_hash) {
+                    Some(name) => write!(f, "<builtin {}>", name),
+                    None => write!(f, "<builtin #{:016x}>", qualified_hash),
+                }
             }
             #[cfg(feature = "async-runtime")]
             Value::AsyncBuiltinClosure { qualified_hash, .. } => {
-                write!(f, "<async builtin #{:016x}>", qualified_hash)
+                match crate::names::lookup(*qualified_hash) {
+                    Some(name) => write!(f, "<async builtin {}>", name),
+                    None => write!(f, "<async builtin #{:016x}>", qualified_hash),
+                }
             }
-            Value::Module(table) => write!(f, "<module #{:016x}>", table.name_hash),
+            Value::Module(table) => match crate::names::lookup(table.name_hash) {
+                Some(name) => write!(f, "<module {}>", name),
+                None => write!(f, "<module #{:016x}>", table.name_hash),
+            },
             #[cfg(feature = "async-runtime")]
             Value::AsyncTask(_) => write!(f, "<AsyncTask>"),
             #[cfg(feature = "async-runtime")]
@@ -405,14 +415,21 @@ impl fmt::Display for Value {
                 crate::async_rt::ChannelEnd::Receiver(_) => write!(f, "<ChannelRx>"),
             },
             Value::HostStruct { type_hash, fields } => {
-                // Names are not in the binary; without a sidecar (Phase 7)
-                // we render the opaque hash form. See HIDE_NAMES_PLAN.md §10.
-                write!(f, "<struct#{:016x}> {{ ", type_hash)?;
+                // Names live only in the optional `names` registry; debug
+                // builds auto-populate it from h!() sites, release builds
+                // can load a sidecar — see HIDE_NAMES_PLAN.md §10.
+                match crate::names::lookup(*type_hash) {
+                    Some(name) => write!(f, "{} {{ ", name)?,
+                    None => write!(f, "<struct#{:016x}> {{ ", type_hash)?,
+                }
                 for (i, (k, v)) in fields.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "#{:016x}: {}", k, v)?;
+                    match crate::names::lookup(*k) {
+                        Some(name) => write!(f, "{}: {}", name, v)?,
+                        None => write!(f, "#{:016x}: {}", k, v)?,
+                    }
                 }
                 write!(f, " }}")
             }
@@ -421,7 +438,14 @@ impl fmt::Display for Value {
                 variant_hash,
                 data,
             } => {
-                write!(f, "<enum#{:016x}>::<v#{:016x}>", enum_hash, variant_hash)?;
+                match crate::names::lookup(*enum_hash) {
+                    Some(name) => write!(f, "{}::", name)?,
+                    None => write!(f, "<enum#{:016x}>::", enum_hash)?,
+                }
+                match crate::names::lookup(*variant_hash) {
+                    Some(name) => write!(f, "{}", name)?,
+                    None => write!(f, "<v#{:016x}>", variant_hash)?,
+                }
                 if !data.is_empty() {
                     write!(f, "(")?;
                     for (i, v) in data.iter().enumerate() {
@@ -555,12 +579,17 @@ impl Value {
                 serde_json::Value::Object(map)
             }
             Value::HostStruct { fields, .. } => {
-                // Hash-keyed; without sidecar names, emit hex-keyed object so
-                // round-trip and equality still work. Phase 7 sidecar restores
-                // human-readable field names.
+                // Use registered names when available; fall back to hex
+                // hash so the encoding stays lossless either way.
                 let obj: serde_json::Map<String, serde_json::Value> = fields
                     .iter()
-                    .map(|(k, v)| (format!("#{:016x}", k), v.to_json()))
+                    .map(|(k, v)| {
+                        let key = match crate::names::lookup(*k) {
+                            Some(name) => name.to_string(),
+                            None => format!("#{:016x}", k),
+                        };
+                        (key, v.to_json())
+                    })
                     .collect();
                 serde_json::Value::Object(obj)
             }
@@ -569,14 +598,18 @@ impl Value {
                 variant_hash,
                 data,
             } => {
+                let enum_str = match crate::names::lookup(*enum_hash) {
+                    Some(name) => name.to_string(),
+                    None => format!("#{:016x}", enum_hash),
+                };
+                let variant_str = match crate::names::lookup(*variant_hash) {
+                    Some(name) => name.to_string(),
+                    None => format!("#{:016x}", variant_hash),
+                };
                 let mut map = serde_json::Map::new();
                 map.insert(
-                    "_enum".to_string(),
-                    serde_json::Value::String(format!("#{:016x}", enum_hash)),
-                );
-                map.insert(
-                    "_variant".to_string(),
-                    serde_json::Value::String(format!("#{:016x}", variant_hash)),
+                    "_type".to_string(),
+                    serde_json::Value::String(format!("{}::{}", enum_str, variant_str)),
                 );
                 if !data.is_empty() {
                     map.insert(
