@@ -1,7 +1,7 @@
 <idea-plugin>
-    <id>com.ionlang.idea</id>
+    <id>com.ionrs.idea</id>
     <name>Ion Language</name>
-    <vendor email="support@ionlang.dev" url="https://github.com/chutuananh2k/ion-lang">ion-lang</vendor>
+    <vendor email="support@ionlang.dev" url="https://github.com/ionrs/ionrs">ionrs</vendor>
 
     <description><![CDATA[
         Syntax highlighting and LSP support for the Ion scripting language in JetBrains IDEs.
@@ -73,7 +73,7 @@
     <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
         <server id="ion-lsp"
                 name="Ion Language Server"
-                factoryClass="com.ionlang.idea.lsp.IonLanguageServerFactory">
+                factoryClass="com.ionrs.idea.lsp.IonLanguageServerFactory">
             <description><![CDATA[
                 Spawns the external <code>ion-lsp</code> binary configured under
                 <i>Settings | Languages &amp; Frameworks | Ion</i>.
@@ -86,19 +86,19 @@
     <extensions defaultExtensionNs="com.intellij">
         <fileType name="Ion"
                   language="Ion"
-                  implementationClass="com.ionlang.idea.IonFileType"
+                  implementationClass="com.ionrs.idea.IonFileType"
                   fieldName="INSTANCE"
                   extensions="ion"/>
         <lang.syntaxHighlighterFactory
             language="Ion"
-            implementationClass="com.ionlang.idea.highlighting.IonSyntaxHighlighterFactory"/>
-        <postStartupActivity implementation="com.ionlang.idea.IonStartupActivity"/>
-        <textmate.bundleProvider implementation="com.ionlang.idea.IonTextMateBundleProvider"/>
-        <applicationService serviceImplementation="com.ionlang.idea.settings.IonSettings"/>
+            implementationClass="com.ionrs.idea.highlighting.IonSyntaxHighlighterFactory"/>
+        <postStartupActivity implementation="com.ionrs.idea.IonStartupActivity"/>
+        <textmate.bundleProvider implementation="com.ionrs.idea.IonTextMateBundleProvider"/>
+        <applicationService serviceImplementation="com.ionrs.idea.settings.IonSettings"/>
         <applicationConfigurable
             parentId="language"
-            id="com.ionlang.idea.settings.IonConfigurable"
-            instance="com.ionlang.idea.settings.IonConfigurable"
+            id="com.ionrs.idea.settings.IonConfigurable"
+            instance="com.ionrs.idea.settings.IonConfigurable"
             displayName="Ion"/>
     </extensions>
 </idea-plugin>

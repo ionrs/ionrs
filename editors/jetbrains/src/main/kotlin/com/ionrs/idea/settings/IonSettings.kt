@@ -1,4 +1,4 @@
-package com.ionlang.idea.settings
+package com.ionrs.idea.settings
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
@@ -9,7 +9,7 @@ import com.intellij.util.xmlb.XmlSerializerUtil
 
 @State(
     name = "IonSettings",
-    storages = [Storage("ion-lang.xml")],
+    storages = [Storage("ionrs.xml")],
 )
 @Service(Service.Level.APP)
 class IonSettings : PersistentStateComponent<IonSettings> {

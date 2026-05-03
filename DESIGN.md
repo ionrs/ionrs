@@ -905,7 +905,7 @@ All phases are complete.
 ## 17. Project Structure
 
 ```
-ionlang/
+ionrs/
 ├── Cargo.toml               # workspace
 ├── ion-core/
 │   └── src/

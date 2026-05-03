@@ -1,7 +1,7 @@
-package com.ionlang.idea.highlighting
+package com.ionrs.idea.highlighting
 
 import com.intellij.psi.tree.IElementType
-import com.ionlang.idea.IonLanguage
+import com.ionrs.idea.IonLanguage
 
 object IonTokenTypes {
     @JvmField val COMMENT = IElementType("ION_COMMENT", IonLanguage)

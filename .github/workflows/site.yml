@@ -92,7 +92,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build ion CLI
-        run: cargo build -p ionlang-cli --release
+        run: cargo build -p ionrs-cli --release
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}

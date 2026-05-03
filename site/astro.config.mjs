@@ -28,13 +28,13 @@ const gitDescribe = (() => {
   }
 })();
 
-// Public docs site — deployed to https://chutuananh2k.github.io/ion-lang/.
+// Public docs site — deployed to https://ionrs.github.io/ionrs/.
 // `base` matters: every internal link must be prefixed with it. Use the
 // Astro-provided `<a href={import.meta.env.BASE_URL + "..."}>` helpers, or
 // Starlight's relative-link resolution which already accounts for it.
 export default defineConfig({
-  site: "https://chutuananh2k.github.io",
-  base: "/ion-lang/",
+  site: "https://ionrs.github.io",
+  base: "/ionrs/",
   trailingSlash: "always",
   integrations: [
     starlight({
@@ -45,12 +45,12 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/chutuananh2k/ion-lang",
+          href: "https://github.com/ionrs/ionrs",
         },
       ],
       editLink: {
         baseUrl:
-          "https://github.com/chutuananh2k/ion-lang/edit/main/site/",
+          "https://github.com/ionrs/ionrs/edit/main/site/",
       },
       lastUpdated: true,
       components: {

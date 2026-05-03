@@ -1,8 +1,8 @@
-package com.ionlang.idea.lsp
+package com.ionrs.idea.lsp
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.diagnostic.Logger
-import com.ionlang.idea.settings.IonSettings
+import com.ionrs.idea.settings.IonSettings
 import com.redhat.devtools.lsp4ij.server.CannotStartProcessException
 import com.redhat.devtools.lsp4ij.server.ProcessStreamConnectionProvider
 import java.io.File

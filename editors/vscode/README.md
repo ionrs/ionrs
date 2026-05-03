@@ -1,6 +1,6 @@
 # Ion Language for VS Code
 
-Syntax highlighting and language server support for [Ion](https://github.com/chutuananh2k/ion-lang), an embeddable scripting language.
+Syntax highlighting and language server support for [Ion](https://github.com/ionrs/ionrs), an embeddable scripting language.
 
 ## Features
 
@@ -30,7 +30,7 @@ Install the extension — syntax highlighting works immediately with no addition
 Build and install the LSP server:
 
 ```bash
-cd ion-lang
+cd ionrs
 cargo install --path ion-lsp
 ```
 
@@ -65,7 +65,7 @@ To disable the LSP (syntax highlighting still works):
 ## Install from .vsix
 
 ```bash
-code --install-extension ion-lang-0.7.7.vsix
+code --install-extension ionrs-0.7.7.vsix
 ```
 
 ## Development
@@ -81,6 +81,6 @@ Press F5 in VS Code to launch an Extension Development Host for testing.
 ### Packaging
 
 ```bash
-npm run package    # produces ion-lang-<version>.vsix with prod deps bundled
+npm run package    # produces ionrs-<version>.vsix with prod deps bundled
 npm install        # restore dev deps for further development
 ```

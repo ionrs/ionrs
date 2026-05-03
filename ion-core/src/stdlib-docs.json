@@ -1,8 +1,8 @@
 {
   "ionDocVersion": 2,
   "profile": "ion-stdlib",
-  "homepage": "https://chutuananh2k.github.io/ion-lang/",
-  "repository": "https://github.com/chutuananh2k/ion-lang",
+  "homepage": "https://ionrs.github.io/ionrs/",
+  "repository": "https://github.com/ionrs/ionrs",
   "license": "MIT",
   "categories": ["language", "stdlib"],
   "modules": [

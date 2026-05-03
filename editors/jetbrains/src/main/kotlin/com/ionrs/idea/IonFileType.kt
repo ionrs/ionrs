@@ -1,4 +1,4 @@
-package com.ionlang.idea
+package com.ionrs.idea
 
 import com.intellij.openapi.fileTypes.LanguageFileType
 import javax.swing.Icon

@@ -1,4 +1,4 @@
-package com.ionlang.idea.highlighting
+package com.ionrs.idea.highlighting
 
 import com.intellij.lexer.Lexer
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors

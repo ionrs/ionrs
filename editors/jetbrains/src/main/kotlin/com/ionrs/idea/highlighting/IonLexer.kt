@@ -1,4 +1,4 @@
-package com.ionlang.idea.highlighting
+package com.ionrs.idea.highlighting
 
 import com.intellij.lexer.LexerBase
 import com.intellij.psi.TokenType

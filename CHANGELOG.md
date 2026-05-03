@@ -3,7 +3,7 @@
 All notable changes to the Ion language and its tooling are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project follows [SemVer](https://semver.org/) for the published crates
-(`ion-derive`, `ion-core`, `ionlang-cli`, `ion-lsp`).
+(`ion-derive`, `ion-core`, `ionrs-cli`, `ion-lsp`).
 
 Editor extensions track their own version numbers under each entry.
 
@@ -25,7 +25,7 @@ Editor extensions track their own version numbers under each entry.
   `examples`, and `since` fields; and top-level optional `homepage`,
   `repository`, `license`, and `categories` for package metadata. v1
   manifests continue to load unchanged. v3+ rejected.
-- **`ion --check <file|->` parse-only mode** in `ionlang-cli`. Lex and
+- **`ion --check <file|->` parse-only mode** in `ionrs-cli`. Lex and
   parse a script (or stdin) without evaluating; exits non-zero with all
   parse errors on stderr. Used by the docs-site CI to verify `.ion` code
   blocks compile.
@@ -375,12 +375,12 @@ Editor extensions track their own version numbers under each entry.
 - Initial `ion-lsp` with definitions, document symbols, completion, hover,
   diagnostics.
 
-[Unreleased]: https://github.com/chutuananh2k/ion-lang/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/chutuananh2k/ion-lang/compare/v0.3.0...v0.4.0
-[0.3.2]: https://github.com/chutuananh2k/ion-lang/compare/v0.3.0...v0.3.2
-[0.3.1]: https://github.com/chutuananh2k/ion-lang/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/chutuananh2k/ion-lang/compare/v0.2.0...v0.3.0
-[0.2.3]: https://github.com/chutuananh2k/ion-lang/compare/v0.2.0...v0.2.3
-[0.2.2]: https://github.com/chutuananh2k/ion-lang/compare/v0.2.0...v0.2.2
-[0.2.0]: https://github.com/chutuananh2k/ion-lang/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/chutuananh2k/ion-lang/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ionrs/ionrs/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ionrs/ionrs/compare/v0.3.0...v0.4.0
+[0.3.2]: https://github.com/ionrs/ionrs/compare/v0.3.0...v0.3.2
+[0.3.1]: https://github.com/ionrs/ionrs/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/ionrs/ionrs/compare/v0.2.0...v0.3.0
+[0.2.3]: https://github.com/ionrs/ionrs/compare/v0.2.0...v0.2.3
+[0.2.2]: https://github.com/ionrs/ionrs/compare/v0.2.0...v0.2.2
+[0.2.0]: https://github.com/ionrs/ionrs/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ionrs/ionrs/releases/tag/v0.1.0

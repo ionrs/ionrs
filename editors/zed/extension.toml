@@ -3,14 +3,14 @@ name = "Ion"
 description = "Ion language support for Zed — syntax highlighting and LSP integration."
 version = "0.7.2"
 schema_version = 1
-authors = ["chutuananh2k <https://github.com/chutuananh2k>"]
-repository = "https://github.com/chutuananh2k/ion-lang"
+authors = ["ionrs <https://github.com/ionrs>"]
+repository = "https://github.com/ionrs/ionrs"
 
 [language_servers.ion-lsp]
 name = "Ion LSP"
 languages = ["Ion"]
 
 [grammars.ion]
-repository = "https://github.com/chutuananh2k/ion-lang"
+repository = "https://github.com/ionrs/ionrs"
 rev = "8ebb5f574a8c26cde0769293e2ae6f23fb81696c"
 path = "tree-sitter-ion"

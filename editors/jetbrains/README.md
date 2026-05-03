@@ -106,7 +106,7 @@ jetbrains/
 ├── settings.gradle.kts
 ├── gradle.properties
 └── src/main/
-    ├── kotlin/com/ionlang/idea/
+    ├── kotlin/com/ionrs/idea/
     │   ├── IonTextMateBundleProvider.kt   register the bundled grammar
     │   ├── lsp/
     │   │   ├── IonLanguageServer.kt       spawn ion-lsp

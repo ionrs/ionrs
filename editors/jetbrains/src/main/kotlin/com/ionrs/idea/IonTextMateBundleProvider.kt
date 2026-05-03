@@ -1,4 +1,4 @@
-package com.ionlang.idea
+package com.ionrs.idea
 
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.diagnostic.Logger
@@ -22,7 +22,7 @@ class IonTextMateBundleProvider : TextMateBundleProvider {
     }
 
     private fun extractBundle(): Path? {
-        val target = Path.of(PathManager.getSystemPath(), "ion-lang", "ion-bundle")
+        val target = Path.of(PathManager.getSystemPath(), "ionrs", "ion-bundle")
         return try {
             Files.createDirectories(target.resolve("Syntaxes"))
             Files.createDirectories(target.resolve("Preferences"))

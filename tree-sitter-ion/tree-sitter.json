@@ -16,11 +16,11 @@
     "description": "Tree-sitter grammar for the Ion programming language",
     "authors": [
       {
-        "name": "chutuananh2k"
+        "name": "ionrs"
       }
     ],
     "links": {
-      "repository": "https://github.com/chutuananh2k/ion-lang"
+      "repository": "https://github.com/ionrs/ionrs"
     }
   },
   "bindings": {

@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:4321/ion-lang/>. The dev server hot-reloads on
+Open <http://localhost:4321/ionrs/>. The dev server hot-reloads on
 file changes.
 
 `npm run build` produces a static site in `site/dist/`. `npm run preview`
@@ -76,7 +76,7 @@ CI runs `node site/scripts/check-ion-snippets.mjs` against every
 `ion --check`, the build fails. To check locally:
 
 ```bash
-cargo build -p ionlang-cli --release
+cargo build -p ionrs-cli --release
 node site/scripts/check-ion-snippets.mjs
 ```
 

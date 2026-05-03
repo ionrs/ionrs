@@ -19,7 +19,7 @@ const ionBin =
 
 if (!exists(ionBin)) {
   console.error(`check-ion-snippets: missing binary: ${ionBin}`);
-  console.error("Build it with: cargo build -p ionlang-cli --release");
+  console.error("Build it with: cargo build -p ionrs-cli --release");
   process.exit(2);
 }
 

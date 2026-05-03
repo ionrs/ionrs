@@ -1,4 +1,4 @@
-package com.ionlang.idea.settings
+package com.ionrs.idea.settings
 
 import com.intellij.openapi.options.Configurable
 import com.intellij.ui.components.JBCheckBox

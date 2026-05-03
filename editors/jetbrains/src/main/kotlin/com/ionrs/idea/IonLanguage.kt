@@ -1,4 +1,4 @@
-package com.ionlang.idea
+package com.ionrs.idea
 
 import com.intellij.lang.Language
 

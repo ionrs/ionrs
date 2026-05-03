@@ -1,4 +1,4 @@
-package com.ionlang.idea.highlighting
+package com.ionrs.idea.highlighting
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.SyntaxHighlighter

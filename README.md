@@ -271,7 +271,7 @@ cargo run --bin ion-cli              # start REPL
 
 ## Documentation
 
-The full documentation site is at **<https://chutuananh2k.github.io/ion-lang/>** —
+The full documentation site is at **<https://ionrs.github.io/ionrs/>** —
 prose guides, the complete language reference, a manifest-driven stdlib
 browser (the same one the LSP reads for hover and completion), and runnable
 examples.

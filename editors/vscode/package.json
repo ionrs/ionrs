@@ -1,13 +1,13 @@
 {
-  "name": "ion-lang",
+  "name": "ionrs",
   "displayName": "Ion Language",
   "description": "Syntax highlighting and LSP support for the Ion scripting language",
   "version": "0.7.7",
-  "publisher": "ionlang",
+  "publisher": "ionrs",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chutuananh2k/ion-lang"
+    "url": "https://github.com/ionrs/ionrs"
   },
   "engines": {
     "vscode": "^1.75.0"

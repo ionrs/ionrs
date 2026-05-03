@@ -1,10 +1,10 @@
 [package]
-name = "ionlang-cli"
+name = "ionrs-cli"
 version = "0.7.0"
 edition = "2021"
 description = "CLI runner and REPL for the Ion scripting language"
 license = "MIT"
-repository = "https://github.com/chutuananh2k/ion-lang"
+repository = "https://github.com/ionrs/ionrs"
 readme = "../README.md"
 keywords = ["scripting", "repl", "ion"]
 categories = ["command-line-utilities"]

@@ -37,10 +37,10 @@ info "Running tests..."
 cargo test --quiet 2>&1
 ok "All tests pass"
 
-# Publish order: ion-derive → ion-core → ionlang-cli, ion-lsp
+# Publish order: ion-derive → ion-core → ionrs-cli, ion-lsp
 # Each crate must be available on crates.io before dependents can publish.
 
-CRATES=("ion-derive" "ion-core" "ionlang-cli" "ion-lsp")
+CRATES=("ion-derive" "ion-core" "ionrs-cli" "ion-lsp")
 WAIT_SECS=30
 
 for i in "${!CRATES[@]}"; do
@@ -65,8 +65,8 @@ echo ""
 info "All crates published!"
 echo "  https://crates.io/crates/ion-derive"
 echo "  https://crates.io/crates/ion-core"
-echo "  https://crates.io/crates/ionlang-cli"
+echo "  https://crates.io/crates/ionrs-cli"
 echo "  https://crates.io/crates/ion-lsp"
 echo ""
-echo "  Install: cargo install ionlang-cli"
+echo "  Install: cargo install ionrs-cli"
 echo "  LSP:     cargo install ion-lsp"

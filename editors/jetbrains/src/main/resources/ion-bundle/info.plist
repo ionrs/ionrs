@@ -9,6 +9,6 @@
     <key>description</key>
     <string>Ion script language support</string>
     <key>contactName</key>
-    <string>ion-lang</string>
+    <string>ionrs</string>
 </dict>
 </plist>

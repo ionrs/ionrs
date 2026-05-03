@@ -1,4 +1,4 @@
-package com.ionlang.idea.lsp
+package com.ionrs.idea.lsp
 
 import com.intellij.openapi.project.Project
 import com.redhat.devtools.lsp4ij.LanguageServerFactory
