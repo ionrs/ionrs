@@ -49,6 +49,30 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
     let field_hashes: Vec<u64> = field_name_strs.iter().map(|s| h(s)).collect();
     let type_hash: u64 = h(name_str);
 
+    // Debug-build name registration: pairs the type hash and each field's
+    // hash with its source-form string in `ion_core::names`, so Display and
+    // diagnostic output render readably without a sidecar. Gated on
+    // `cfg(debug_assertions)` of the *user* crate, so release builds
+    // contain neither the literal strings nor the registration call.
+    let register_pairs = std::iter::once(quote! { (#type_hash, #name_str) })
+        .chain(
+            field_hashes
+                .iter()
+                .zip(field_name_strs.iter())
+                .map(|(fh, fname)| quote! { (#fh, #fname) }),
+        );
+    let register_names_block = quote! {
+        #[cfg(debug_assertions)]
+        {
+            static __ION_REG: ::std::sync::Once = ::std::sync::Once::new();
+            __ION_REG.call_once(|| {
+                ion_core::names::register_many([
+                    #(#register_pairs),*
+                ]);
+            });
+        }
+    };
+
     let to_ion_fields = field_names.iter().zip(field_hashes.iter()).map(|(ident, fh)| {
         quote! {
             fields.insert(#fh, ion_core::host_types::IonType::to_ion(&self.#ident));
@@ -73,6 +97,7 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
     let expanded = quote! {
         impl ion_core::host_types::IonType for #name {
             fn to_ion(&self) -> ion_core::value::Value {
+                #register_names_block
                 let mut fields: indexmap::IndexMap<u64, ion_core::value::Value> =
                     indexmap::IndexMap::new();
                 #(#to_ion_fields)*
@@ -96,6 +121,7 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
             }
 
             fn ion_type_def() -> ion_core::host_types::IonTypeDef {
+                #register_names_block
                 ion_core::host_types::IonTypeDef::Struct(
                     ion_core::host_types::HostStructDef {
                         name_hash: #type_hash,
@@ -123,6 +149,28 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
     }
 
     let type_hash: u64 = h(name_str);
+
+    // Debug-build name registration: emit (type_hash, name_str) plus one
+    // pair per variant. Same scheme as derive_struct above — gated on
+    // cfg(debug_assertions) of the user crate so release builds drop both
+    // the literal strings and the registration call.
+    let variant_register_pairs = variants.iter().map(|v| {
+        let vname = v.ident.to_string();
+        let vh = h(&vname);
+        quote! { (#vh, #vname) }
+    });
+    let register_names_block = quote! {
+        #[cfg(debug_assertions)]
+        {
+            static __ION_REG: ::std::sync::Once = ::std::sync::Once::new();
+            __ION_REG.call_once(|| {
+                ion_core::names::register_many([
+                    (#type_hash, #name_str),
+                    #(#variant_register_pairs),*
+                ]);
+            });
+        }
+    };
 
     // ion_type_def: variant definitions
     let variant_defs = variants.iter().map(|v| {
@@ -213,6 +261,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
     let expanded = quote! {
         impl ion_core::host_types::IonType for #name {
             fn to_ion(&self) -> ion_core::value::Value {
+                #register_names_block
                 match self {
                     #(#to_ion_arms)*
                 }
@@ -233,6 +282,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
             }
 
             fn ion_type_def() -> ion_core::host_types::IonTypeDef {
+                #register_names_block
                 ion_core::host_types::IonTypeDef::Enum(
                     ion_core::host_types::HostEnumDef {
                         name_hash: #type_hash,

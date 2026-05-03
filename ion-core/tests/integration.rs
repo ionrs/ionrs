@@ -2071,6 +2071,74 @@ fn test_unregistered_type_error() {
     assert!(err.message.contains("unknown type"), "got: {}", err.message);
 }
 
+/// Regression test for an earlier audit finding: `TypeRegistry`'s collision
+/// detection was a tautological `assert_eq!` of two values that were equal
+/// by HashMap construction. Re-registering the same shape must succeed
+/// silently (idempotent) but a colliding definition must panic.
+#[test]
+fn test_register_same_struct_twice_is_idempotent() {
+    let mut engine = Engine::new();
+    engine.register_struct(HostStructDef {
+        name_hash: h!("Idem"),
+        fields: vec![h!("a"), h!("b")],
+    });
+    // Same shape, different cloned definition — must not panic.
+    engine.register_struct(HostStructDef {
+        name_hash: h!("Idem"),
+        fields: vec![h!("a"), h!("b")],
+    });
+    let val = engine.eval(r#"Idem { a: 1, b: 2 }"#).unwrap();
+    assert!(matches!(val, Value::HostStruct { .. }));
+}
+
+#[test]
+#[should_panic(expected = "registered shape differs")]
+fn test_register_struct_collision_panics() {
+    let mut engine = Engine::new();
+    engine.register_struct(HostStructDef {
+        name_hash: h!("Collide"),
+        fields: vec![h!("x")],
+    });
+    // Same name_hash, different field set — collision must panic.
+    engine.register_struct(HostStructDef {
+        name_hash: h!("Collide"),
+        fields: vec![h!("y"), h!("z")],
+    });
+}
+
+/// Phase 7 audit fix: derived types must auto-register their identifier
+/// names with `ion_core::names` in debug builds, even when the host
+/// never calls `h!()` directly with the same literal. Without the fix,
+/// Display'd derived values rendered the opaque hash form even under
+/// `cargo test`.
+#[test]
+fn test_derive_auto_registers_names_in_debug_builds() {
+    use ion_core::host_types::IonType;
+    // First touch via to_ion — drives the derive's debug-only Once.
+    let p = Point { x: 1.0, y: 2.0 };
+    let _ = p.to_ion();
+    // Names should now be in the registry (no h!("Point") in this test).
+    assert_eq!(
+        ion_core::names::lookup(ion_core::hash::h("Point")),
+        Some("Point"),
+    );
+    assert_eq!(
+        ion_core::names::lookup(ion_core::hash::h("x")),
+        Some("x"),
+    );
+
+    // Same for an enum touched via to_ion.
+    let _ = Shape::Circle(1.0).to_ion();
+    assert_eq!(
+        ion_core::names::lookup(ion_core::hash::h("Shape")),
+        Some("Shape"),
+    );
+    assert_eq!(
+        ion_core::names::lookup(ion_core::hash::h("Circle")),
+        Some("Circle"),
+    );
+}
+
 // ============================================================
 // Section 30: Extended Stdlib
 // ============================================================

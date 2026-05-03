@@ -52,6 +52,19 @@ pub struct HostEnumDef {
     pub variants: Vec<HostVariantDef>,
 }
 
+/// True iff two variant lists are identical in name hashes and arities.
+/// Used by `TypeRegistry::register_enum` to distinguish a benign re-register
+/// (same enum, same variants) from a hash collision (same name hash but
+/// different variant set).
+fn shape_matches(a: &[HostVariantDef], b: &[HostVariantDef]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b)
+        .all(|(x, y)| x.name_hash == y.name_hash && x.arity == y.arity)
+}
+
 /// Registry of host-provided types available to scripts. Lookup by hash;
 /// no string keys live in the registry at runtime.
 #[derive(Debug, Clone, Default)]
@@ -66,24 +79,33 @@ impl TypeRegistry {
     }
 
     /// Register a struct definition. Panics on hash collision with an
-    /// already-registered struct (see HIDE_NAMES_PLAN.md §11).
+    /// already-registered struct (see HIDE_NAMES_PLAN.md §11). Re-registering
+    /// the same `T` (same shape) is permitted and replaces silently — common
+    /// when an embedder calls `Engine::register_type::<T>()` more than once.
     pub fn register_struct(&mut self, def: HostStructDef) {
-        if let Some(existing) = self.structs.insert(def.name_hash, def.clone()) {
-            assert_eq!(
-                existing.name_hash, def.name_hash,
-                "internal: struct hash collision detected at registration"
+        if let Some(existing) = self.structs.get(&def.name_hash) {
+            assert!(
+                existing.fields == def.fields,
+                "internal: struct hash collision at #{:016x}: \
+                 registered shape differs from incoming definition",
+                def.name_hash
             );
         }
+        self.structs.insert(def.name_hash, def);
     }
 
-    /// Register an enum definition. Panics on hash collision.
+    /// Register an enum definition. Panics on hash collision with an
+    /// already-registered enum that has a different variant set.
     pub fn register_enum(&mut self, def: HostEnumDef) {
-        if let Some(existing) = self.enums.insert(def.name_hash, def.clone()) {
-            assert_eq!(
-                existing.name_hash, def.name_hash,
-                "internal: enum hash collision detected at registration"
+        if let Some(existing) = self.enums.get(&def.name_hash) {
+            assert!(
+                shape_matches(&existing.variants, &def.variants),
+                "internal: enum hash collision at #{:016x}: \
+                 registered variants differ from incoming definition",
+                def.name_hash
             );
         }
+        self.enums.insert(def.name_hash, def);
     }
 
     /// Construct a host struct value from pre-hashed field-name → value
