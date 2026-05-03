@@ -1,8 +1,10 @@
 use ion_core::engine::Engine;
+use ion_core::lexer::Lexer;
+use ion_core::parser::Parser;
 use ion_core::stdlib::StdOutput;
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -30,14 +32,23 @@ fn main() {
                 eprintln!("--vm flag is unavailable: built without the `vm` feature");
                 std::process::exit(1);
             }
+        } else if arg == "--check" {
+            // Parse-only mode. Lex + parse the source and report errors;
+            // never evaluate. Used by the docs-site CI to verify `.ion`
+            // code blocks compile.
+            //   ion --check <file>   parse from a file
+            //   ion --check -        parse from stdin
+            i += 1;
+            let target = args.get(i).map(String::as_str);
+            std::process::exit(check_source(target));
         } else if !arg.starts_with('-') {
             script_path = Some(arg.clone());
         } else {
             eprintln!("Unknown flag: {}", arg);
             #[cfg(feature = "vm")]
-            eprintln!("Usage: ion [--vm] [script.ion [args...]]");
+            eprintln!("Usage: ion [--vm] [script.ion [args...]] | ion --check <file|->");
             #[cfg(not(feature = "vm"))]
-            eprintln!("Usage: ion [script.ion [args...]]");
+            eprintln!("Usage: ion [script.ion [args...]] | ion --check <file|->");
             std::process::exit(1);
         }
         i += 1;
@@ -47,6 +58,46 @@ fn main() {
         Some(path) => run_file(&path, use_vm, script_args),
         None => run_repl(use_vm),
     }
+}
+
+fn check_source(target: Option<&str>) -> i32 {
+    let (source, label) = match target {
+        Some("-") => {
+            let mut buf = String::new();
+            if let Err(e) = io::stdin().read_to_string(&mut buf) {
+                eprintln!("ion --check: failed reading stdin: {e}");
+                return 1;
+            }
+            (buf, "<stdin>".to_string())
+        }
+        Some(path) => match fs::read_to_string(path) {
+            Ok(s) => (s, path.to_string()),
+            Err(e) => {
+                eprintln!("ion --check: cannot read {path}: {e}");
+                return 1;
+            }
+        },
+        None => {
+            eprintln!("ion --check: missing argument (file path or `-` for stdin)");
+            return 1;
+        }
+    };
+
+    let tokens = match Lexer::new(&source).tokenize() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("{label}: lex error: {e}");
+            return 1;
+        }
+    };
+    let output = Parser::new(tokens).parse_program_recovering();
+    if !output.errors.is_empty() {
+        for err in &output.errors {
+            eprintln!("{label}: {err}");
+        }
+        return 1;
+    }
+    0
 }
 
 fn run_file(path: &str, use_vm: bool, script_args: Vec<String>) {

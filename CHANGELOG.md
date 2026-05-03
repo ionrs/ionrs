@@ -9,6 +9,38 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-03
+
+### Added
+- **Canonical stdlib doc manifest in `ion-core`.** New
+  `ion_core::STDLIB_DOCS_JSON` constant — a complete `IonDocManifest`
+  (schema v2) describing every global builtin, built-in type, type-method,
+  and stdlib-module function/constant. Embedded via `include_str!` so it
+  ships with every build. Single source of truth for the LSP and the
+  forthcoming documentation site; eliminates drift between editor tooltips
+  and published docs.
+- **`IonDocManifest` schema v2** in `ion-lsp`. Adds member kinds
+  `method`, `type`, and `builtin` (alongside the existing `function` and
+  `constant`); per-member optional `receiver`, `methods`, `variants`,
+  `examples`, and `since` fields; and top-level optional `homepage`,
+  `repository`, `license`, and `categories` for package metadata. v1
+  manifests continue to load unchanged. v3+ rejected.
+- **`ion --check <file|->` parse-only mode** in `ionlang-cli`. Lex and
+  parse a script (or stdin) without evaluating; exits non-zero with all
+  parse errors on stderr. Used by the docs-site CI to verify `.ion` code
+  blocks compile.
+
+### Changed
+- **`ion-lsp` `DocCatalog::builtins()` is now manifest-driven.** The
+  hardcoded `BUILTINS` / `METHODS` / `TYPES` / per-module member tables
+  (~1000 lines) have been replaced by a single call that parses
+  `ion_core::STDLIB_DOCS_JSON`. Hover, completion, and module overviews
+  see the same data they always did — but adding or fixing a stdlib doc
+  string is now a one-file change.
+
+### Editor extensions
+- No editor extension changes in this release.
+
 ## [0.7.7] — 2026-05-03
 
 ### Fixed

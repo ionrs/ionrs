@@ -412,1103 +412,12 @@ fn line_range(line: u32, line_text: &str, start_byte: usize, end_byte: usize) ->
     }
 }
 
-// ---- Builtins ----
-
-struct BuiltinInfo {
-    name: &'static str,
-    signature: &'static str,
-    description: &'static str,
-}
-
-const BUILTINS: &[BuiltinInfo] = &[
-    BuiltinInfo {
-        name: "len",
-        signature: "len(x)",
-        description: "Length of list, string, dict, or bytes",
-    },
-    BuiltinInfo {
-        name: "range",
-        signature: "range(n) / range(start, end)",
-        description: "Create a range [0..n) or [start..end)",
-    },
-    BuiltinInfo {
-        name: "enumerate",
-        signature: "enumerate(list)",
-        description: "List of (index, value) tuples",
-    },
-    BuiltinInfo {
-        name: "type_of",
-        signature: "type_of(x)",
-        description: "Returns type name as string",
-    },
-    BuiltinInfo {
-        name: "str",
-        signature: "str(x)",
-        description: "Convert to string",
-    },
-    BuiltinInfo {
-        name: "int",
-        signature: "int(x)",
-        description: "Convert to int",
-    },
-    BuiltinInfo {
-        name: "float",
-        signature: "float(x)",
-        description: "Convert to float",
-    },
-    BuiltinInfo {
-        name: "bytes",
-        signature: "bytes() / bytes(list) / bytes(string) / bytes(n)",
-        description: "Create bytes",
-    },
-    BuiltinInfo {
-        name: "bytes_from_hex",
-        signature: "bytes_from_hex(string)",
-        description: "Bytes from hex string",
-    },
-    BuiltinInfo {
-        name: "assert",
-        signature: "assert(cond) / assert(cond, msg)",
-        description: "Error if condition is false",
-    },
-    BuiltinInfo {
-        name: "assert_eq",
-        signature: "assert_eq(a, b) / assert_eq(a, b, msg)",
-        description: "Error if values are not equal",
-    },
-    BuiltinInfo {
-        name: "channel",
-        signature: "channel(buffer_size)",
-        description: "Create a buffered channel (tx, rx)",
-    },
-    BuiltinInfo {
-        name: "set",
-        signature: "set() / set(list)",
-        description: "Create a set from a list (deduplicates elements)",
-    },
-    BuiltinInfo {
-        name: "cell",
-        signature: "cell(value)",
-        description: "Create a mutable reference cell for shared closure state",
-    },
-    BuiltinInfo {
-        name: "sleep",
-        signature: "sleep(ms)",
-        description: "Sleep for given milliseconds (requires concurrency feature)",
-    },
-    BuiltinInfo {
-        name: "timeout",
-        signature: "timeout(ms, fn)",
-        description: "Run function with time limit, returns Option (Some or None on timeout)",
-    },
-];
-
 const KEYWORDS: &[&str] = &[
     "let", "mut", "fn", "if", "else", "while", "for", "loop", "break", "continue", "return",
     "match", "in", "true", "false", "None", "Some", "Ok", "Err", "async", "spawn", "select", "try",
     "catch", "use",
 ];
 
-// ---- Methods (shared by hover and completion) ----
-
-struct MethodInfo {
-    name: &'static str,
-    signature: &'static str,
-    doc: &'static str,
-}
-
-const METHODS: &[MethodInfo] = &[
-    // String methods
-    MethodInfo {
-        name: "len",
-        signature: "len()",
-        doc: "Length",
-    },
-    MethodInfo {
-        name: "is_empty",
-        signature: "is_empty()",
-        doc: "True if empty",
-    },
-    MethodInfo {
-        name: "contains",
-        signature: "contains(sub)",
-        doc: "Contains substring/element",
-    },
-    MethodInfo {
-        name: "starts_with",
-        signature: "starts_with(prefix)",
-        doc: "Starts with prefix",
-    },
-    MethodInfo {
-        name: "ends_with",
-        signature: "ends_with(suffix)",
-        doc: "Ends with suffix",
-    },
-    MethodInfo {
-        name: "trim",
-        signature: "trim()",
-        doc: "Strip whitespace",
-    },
-    MethodInfo {
-        name: "trim_start",
-        signature: "trim_start()",
-        doc: "Trim leading whitespace",
-    },
-    MethodInfo {
-        name: "trim_end",
-        signature: "trim_end()",
-        doc: "Trim trailing whitespace",
-    },
-    MethodInfo {
-        name: "split",
-        signature: "split(delim)",
-        doc: "Split by delimiter",
-    },
-    MethodInfo {
-        name: "replace",
-        signature: "replace(from, to)",
-        doc: "Replace occurrences",
-    },
-    MethodInfo {
-        name: "to_upper",
-        signature: "to_upper()",
-        doc: "Uppercase",
-    },
-    MethodInfo {
-        name: "to_lower",
-        signature: "to_lower()",
-        doc: "Lowercase",
-    },
-    MethodInfo {
-        name: "chars",
-        signature: "chars()",
-        doc: "List of characters",
-    },
-    MethodInfo {
-        name: "char_len",
-        signature: "char_len()",
-        doc: "Character count (Unicode-aware)",
-    },
-    MethodInfo {
-        name: "reverse",
-        signature: "reverse()",
-        doc: "Reversed copy",
-    },
-    MethodInfo {
-        name: "find",
-        signature: "find(sub)",
-        doc: "Index of first occurrence",
-    },
-    MethodInfo {
-        name: "repeat",
-        signature: "repeat(n)",
-        doc: "Repeat n times",
-    },
-    MethodInfo {
-        name: "to_int",
-        signature: "to_int()",
-        doc: "Parse as integer",
-    },
-    MethodInfo {
-        name: "to_float",
-        signature: "to_float()",
-        doc: "Parse as float",
-    },
-    MethodInfo {
-        name: "to_string",
-        signature: "to_string()",
-        doc: "Convert to string",
-    },
-    MethodInfo {
-        name: "pad_start",
-        signature: "pad_start(width, char)",
-        doc: "Pad start to width",
-    },
-    MethodInfo {
-        name: "pad_end",
-        signature: "pad_end(width, char)",
-        doc: "Pad end to width",
-    },
-    MethodInfo {
-        name: "strip_prefix",
-        signature: "strip_prefix(prefix)",
-        doc: "Remove prefix if present",
-    },
-    MethodInfo {
-        name: "strip_suffix",
-        signature: "strip_suffix(suffix)",
-        doc: "Remove suffix if present",
-    },
-    // List methods
-    MethodInfo {
-        name: "push",
-        signature: "push(val)",
-        doc: "Append value",
-    },
-    MethodInfo {
-        name: "pop",
-        signature: "pop()",
-        doc: "Remove last element",
-    },
-    MethodInfo {
-        name: "first",
-        signature: "first()",
-        doc: "First element (Option)",
-    },
-    MethodInfo {
-        name: "last",
-        signature: "last()",
-        doc: "Last element (Option)",
-    },
-    MethodInfo {
-        name: "sort",
-        signature: "sort()",
-        doc: "Sorted copy",
-    },
-    MethodInfo {
-        name: "sort_by",
-        signature: "sort_by(fn)",
-        doc: "Sort by key function",
-    },
-    MethodInfo {
-        name: "flatten",
-        signature: "flatten()",
-        doc: "Flatten one level",
-    },
-    MethodInfo {
-        name: "join",
-        signature: "join(sep)",
-        doc: "Join with separator",
-    },
-    MethodInfo {
-        name: "enumerate",
-        signature: "enumerate()",
-        doc: "Index-value tuples",
-    },
-    MethodInfo {
-        name: "zip",
-        signature: "zip(other)",
-        doc: "Zip with another list",
-    },
-    MethodInfo {
-        name: "map",
-        signature: "map(fn)",
-        doc: "Apply function",
-    },
-    MethodInfo {
-        name: "filter",
-        signature: "filter(fn)",
-        doc: "Keep matching elements",
-    },
-    MethodInfo {
-        name: "fold",
-        signature: "fold(init, fn)",
-        doc: "Reduce with accumulator",
-    },
-    MethodInfo {
-        name: "flat_map",
-        signature: "flat_map(fn)",
-        doc: "Map then flatten",
-    },
-    MethodInfo {
-        name: "any",
-        signature: "any(fn)",
-        doc: "True if any match",
-    },
-    MethodInfo {
-        name: "all",
-        signature: "all(fn)",
-        doc: "True if all match",
-    },
-    MethodInfo {
-        name: "index",
-        signature: "index(val)",
-        doc: "Index of first occurrence",
-    },
-    MethodInfo {
-        name: "count",
-        signature: "count(val)",
-        doc: "Count occurrences",
-    },
-    MethodInfo {
-        name: "dedup",
-        signature: "dedup()",
-        doc: "Remove consecutive duplicates",
-    },
-    MethodInfo {
-        name: "unique",
-        signature: "unique()",
-        doc: "Remove all duplicates",
-    },
-    MethodInfo {
-        name: "sum",
-        signature: "sum()",
-        doc: "Sum of elements",
-    },
-    MethodInfo {
-        name: "window",
-        signature: "window(n)",
-        doc: "Sliding windows of size n",
-    },
-    MethodInfo {
-        name: "chunk",
-        signature: "chunk(n)",
-        doc: "Split into chunks of size n",
-    },
-    MethodInfo {
-        name: "reduce",
-        signature: "reduce(fn)",
-        doc: "Reduce list with fn (no initial value)",
-    },
-    MethodInfo {
-        name: "min",
-        signature: "min()",
-        doc: "Minimum element",
-    },
-    MethodInfo {
-        name: "max",
-        signature: "max()",
-        doc: "Maximum element",
-    },
-    // Dict methods
-    MethodInfo {
-        name: "keys",
-        signature: "keys()",
-        doc: "List of keys",
-    },
-    MethodInfo {
-        name: "values",
-        signature: "values()",
-        doc: "List of values",
-    },
-    MethodInfo {
-        name: "entries",
-        signature: "entries()",
-        doc: "List of (key, value) tuples",
-    },
-    MethodInfo {
-        name: "contains_key",
-        signature: "contains_key(key)",
-        doc: "Key exists",
-    },
-    MethodInfo {
-        name: "get",
-        signature: "get(key)",
-        doc: "Get value by key",
-    },
-    MethodInfo {
-        name: "insert",
-        signature: "insert(key, val)",
-        doc: "Insert entry",
-    },
-    MethodInfo {
-        name: "remove",
-        signature: "remove(key)",
-        doc: "Remove entry (dict) or element (set)",
-    },
-    MethodInfo {
-        name: "merge",
-        signature: "merge(other)",
-        doc: "Merge dicts",
-    },
-    MethodInfo {
-        name: "update",
-        signature: "update(other)",
-        doc: "Merge dict (mutating)",
-    },
-    MethodInfo {
-        name: "keys_of",
-        signature: "keys_of(val)",
-        doc: "Keys with matching value",
-    },
-    // Option/Result methods
-    MethodInfo {
-        name: "unwrap",
-        signature: "unwrap()",
-        doc: "Extract value or error",
-    },
-    MethodInfo {
-        name: "unwrap_or",
-        signature: "unwrap_or(default)",
-        doc: "Unwrap or return default",
-    },
-    MethodInfo {
-        name: "expect",
-        signature: "expect(msg)",
-        doc: "Unwrap or error",
-    },
-    MethodInfo {
-        name: "is_some",
-        signature: "is_some()",
-        doc: "True if Some",
-    },
-    MethodInfo {
-        name: "is_none",
-        signature: "is_none()",
-        doc: "True if None",
-    },
-    MethodInfo {
-        name: "is_ok",
-        signature: "is_ok()",
-        doc: "True if Ok",
-    },
-    MethodInfo {
-        name: "is_err",
-        signature: "is_err()",
-        doc: "True if Err",
-    },
-    MethodInfo {
-        name: "map_err",
-        signature: "map_err(fn)",
-        doc: "Transform error",
-    },
-    MethodInfo {
-        name: "and_then",
-        signature: "and_then(fn)",
-        doc: "Flat-map on Ok/Some",
-    },
-    MethodInfo {
-        name: "or_else",
-        signature: "or_else(fn)",
-        doc: "Call fn on Err/None",
-    },
-    // Bytes methods
-    MethodInfo {
-        name: "to_list",
-        signature: "to_list()",
-        doc: "Convert to list",
-    },
-    MethodInfo {
-        name: "to_str",
-        signature: "to_str()",
-        doc: "Decode as UTF-8",
-    },
-    MethodInfo {
-        name: "to_hex",
-        signature: "to_hex()",
-        doc: "Hex-encoded string",
-    },
-    MethodInfo {
-        name: "slice",
-        signature: "slice(start, end)",
-        doc: "Sub-slice",
-    },
-    MethodInfo {
-        name: "bytes",
-        signature: "bytes()",
-        doc: "Byte representation",
-    },
-    // Task methods
-    MethodInfo {
-        name: "await",
-        signature: "await",
-        doc: "Wait for task",
-    },
-    MethodInfo {
-        name: "is_finished",
-        signature: "is_finished()",
-        doc: "Check if done",
-    },
-    MethodInfo {
-        name: "cancel",
-        signature: "cancel()",
-        doc: "Cancel task",
-    },
-    MethodInfo {
-        name: "is_cancelled",
-        signature: "is_cancelled()",
-        doc: "Check if cancelled",
-    },
-    // Channel methods
-    MethodInfo {
-        name: "send",
-        signature: "send(val)",
-        doc: "Send value",
-    },
-    MethodInfo {
-        name: "recv",
-        signature: "recv()",
-        doc: "Receive value",
-    },
-    MethodInfo {
-        name: "try_recv",
-        signature: "try_recv()",
-        doc: "Non-blocking receive",
-    },
-    MethodInfo {
-        name: "close",
-        signature: "close()",
-        doc: "Close channel",
-    },
-    // Set methods
-    MethodInfo {
-        name: "add",
-        signature: "add(val)",
-        doc: "Add element to set",
-    },
-    MethodInfo {
-        name: "union",
-        signature: "union(other)",
-        doc: "Union of two sets",
-    },
-    MethodInfo {
-        name: "intersection",
-        signature: "intersection(other)",
-        doc: "Intersection of two sets",
-    },
-    MethodInfo {
-        name: "difference",
-        signature: "difference(other)",
-        doc: "Difference of two sets",
-    },
-    // Cell methods
-    MethodInfo {
-        name: "set",
-        signature: "set(val)",
-        doc: "Set cell value",
-    },
-];
-
-// ---- Module members (shared by hover and completion) ----
-
-struct ModuleMember {
-    name: &'static str,
-    signature: &'static str,
-    doc: &'static str,
-    is_const: bool,
-}
-
-fn module_members(module: &str) -> &'static [ModuleMember] {
-    match module {
-        "math" => MATH_MEMBERS,
-        "json" => JSON_MEMBERS,
-        "io" => IO_MEMBERS,
-        "string" => STRING_MEMBERS,
-        "log" => LOG_MEMBERS,
-        "semver" => SEMVER_MEMBERS,
-        "os" => OS_MEMBERS,
-        "path" => PATH_MEMBERS,
-        "fs" => FS_MEMBERS,
-        _ => &[],
-    }
-}
-
-const MATH_MEMBERS: &[ModuleMember] = &[
-    ModuleMember {
-        name: "PI",
-        signature: "math::PI",
-        doc: "Pi constant (3.14159...)",
-        is_const: true,
-    },
-    ModuleMember {
-        name: "E",
-        signature: "math::E",
-        doc: "Euler's number (2.71828...)",
-        is_const: true,
-    },
-    ModuleMember {
-        name: "TAU",
-        signature: "math::TAU",
-        doc: "Tau (2π)",
-        is_const: true,
-    },
-    ModuleMember {
-        name: "INF",
-        signature: "math::INF",
-        doc: "Positive infinity",
-        is_const: true,
-    },
-    ModuleMember {
-        name: "NAN",
-        signature: "math::NAN",
-        doc: "Not-a-number",
-        is_const: true,
-    },
-    ModuleMember {
-        name: "abs",
-        signature: "math::abs(x)",
-        doc: "Absolute value",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "min",
-        signature: "math::min(a, b)",
-        doc: "Minimum of arguments",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "max",
-        signature: "math::max(a, b)",
-        doc: "Maximum of arguments",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "floor",
-        signature: "math::floor(x)",
-        doc: "Floor (round down)",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "ceil",
-        signature: "math::ceil(x)",
-        doc: "Ceiling (round up)",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "round",
-        signature: "math::round(x)",
-        doc: "Round to nearest",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "sqrt",
-        signature: "math::sqrt(x)",
-        doc: "Square root",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "pow",
-        signature: "math::pow(base, exp)",
-        doc: "Exponentiation",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "clamp",
-        signature: "math::clamp(x, lo, hi)",
-        doc: "Clamp value to range",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "sin",
-        signature: "math::sin(x)",
-        doc: "Sine",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "cos",
-        signature: "math::cos(x)",
-        doc: "Cosine",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "tan",
-        signature: "math::tan(x)",
-        doc: "Tangent",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "atan2",
-        signature: "math::atan2(y, x)",
-        doc: "Two-argument arctangent",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "log",
-        signature: "math::log(x)",
-        doc: "Natural logarithm",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "log2",
-        signature: "math::log2(x)",
-        doc: "Base-2 logarithm",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "log10",
-        signature: "math::log10(x)",
-        doc: "Base-10 logarithm",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "is_nan",
-        signature: "math::is_nan(x)",
-        doc: "Check if NaN",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "is_inf",
-        signature: "math::is_inf(x)",
-        doc: "Check if infinite",
-        is_const: false,
-    },
-];
-
-const JSON_MEMBERS: &[ModuleMember] = &[
-    ModuleMember {
-        name: "encode",
-        signature: "json::encode(value) -> string",
-        doc: "Value to JSON string",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "decode",
-        signature: "json::decode(string) -> value",
-        doc: "JSON string to value",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "pretty",
-        signature: "json::pretty(value) -> string",
-        doc: "Pretty-printed JSON string",
-        is_const: false,
-    },
-];
-
-const IO_MEMBERS: &[ModuleMember] = &[
-    ModuleMember {
-        name: "print",
-        signature: "io::print(...args)",
-        doc: "Print without newline",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "println",
-        signature: "io::println(...args)",
-        doc: "Print with newline",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "eprintln",
-        signature: "io::eprintln(...args)",
-        doc: "Print to stderr with newline",
-        is_const: false,
-    },
-];
-
-const STRING_MEMBERS: &[ModuleMember] = &[ModuleMember {
-    name: "join",
-    signature: "string::join(list, sep)",
-    doc: "Join list elements into string with optional separator",
-    is_const: false,
-}];
-
-const LOG_MEMBERS: &[ModuleMember] = &[
-    ModuleMember {
-        name: "trace",
-        signature: "log::trace(message, fields?)",
-        doc: "Emit a TRACE record. Stripped at compile time when level > log_max_level_*.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "debug",
-        signature: "log::debug(message, fields?)",
-        doc: "Emit a DEBUG record. Stripped at compile time when level > log_max_level_*.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "info",
-        signature: "log::info(message, fields?)",
-        doc: "Emit an INFO record. Stripped at compile time when level > log_max_level_*.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "warn",
-        signature: "log::warn(message, fields?)",
-        doc: "Emit a WARN record. Stripped at compile time when level > log_max_level_*.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "error",
-        signature: "log::error(message, fields?)",
-        doc: "Emit an ERROR record.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "set_level",
-        signature: "log::set_level(name)",
-        doc: "Set the runtime threshold (off|error|warn|info|debug|trace).",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "level",
-        signature: "log::level()",
-        doc: "Return the current runtime threshold as a string.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "enabled",
-        signature: "log::enabled(name)",
-        doc: "Check whether the handler would emit at the given level.",
-        is_const: false,
-    },
-];
-
-const SEMVER_MEMBERS: &[ModuleMember] = &[
-    ModuleMember { name: "parse",      signature: "semver::parse(s) -> dict",                doc: "Parse a version string into `#{major, minor, patch, pre, build}`. Errors on invalid input.", is_const: false },
-    ModuleMember { name: "is_valid",   signature: "semver::is_valid(s) -> bool",             doc: "True if the string parses as a valid semantic version.", is_const: false },
-    ModuleMember { name: "format",     signature: "semver::format(version) -> string",       doc: "Render a version (string or dict) back to its canonical string form.", is_const: false },
-    ModuleMember { name: "compare",    signature: "semver::compare(a, b) -> int",            doc: "Three-way ordering: returns -1 / 0 / 1.", is_const: false },
-    ModuleMember { name: "eq",         signature: "semver::eq(a, b) -> bool",                doc: "True if `a` and `b` are the same version (including pre-release).", is_const: false },
-    ModuleMember { name: "gt",         signature: "semver::gt(a, b) -> bool",                doc: "True if `a > b`.", is_const: false },
-    ModuleMember { name: "gte",        signature: "semver::gte(a, b) -> bool",               doc: "True if `a >= b`.", is_const: false },
-    ModuleMember { name: "lt",         signature: "semver::lt(a, b) -> bool",                doc: "True if `a < b`.", is_const: false },
-    ModuleMember { name: "lte",        signature: "semver::lte(a, b) -> bool",               doc: "True if `a <= b`.", is_const: false },
-    ModuleMember { name: "satisfies",  signature: "semver::satisfies(version, req) -> bool", doc: "True if `version` matches the requirement string (e.g. `^1.0`, `~1.2`, `>=1.0, <2.0`).", is_const: false },
-    ModuleMember { name: "bump_major", signature: "semver::bump_major(v) -> string",         doc: "Increment major; zero minor and patch; clear pre-release and build.", is_const: false },
-    ModuleMember { name: "bump_minor", signature: "semver::bump_minor(v) -> string",         doc: "Increment minor; zero patch; clear pre-release and build.", is_const: false },
-    ModuleMember { name: "bump_patch", signature: "semver::bump_patch(v) -> string",         doc: "Increment patch (or strip pre-release if present); clear build.", is_const: false },
-];
-
-const OS_MEMBERS: &[ModuleMember] = &[
-    ModuleMember { name: "name",          signature: "os::name",                              doc: "Target OS as reported by `std::env::consts::OS` (e.g. \"linux\", \"macos\", \"windows\").", is_const: true },
-    ModuleMember { name: "arch",          signature: "os::arch",                              doc: "Target architecture (e.g. \"x86_64\", \"aarch64\", \"arm\").", is_const: true },
-    ModuleMember { name: "family",        signature: "os::family",                            doc: "OS family — \"unix\" or \"windows\".", is_const: true },
-    ModuleMember { name: "pointer_width", signature: "os::pointer_width",                     doc: "Pointer width in bits (32 or 64).", is_const: true },
-    ModuleMember { name: "dll_extension", signature: "os::dll_extension",                     doc: "Dynamic-library extension without the leading dot (\"so\", \"dylib\", \"dll\").", is_const: true },
-    ModuleMember { name: "exe_extension", signature: "os::exe_extension",                     doc: "Executable extension without the leading dot (\"\" on Unix, \"exe\" on Windows).", is_const: true },
-    ModuleMember { name: "env_var",       signature: "os::env_var(name [, default]) -> string", doc: "Read an env var. Errors if missing; the optional 2nd arg is returned instead.", is_const: false },
-    ModuleMember { name: "has_env_var",   signature: "os::has_env_var(name) -> bool",         doc: "True if the named env var is set in the current process.", is_const: false },
-    ModuleMember { name: "env_vars",      signature: "os::env_vars() -> dict",                doc: "Snapshot of all env vars as a `dict<string, string>`.", is_const: false },
-    ModuleMember { name: "cwd",           signature: "os::cwd() -> string",                   doc: "Current working directory.", is_const: false },
-    ModuleMember { name: "pid",           signature: "os::pid() -> int",                      doc: "Current process id.", is_const: false },
-    ModuleMember { name: "args",          signature: "os::args() -> list<string>",            doc: "Script-level arguments (host-injected via `Engine::set_args`; default `[]`).", is_const: false },
-    ModuleMember { name: "temp_dir",      signature: "os::temp_dir() -> string",              doc: "Platform temporary directory.", is_const: false },
-];
-
-const PATH_MEMBERS: &[ModuleMember] = &[
-    ModuleMember {
-        name: "sep",
-        signature: "path::sep",
-        doc: "Platform path separator — `/` on Unix, `\\` on Windows.",
-        is_const: true,
-    },
-    ModuleMember {
-        name: "join",
-        signature: "path::join(a, b, ...) -> string",
-        doc: "Variadic path join using the platform separator.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "parent",
-        signature: "path::parent(p) -> string",
-        doc: "Directory containing `p`. Empty string if `p` has no parent.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "basename",
-        signature: "path::basename(p) -> string",
-        doc: "Final component of `p`.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "stem",
-        signature: "path::stem(p) -> string",
-        doc: "Basename of `p` with the extension stripped.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "extension",
-        signature: "path::extension(p) -> string",
-        doc: "Extension of `p` without the leading dot. Empty string if none.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "with_extension",
-        signature: "path::with_extension(p, ext) -> string",
-        doc: "Replace (or add) the extension on `p`.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "is_absolute",
-        signature: "path::is_absolute(p) -> bool",
-        doc: "True if `p` is absolute on the current platform.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "is_relative",
-        signature: "path::is_relative(p) -> bool",
-        doc: "True if `p` is relative on the current platform.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "components",
-        signature: "path::components(p) -> list<string>",
-        doc: "Split `p` into its components.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "normalize",
-        signature: "path::normalize(p) -> string",
-        doc: "Lexically normalise `p` — collapse `.` and `..` without consulting the filesystem.",
-        is_const: false,
-    },
-];
-
-const FS_MEMBERS: &[ModuleMember] = &[
-    ModuleMember {
-        name: "read",
-        signature: "fs::read(path) -> string",
-        doc: "Read the file at `path` as UTF-8 text.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "read_bytes",
-        signature: "fs::read_bytes(path) -> bytes",
-        doc: "Read the file at `path` as raw bytes.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "write",
-        signature: "fs::write(path, contents)",
-        doc: "Write `contents` (string or bytes) to `path`, replacing the existing file.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "append",
-        signature: "fs::append(path, contents)",
-        doc: "Append `contents` (string or bytes) to `path`. Creates the file if missing.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "exists",
-        signature: "fs::exists(path) -> bool",
-        doc: "True if `path` exists.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "is_file",
-        signature: "fs::is_file(path) -> bool",
-        doc: "True if `path` is an existing regular file.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "is_dir",
-        signature: "fs::is_dir(path) -> bool",
-        doc: "True if `path` is an existing directory.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "list_dir",
-        signature: "fs::list_dir(path) -> list<string>",
-        doc: "Names of the entries directly inside the directory at `path` (non-recursive).",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "create_dir",
-        signature: "fs::create_dir(path)",
-        doc: "Create a single directory. Errors if any parent is missing.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "create_dir_all",
-        signature: "fs::create_dir_all(path)",
-        doc: "Create the directory and any missing parents.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "remove_file",
-        signature: "fs::remove_file(path)",
-        doc: "Delete the file at `path`.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "remove_dir",
-        signature: "fs::remove_dir(path)",
-        doc: "Delete the directory at `path`. Errors if not empty.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "remove_dir_all",
-        signature: "fs::remove_dir_all(path)",
-        doc: "Recursively delete the directory at `path` and all its contents.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "rename",
-        signature: "fs::rename(from, to)",
-        doc: "Rename / move `from` to `to`.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "copy",
-        signature: "fs::copy(from, to) -> int",
-        doc: "Copy `from` to `to`; returns bytes copied.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "metadata",
-        signature: "fs::metadata(path) -> dict",
-        doc: "Return `#{size, is_file, is_dir, readonly, modified}`.",
-        is_const: false,
-    },
-    ModuleMember {
-        name: "canonicalize",
-        signature: "fs::canonicalize(path) -> string",
-        doc: "Resolve symlinks and normalise `path` against the filesystem.",
-        is_const: false,
-    },
-];
-
-const MODULE_NAMES: &[&str] = &[
-    "math", "json", "io", "string", "log", "semver", "os", "path", "fs",
-];
-
-// ---- Type names (shared by hover and completion) ----
-
-struct TypeInfo {
-    name: &'static str,
-    doc: &'static str,
-}
-
-const TYPES: &[TypeInfo] = &[
-    TypeInfo {
-        name: "int",
-        doc: "Integer type",
-    },
-    TypeInfo {
-        name: "float",
-        doc: "Floating-point type",
-    },
-    TypeInfo {
-        name: "bool",
-        doc: "Boolean type",
-    },
-    TypeInfo {
-        name: "string",
-        doc: "String type",
-    },
-    TypeInfo {
-        name: "bytes",
-        doc: "Byte string type",
-    },
-    TypeInfo {
-        name: "list",
-        doc: "List type (e.g. list<int>)",
-    },
-    TypeInfo {
-        name: "dict",
-        doc: "Dictionary type (e.g. dict<string, int>)",
-    },
-    TypeInfo {
-        name: "tuple",
-        doc: "Tuple type",
-    },
-    TypeInfo {
-        name: "set",
-        doc: "Set type",
-    },
-    TypeInfo {
-        name: "fn",
-        doc: "Function type",
-    },
-    TypeInfo {
-        name: "cell",
-        doc: "Mutable reference cell type",
-    },
-    TypeInfo {
-        name: "any",
-        doc: "Any type (accepts all values)",
-    },
-    TypeInfo {
-        name: "Option",
-        doc: "Option type (e.g. Option<int>)",
-    },
-    TypeInfo {
-        name: "Result",
-        doc: "Result type (e.g. Result<int, string>)",
-    },
-];
 
 // ---- Documentation catalog ----
 
@@ -1537,6 +446,9 @@ struct TypeDoc {
 enum MemberKind {
     Function,
     Constant,
+    Method,
+    Type,
+    Builtin,
 }
 
 #[derive(Debug, Clone)]
@@ -1565,6 +477,8 @@ struct DocCatalog {
 }
 
 impl DocCatalog {
+    /// Build the catalog from the embedded `ion_core::STDLIB_DOCS_JSON`
+    /// manifest. Single source of truth shared with the docs site.
     fn builtins() -> Self {
         let mut catalog = Self {
             builtins: HashMap::new(),
@@ -1572,68 +486,11 @@ impl DocCatalog {
             types: HashMap::new(),
             modules: HashMap::new(),
         };
-
-        for builtin in BUILTINS {
-            catalog.builtins.insert(
-                builtin.name.to_string(),
-                BuiltinDoc {
-                    name: builtin.name.to_string(),
-                    signature: builtin.signature.to_string(),
-                    doc: builtin.description.to_string(),
-                },
-            );
+        if let Err(err) = parse_doc_manifest(&mut catalog, ion_core::STDLIB_DOCS_JSON) {
+            // The embedded manifest is part of the build; a parse failure is
+            // a programmer bug, not a user-facing condition.
+            panic!("ion-core::STDLIB_DOCS_JSON failed to parse: {err}");
         }
-        for method in METHODS {
-            catalog.methods.insert(
-                method.name.to_string(),
-                MethodDoc {
-                    name: method.name.to_string(),
-                    signature: method.signature.to_string(),
-                    doc: method.doc.to_string(),
-                },
-            );
-        }
-        for ty in TYPES {
-            catalog.types.insert(
-                ty.name.to_string(),
-                TypeDoc {
-                    name: ty.name.to_string(),
-                    doc: ty.doc.to_string(),
-                },
-            );
-        }
-        for module in MODULE_NAMES {
-            let path = module.to_string();
-            let members = module_members(module)
-                .iter()
-                .map(|member| {
-                    (
-                        member.name.to_string(),
-                        MemberDoc {
-                            name: member.name.to_string(),
-                            kind: if member.is_const {
-                                MemberKind::Constant
-                            } else {
-                                MemberKind::Function
-                            },
-                            signature: member.signature.to_string(),
-                            doc: member.doc.to_string(),
-                        },
-                    )
-                })
-                .collect();
-            catalog.modules.insert(
-                path.clone(),
-                ModuleDoc {
-                    name: module.to_string(),
-                    path,
-                    summary: builtin_module_summary(module).to_string(),
-                    members,
-                    modules: HashMap::new(),
-                },
-            );
-        }
-
         catalog
     }
 
@@ -1695,27 +552,20 @@ impl DocCatalog {
     }
 }
 
-fn builtin_module_summary(module: &str) -> &'static str {
-    match module {
-        "math" => "Mathematical constants and functions.",
-        "json" => "JSON encoding and decoding.",
-        "io" => "Standard input/output.",
-        "string" => "String utilities.",
-        "log" => "Leveled logging — `log::trace` / `debug` / `info` / `warn` / `error`. Compile-time stripped above the cap.",
-        "semver" => "Semantic version parsing, comparison, and constraint matching.",
-        "os" => "OS / arch detection, environment variables, and process info.",
-        "path" => "Pure-string path manipulation (no I/O).",
-        "fs" => "Filesystem I/O. Sync (`std::fs`) or async (`tokio::fs`) impl picked by the build's runtime feature.",
-        _ => "Module.",
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct IonDocManifest {
     #[serde(rename = "ionDocVersion")]
     ion_doc_version: u32,
     #[serde(default)]
     profile: Option<String>,
+    #[serde(default)]
+    homepage: Option<String>,
+    #[serde(default)]
+    repository: Option<String>,
+    #[serde(default)]
+    license: Option<String>,
+    #[serde(default)]
+    categories: Vec<String>,
     #[serde(default)]
     modules: Vec<ManifestModule>,
 }
@@ -1731,12 +581,26 @@ struct ManifestModule {
     modules: Vec<ManifestModule>,
 }
 
+// receiver/variants/examples/since are deserialized so the schema validates
+// strictly, but only the docs site renders them. Keep the fields here so the
+// LSP and the site share one definition of the wire format.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ManifestMember {
     name: String,
     kind: MemberKind,
     signature: String,
     doc: String,
+    #[serde(default)]
+    receiver: Option<String>,
+    #[serde(default)]
+    methods: Vec<ManifestMember>,
+    #[serde(default)]
+    variants: Vec<String>,
+    #[serde(default)]
+    examples: Vec<String>,
+    #[serde(default)]
+    since: Option<String>,
 }
 
 fn load_external_doc_paths(catalog: &mut DocCatalog, paths: Vec<PathBuf>) {
@@ -1753,14 +617,27 @@ fn load_external_doc_paths(catalog: &mut DocCatalog, paths: Vec<PathBuf>) {
 
 fn load_doc_manifest(catalog: &mut DocCatalog, path: &Path) -> Result<(), String> {
     let text = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
-    let manifest: IonDocManifest = serde_json::from_str(&text).map_err(|err| err.to_string())?;
-    if manifest.ion_doc_version != 1 {
+    parse_doc_manifest(catalog, &text)
+}
+
+fn parse_doc_manifest(catalog: &mut DocCatalog, text: &str) -> Result<(), String> {
+    let manifest: IonDocManifest = serde_json::from_str(text).map_err(|err| err.to_string())?;
+    if manifest.ion_doc_version != 1 && manifest.ion_doc_version != 2 {
         return Err(format!(
-            "unsupported ionDocVersion {}; expected 1",
+            "unsupported ionDocVersion {}; expected 1 or 2",
             manifest.ion_doc_version
         ));
     }
-    let _profile = manifest.profile.as_deref();
+    // profile/homepage/repository/license/categories are surfaced by the
+    // docs site; the LSP keeps them parsed-but-unused so unknown manifests
+    // load cleanly.
+    let _ = (
+        manifest.profile.as_deref(),
+        manifest.homepage.as_deref(),
+        manifest.repository.as_deref(),
+        manifest.license.as_deref(),
+        &manifest.categories,
+    );
     for module in manifest.modules {
         merge_manifest_module(catalog, None, module);
     }
@@ -1793,15 +670,58 @@ fn merge_manifest_module(
     }
 
     for member in manifest.members {
-        module.members.insert(
-            member.name.clone(),
-            MemberDoc {
-                name: member.name,
-                kind: member.kind,
-                signature: member.signature,
-                doc: member.doc,
-            },
-        );
+        match member.kind {
+            MemberKind::Function | MemberKind::Constant => {
+                module.members.insert(
+                    member.name.clone(),
+                    MemberDoc {
+                        name: member.name,
+                        kind: member.kind,
+                        signature: member.signature,
+                        doc: member.doc,
+                    },
+                );
+            }
+            MemberKind::Method => {
+                catalog.methods.insert(
+                    member.name.clone(),
+                    MethodDoc {
+                        name: member.name,
+                        signature: member.signature,
+                        doc: member.doc,
+                    },
+                );
+            }
+            MemberKind::Type => {
+                catalog.types.insert(
+                    member.name.clone(),
+                    TypeDoc {
+                        name: member.name.clone(),
+                        doc: member.doc,
+                    },
+                );
+                for nested in member.methods {
+                    catalog.methods.insert(
+                        nested.name.clone(),
+                        MethodDoc {
+                            name: nested.name,
+                            signature: nested.signature,
+                            doc: nested.doc,
+                        },
+                    );
+                }
+            }
+            MemberKind::Builtin => {
+                catalog.builtins.insert(
+                    member.name.clone(),
+                    BuiltinDoc {
+                        name: member.name,
+                        signature: member.signature,
+                        doc: member.doc,
+                    },
+                );
+            }
+        }
     }
 
     let child_modules = manifest.modules;
@@ -2170,6 +1090,9 @@ fn format_module_member_doc(m: &MemberDoc) -> String {
     let kind = match m.kind {
         MemberKind::Function => "function",
         MemberKind::Constant => "constant",
+        MemberKind::Method | MemberKind::Type | MemberKind::Builtin => unreachable!(
+            "method/type/builtin kinds are routed out of module.members in load_doc_manifest"
+        ),
     };
     format!("```ion\n{}\n```\n{} — {}", m.signature, kind, m.doc)
 }
@@ -2264,6 +1187,11 @@ fn handle_completion(source: &str, pos: Position, catalog: &DocCatalog) -> Compl
                 let kind = match member.kind {
                     MemberKind::Function => CompletionItemKind::FUNCTION,
                     MemberKind::Constant => CompletionItemKind::CONSTANT,
+                    MemberKind::Method | MemberKind::Type | MemberKind::Builtin => {
+                        unreachable!(
+                            "method/type/builtin kinds are routed out of module.members in load_doc_manifest"
+                        )
+                    }
                 };
                 items.push(CompletionItem {
                     label: member.name.to_string(),
@@ -2933,5 +1861,85 @@ mod tests {
 
         let module_items = completion_items(&catalog, "math::", 0, 6);
         assert!(module_items.iter().any(|item| item.label == "sqrt"));
+    }
+
+    #[test]
+    fn v2_manifest_loads_methods_and_types() {
+        let v2 = r#"{
+  "ionDocVersion": 2,
+  "homepage": "https://example.com",
+  "repository": "https://github.com/example/pkg",
+  "license": "MIT",
+  "categories": ["serde", "encoding"],
+  "modules": [
+    {
+      "name": "widget",
+      "summary": "Widget toolkit.",
+      "members": [
+        {
+          "name": "render",
+          "kind": "function",
+          "signature": "widget::render(w) -> string",
+          "doc": "Render a widget to a string.",
+          "examples": ["widget::render(button)"],
+          "since": "0.1.0"
+        },
+        {
+          "name": "Color",
+          "kind": "type",
+          "signature": "Color",
+          "doc": "An RGB color.",
+          "variants": ["Red", "Green", "Blue"],
+          "methods": [
+            {
+              "name": "to_hex",
+              "kind": "method",
+              "signature": "Color.to_hex() -> string",
+              "doc": "Render as `#rrggbb`.",
+              "receiver": "Color"
+            }
+          ]
+        },
+        {
+          "name": "tap",
+          "kind": "method",
+          "signature": "x.tap(fn) -> x",
+          "doc": "Run `fn(x)` for side effects, return `x`.",
+          "receiver": "any"
+        }
+      ]
+    }
+  ]
+}"#;
+        let mut catalog = DocCatalog::builtins();
+        parse_doc_manifest(&mut catalog, v2).expect("v2 manifest parses");
+
+        let widget = catalog.module("widget").expect("widget module");
+        assert_eq!(widget.summary, "Widget toolkit.");
+        assert!(widget.members.contains_key("render"));
+        // Methods and types are routed out of module.members:
+        assert!(!widget.members.contains_key("tap"));
+        assert!(!widget.members.contains_key("Color"));
+        // ...into the catalog-wide tables:
+        assert!(catalog.find_method("tap").is_some());
+        assert!(catalog.find_method("to_hex").is_some());
+        assert!(catalog.find_type("Color").is_some());
+    }
+
+    #[test]
+    fn v1_manifest_still_loads_under_v2_loader() {
+        let mut catalog = DocCatalog::builtins();
+        parse_doc_manifest(&mut catalog, fixture_manifest())
+            .expect("v1 manifests remain accepted");
+        assert!(catalog.module("sensor").is_some());
+        assert!(catalog.module("sensor::session").is_some());
+    }
+
+    #[test]
+    fn unsupported_manifest_version_is_rejected() {
+        let v3 = r#"{"ionDocVersion": 3, "modules": []}"#;
+        let mut catalog = DocCatalog::builtins();
+        let err = parse_doc_manifest(&mut catalog, v3).expect_err("v3 should error");
+        assert!(err.contains("ionDocVersion"));
     }
 }

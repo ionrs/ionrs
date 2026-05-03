@@ -1,0 +1,342 @@
+{
+  "ionDocVersion": 2,
+  "profile": "ion-stdlib",
+  "homepage": "https://chutuananh2k.github.io/ion-lang/",
+  "repository": "https://github.com/chutuananh2k/ion-lang",
+  "license": "MIT",
+  "categories": ["language", "stdlib"],
+  "modules": [
+    {
+      "name": "core",
+      "summary": "Global builtins available in every Ion program without `use`.",
+      "members": [
+        { "kind": "builtin", "name": "len", "signature": "len(x)", "doc": "Length of list, string, dict, or bytes" },
+        { "kind": "builtin", "name": "range", "signature": "range(n) / range(start, end)", "doc": "Create a range [0..n) or [start..end)" },
+        { "kind": "builtin", "name": "enumerate", "signature": "enumerate(list)", "doc": "List of (index, value) tuples" },
+        { "kind": "builtin", "name": "type_of", "signature": "type_of(x)", "doc": "Returns type name as string" },
+        { "kind": "builtin", "name": "str", "signature": "str(x)", "doc": "Convert to string" },
+        { "kind": "builtin", "name": "int", "signature": "int(x)", "doc": "Convert to int" },
+        { "kind": "builtin", "name": "float", "signature": "float(x)", "doc": "Convert to float" },
+        { "kind": "builtin", "name": "bytes", "signature": "bytes() / bytes(list) / bytes(string) / bytes(n)", "doc": "Create bytes" },
+        { "kind": "builtin", "name": "bytes_from_hex", "signature": "bytes_from_hex(string)", "doc": "Bytes from hex string" },
+        { "kind": "builtin", "name": "assert", "signature": "assert(cond) / assert(cond, msg)", "doc": "Error if condition is false" },
+        { "kind": "builtin", "name": "assert_eq", "signature": "assert_eq(a, b) / assert_eq(a, b, msg)", "doc": "Error if values are not equal" },
+        { "kind": "builtin", "name": "channel", "signature": "channel(buffer_size)", "doc": "Create a buffered channel (tx, rx)" },
+        { "kind": "builtin", "name": "set", "signature": "set() / set(list)", "doc": "Create a set from a list (deduplicates elements)" },
+        { "kind": "builtin", "name": "cell", "signature": "cell(value)", "doc": "Create a mutable reference cell for shared closure state" },
+        { "kind": "builtin", "name": "sleep", "signature": "sleep(ms)", "doc": "Sleep for given milliseconds (requires concurrency feature)" },
+        { "kind": "builtin", "name": "timeout", "signature": "timeout(ms, fn)", "doc": "Run function with time limit, returns Option (Some or None on timeout)" }
+      ]
+    },
+    {
+      "name": "types",
+      "summary": "Built-in value types and the methods callable on them.",
+      "members": [
+        {
+          "kind": "type", "name": "int", "signature": "int", "doc": "Integer type"
+        },
+        {
+          "kind": "type", "name": "float", "signature": "float", "doc": "Floating-point type"
+        },
+        {
+          "kind": "type", "name": "bool", "signature": "bool", "doc": "Boolean type"
+        },
+        {
+          "kind": "type", "name": "string", "signature": "string", "doc": "String type",
+          "methods": [
+            { "kind": "method", "receiver": "string", "name": "len", "signature": "len()", "doc": "Length" },
+            { "kind": "method", "receiver": "string", "name": "is_empty", "signature": "is_empty()", "doc": "True if empty" },
+            { "kind": "method", "receiver": "string", "name": "contains", "signature": "contains(sub)", "doc": "Contains substring/element" },
+            { "kind": "method", "receiver": "string", "name": "starts_with", "signature": "starts_with(prefix)", "doc": "Starts with prefix" },
+            { "kind": "method", "receiver": "string", "name": "ends_with", "signature": "ends_with(suffix)", "doc": "Ends with suffix" },
+            { "kind": "method", "receiver": "string", "name": "trim", "signature": "trim()", "doc": "Strip whitespace" },
+            { "kind": "method", "receiver": "string", "name": "trim_start", "signature": "trim_start()", "doc": "Trim leading whitespace" },
+            { "kind": "method", "receiver": "string", "name": "trim_end", "signature": "trim_end()", "doc": "Trim trailing whitespace" },
+            { "kind": "method", "receiver": "string", "name": "split", "signature": "split(delim)", "doc": "Split by delimiter" },
+            { "kind": "method", "receiver": "string", "name": "replace", "signature": "replace(from, to)", "doc": "Replace occurrences" },
+            { "kind": "method", "receiver": "string", "name": "to_upper", "signature": "to_upper()", "doc": "Uppercase" },
+            { "kind": "method", "receiver": "string", "name": "to_lower", "signature": "to_lower()", "doc": "Lowercase" },
+            { "kind": "method", "receiver": "string", "name": "chars", "signature": "chars()", "doc": "List of characters" },
+            { "kind": "method", "receiver": "string", "name": "char_len", "signature": "char_len()", "doc": "Character count (Unicode-aware)" },
+            { "kind": "method", "receiver": "string", "name": "reverse", "signature": "reverse()", "doc": "Reversed copy" },
+            { "kind": "method", "receiver": "string", "name": "find", "signature": "find(sub)", "doc": "Index of first occurrence" },
+            { "kind": "method", "receiver": "string", "name": "repeat", "signature": "repeat(n)", "doc": "Repeat n times" },
+            { "kind": "method", "receiver": "string", "name": "to_int", "signature": "to_int()", "doc": "Parse as integer" },
+            { "kind": "method", "receiver": "string", "name": "to_float", "signature": "to_float()", "doc": "Parse as float" },
+            { "kind": "method", "receiver": "string", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" },
+            { "kind": "method", "receiver": "string", "name": "pad_start", "signature": "pad_start(width, char)", "doc": "Pad start to width" },
+            { "kind": "method", "receiver": "string", "name": "pad_end", "signature": "pad_end(width, char)", "doc": "Pad end to width" },
+            { "kind": "method", "receiver": "string", "name": "strip_prefix", "signature": "strip_prefix(prefix)", "doc": "Remove prefix if present" },
+            { "kind": "method", "receiver": "string", "name": "strip_suffix", "signature": "strip_suffix(suffix)", "doc": "Remove suffix if present" }
+          ]
+        },
+        {
+          "kind": "type", "name": "bytes", "signature": "bytes", "doc": "Byte string type",
+          "methods": [
+            { "kind": "method", "receiver": "bytes", "name": "to_list", "signature": "to_list()", "doc": "Convert to list" },
+            { "kind": "method", "receiver": "bytes", "name": "to_str", "signature": "to_str()", "doc": "Decode as UTF-8" },
+            { "kind": "method", "receiver": "bytes", "name": "to_hex", "signature": "to_hex()", "doc": "Hex-encoded string" },
+            { "kind": "method", "receiver": "bytes", "name": "slice", "signature": "slice(start, end)", "doc": "Sub-slice" },
+            { "kind": "method", "receiver": "bytes", "name": "bytes", "signature": "bytes()", "doc": "Byte representation" }
+          ]
+        },
+        {
+          "kind": "type", "name": "list", "signature": "list", "doc": "List type (e.g. list<int>)",
+          "methods": [
+            { "kind": "method", "receiver": "list", "name": "push", "signature": "push(val)", "doc": "Append value" },
+            { "kind": "method", "receiver": "list", "name": "pop", "signature": "pop()", "doc": "Remove last element" },
+            { "kind": "method", "receiver": "list", "name": "first", "signature": "first()", "doc": "First element (Option)" },
+            { "kind": "method", "receiver": "list", "name": "last", "signature": "last()", "doc": "Last element (Option)" },
+            { "kind": "method", "receiver": "list", "name": "sort", "signature": "sort()", "doc": "Sorted copy" },
+            { "kind": "method", "receiver": "list", "name": "sort_by", "signature": "sort_by(fn)", "doc": "Sort by key function" },
+            { "kind": "method", "receiver": "list", "name": "flatten", "signature": "flatten()", "doc": "Flatten one level" },
+            { "kind": "method", "receiver": "list", "name": "join", "signature": "join(sep)", "doc": "Join with separator" },
+            { "kind": "method", "receiver": "list", "name": "enumerate", "signature": "enumerate()", "doc": "Index-value tuples" },
+            { "kind": "method", "receiver": "list", "name": "zip", "signature": "zip(other)", "doc": "Zip with another list" },
+            { "kind": "method", "receiver": "list", "name": "map", "signature": "map(fn)", "doc": "Apply function" },
+            { "kind": "method", "receiver": "list", "name": "filter", "signature": "filter(fn)", "doc": "Keep matching elements" },
+            { "kind": "method", "receiver": "list", "name": "fold", "signature": "fold(init, fn)", "doc": "Reduce with accumulator" },
+            { "kind": "method", "receiver": "list", "name": "flat_map", "signature": "flat_map(fn)", "doc": "Map then flatten" },
+            { "kind": "method", "receiver": "list", "name": "any", "signature": "any(fn)", "doc": "True if any match" },
+            { "kind": "method", "receiver": "list", "name": "all", "signature": "all(fn)", "doc": "True if all match" },
+            { "kind": "method", "receiver": "list", "name": "index", "signature": "index(val)", "doc": "Index of first occurrence" },
+            { "kind": "method", "receiver": "list", "name": "count", "signature": "count(val)", "doc": "Count occurrences" },
+            { "kind": "method", "receiver": "list", "name": "dedup", "signature": "dedup()", "doc": "Remove consecutive duplicates" },
+            { "kind": "method", "receiver": "list", "name": "unique", "signature": "unique()", "doc": "Remove all duplicates" },
+            { "kind": "method", "receiver": "list", "name": "sum", "signature": "sum()", "doc": "Sum of elements" },
+            { "kind": "method", "receiver": "list", "name": "window", "signature": "window(n)", "doc": "Sliding windows of size n" },
+            { "kind": "method", "receiver": "list", "name": "chunk", "signature": "chunk(n)", "doc": "Split into chunks of size n" },
+            { "kind": "method", "receiver": "list", "name": "reduce", "signature": "reduce(fn)", "doc": "Reduce list with fn (no initial value)" },
+            { "kind": "method", "receiver": "list", "name": "min", "signature": "min()", "doc": "Minimum element" },
+            { "kind": "method", "receiver": "list", "name": "max", "signature": "max()", "doc": "Maximum element" }
+          ]
+        },
+        {
+          "kind": "type", "name": "dict", "signature": "dict", "doc": "Dictionary type (e.g. dict<string, int>)",
+          "methods": [
+            { "kind": "method", "receiver": "dict", "name": "keys", "signature": "keys()", "doc": "List of keys" },
+            { "kind": "method", "receiver": "dict", "name": "values", "signature": "values()", "doc": "List of values" },
+            { "kind": "method", "receiver": "dict", "name": "entries", "signature": "entries()", "doc": "List of (key, value) tuples" },
+            { "kind": "method", "receiver": "dict", "name": "contains_key", "signature": "contains_key(key)", "doc": "Key exists" },
+            { "kind": "method", "receiver": "dict", "name": "get", "signature": "get(key)", "doc": "Get value by key" },
+            { "kind": "method", "receiver": "dict", "name": "insert", "signature": "insert(key, val)", "doc": "Insert entry" },
+            { "kind": "method", "receiver": "dict", "name": "remove", "signature": "remove(key)", "doc": "Remove entry (dict) or element (set)" },
+            { "kind": "method", "receiver": "dict", "name": "merge", "signature": "merge(other)", "doc": "Merge dicts" },
+            { "kind": "method", "receiver": "dict", "name": "update", "signature": "update(other)", "doc": "Merge dict (mutating)" },
+            { "kind": "method", "receiver": "dict", "name": "keys_of", "signature": "keys_of(val)", "doc": "Keys with matching value" }
+          ]
+        },
+        {
+          "kind": "type", "name": "tuple", "signature": "tuple", "doc": "Tuple type"
+        },
+        {
+          "kind": "type", "name": "set", "signature": "set", "doc": "Set type",
+          "methods": [
+            { "kind": "method", "receiver": "set", "name": "add", "signature": "add(val)", "doc": "Add element to set" },
+            { "kind": "method", "receiver": "set", "name": "union", "signature": "union(other)", "doc": "Union of two sets" },
+            { "kind": "method", "receiver": "set", "name": "intersection", "signature": "intersection(other)", "doc": "Intersection of two sets" },
+            { "kind": "method", "receiver": "set", "name": "difference", "signature": "difference(other)", "doc": "Difference of two sets" }
+          ]
+        },
+        {
+          "kind": "type", "name": "fn", "signature": "fn", "doc": "Function type"
+        },
+        {
+          "kind": "type", "name": "cell", "signature": "cell", "doc": "Mutable reference cell type",
+          "methods": [
+            { "kind": "method", "receiver": "cell", "name": "set", "signature": "set(val)", "doc": "Set cell value" }
+          ]
+        },
+        {
+          "kind": "type", "name": "any", "signature": "any", "doc": "Any type (accepts all values)"
+        },
+        {
+          "kind": "type", "name": "Option", "signature": "Option<T>", "doc": "Option type (e.g. Option<int>)",
+          "variants": ["Some", "None"],
+          "methods": [
+            { "kind": "method", "receiver": "Option", "name": "unwrap", "signature": "unwrap()", "doc": "Extract value or error" },
+            { "kind": "method", "receiver": "Option", "name": "unwrap_or", "signature": "unwrap_or(default)", "doc": "Unwrap or return default" },
+            { "kind": "method", "receiver": "Option", "name": "expect", "signature": "expect(msg)", "doc": "Unwrap or error" },
+            { "kind": "method", "receiver": "Option", "name": "is_some", "signature": "is_some()", "doc": "True if Some" },
+            { "kind": "method", "receiver": "Option", "name": "is_none", "signature": "is_none()", "doc": "True if None" }
+          ]
+        },
+        {
+          "kind": "type", "name": "Result", "signature": "Result<T, E>", "doc": "Result type (e.g. Result<int, string>)",
+          "variants": ["Ok", "Err"],
+          "methods": [
+            { "kind": "method", "receiver": "Result", "name": "is_ok", "signature": "is_ok()", "doc": "True if Ok" },
+            { "kind": "method", "receiver": "Result", "name": "is_err", "signature": "is_err()", "doc": "True if Err" },
+            { "kind": "method", "receiver": "Result", "name": "map_err", "signature": "map_err(fn)", "doc": "Transform error" },
+            { "kind": "method", "receiver": "Result", "name": "and_then", "signature": "and_then(fn)", "doc": "Flat-map on Ok/Some" },
+            { "kind": "method", "receiver": "Result", "name": "or_else", "signature": "or_else(fn)", "doc": "Call fn on Err/None" }
+          ]
+        },
+        {
+          "kind": "type", "name": "Task", "signature": "Task<T>", "doc": "Async task handle returned by `spawn`. Requires the `concurrency` feature.",
+          "methods": [
+            { "kind": "method", "receiver": "Task", "name": "await", "signature": "await", "doc": "Wait for task" },
+            { "kind": "method", "receiver": "Task", "name": "is_finished", "signature": "is_finished()", "doc": "Check if done" },
+            { "kind": "method", "receiver": "Task", "name": "cancel", "signature": "cancel()", "doc": "Cancel task" },
+            { "kind": "method", "receiver": "Task", "name": "is_cancelled", "signature": "is_cancelled()", "doc": "Check if cancelled" }
+          ]
+        },
+        {
+          "kind": "type", "name": "Channel", "signature": "(Sender, Receiver)", "doc": "Bounded async channel created by `channel(n)`. Requires the `concurrency` feature.",
+          "methods": [
+            { "kind": "method", "receiver": "Channel", "name": "send", "signature": "send(val)", "doc": "Send value" },
+            { "kind": "method", "receiver": "Channel", "name": "recv", "signature": "recv()", "doc": "Receive value" },
+            { "kind": "method", "receiver": "Channel", "name": "try_recv", "signature": "try_recv()", "doc": "Non-blocking receive" },
+            { "kind": "method", "receiver": "Channel", "name": "close", "signature": "close()", "doc": "Close channel" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "math",
+      "summary": "Mathematical constants and functions.",
+      "members": [
+        { "kind": "constant", "name": "PI", "signature": "math::PI", "doc": "Pi constant (3.14159...)" },
+        { "kind": "constant", "name": "E", "signature": "math::E", "doc": "Euler's number (2.71828...)" },
+        { "kind": "constant", "name": "TAU", "signature": "math::TAU", "doc": "Tau (2π)" },
+        { "kind": "constant", "name": "INF", "signature": "math::INF", "doc": "Positive infinity" },
+        { "kind": "constant", "name": "NAN", "signature": "math::NAN", "doc": "Not-a-number" },
+        { "kind": "function", "name": "abs", "signature": "math::abs(x)", "doc": "Absolute value" },
+        { "kind": "function", "name": "min", "signature": "math::min(a, b)", "doc": "Minimum of arguments" },
+        { "kind": "function", "name": "max", "signature": "math::max(a, b)", "doc": "Maximum of arguments" },
+        { "kind": "function", "name": "floor", "signature": "math::floor(x)", "doc": "Floor (round down)" },
+        { "kind": "function", "name": "ceil", "signature": "math::ceil(x)", "doc": "Ceiling (round up)" },
+        { "kind": "function", "name": "round", "signature": "math::round(x)", "doc": "Round to nearest" },
+        { "kind": "function", "name": "sqrt", "signature": "math::sqrt(x)", "doc": "Square root" },
+        { "kind": "function", "name": "pow", "signature": "math::pow(base, exp)", "doc": "Exponentiation" },
+        { "kind": "function", "name": "clamp", "signature": "math::clamp(x, lo, hi)", "doc": "Clamp value to range" },
+        { "kind": "function", "name": "sin", "signature": "math::sin(x)", "doc": "Sine" },
+        { "kind": "function", "name": "cos", "signature": "math::cos(x)", "doc": "Cosine" },
+        { "kind": "function", "name": "tan", "signature": "math::tan(x)", "doc": "Tangent" },
+        { "kind": "function", "name": "atan2", "signature": "math::atan2(y, x)", "doc": "Two-argument arctangent" },
+        { "kind": "function", "name": "log", "signature": "math::log(x)", "doc": "Natural logarithm" },
+        { "kind": "function", "name": "log2", "signature": "math::log2(x)", "doc": "Base-2 logarithm" },
+        { "kind": "function", "name": "log10", "signature": "math::log10(x)", "doc": "Base-10 logarithm" },
+        { "kind": "function", "name": "is_nan", "signature": "math::is_nan(x)", "doc": "Check if NaN" },
+        { "kind": "function", "name": "is_inf", "signature": "math::is_inf(x)", "doc": "Check if infinite" }
+      ]
+    },
+    {
+      "name": "json",
+      "summary": "JSON encoding and decoding.",
+      "members": [
+        { "kind": "function", "name": "encode", "signature": "json::encode(value) -> string", "doc": "Value to JSON string" },
+        { "kind": "function", "name": "decode", "signature": "json::decode(string) -> value", "doc": "JSON string to value" },
+        { "kind": "function", "name": "pretty", "signature": "json::pretty(value) -> string", "doc": "Pretty-printed JSON string" }
+      ]
+    },
+    {
+      "name": "io",
+      "summary": "Standard input/output.",
+      "members": [
+        { "kind": "function", "name": "print", "signature": "io::print(...args)", "doc": "Print without newline" },
+        { "kind": "function", "name": "println", "signature": "io::println(...args)", "doc": "Print with newline" },
+        { "kind": "function", "name": "eprintln", "signature": "io::eprintln(...args)", "doc": "Print to stderr with newline" }
+      ]
+    },
+    {
+      "name": "string",
+      "summary": "String utilities.",
+      "members": [
+        { "kind": "function", "name": "join", "signature": "string::join(list, sep)", "doc": "Join list elements into string with optional separator" }
+      ]
+    },
+    {
+      "name": "log",
+      "summary": "Leveled logging — `log::trace` / `debug` / `info` / `warn` / `error`. Compile-time stripped above the cap.",
+      "members": [
+        { "kind": "function", "name": "trace", "signature": "log::trace(message, fields?)", "doc": "Emit a TRACE record. Stripped at compile time when level > log_max_level_*." },
+        { "kind": "function", "name": "debug", "signature": "log::debug(message, fields?)", "doc": "Emit a DEBUG record. Stripped at compile time when level > log_max_level_*." },
+        { "kind": "function", "name": "info", "signature": "log::info(message, fields?)", "doc": "Emit an INFO record. Stripped at compile time when level > log_max_level_*." },
+        { "kind": "function", "name": "warn", "signature": "log::warn(message, fields?)", "doc": "Emit a WARN record. Stripped at compile time when level > log_max_level_*." },
+        { "kind": "function", "name": "error", "signature": "log::error(message, fields?)", "doc": "Emit an ERROR record." },
+        { "kind": "function", "name": "set_level", "signature": "log::set_level(name)", "doc": "Set the runtime threshold (off|error|warn|info|debug|trace)." },
+        { "kind": "function", "name": "level", "signature": "log::level()", "doc": "Return the current runtime threshold as a string." },
+        { "kind": "function", "name": "enabled", "signature": "log::enabled(name)", "doc": "Check whether the handler would emit at the given level." }
+      ]
+    },
+    {
+      "name": "semver",
+      "summary": "Semantic version parsing, comparison, and constraint matching.",
+      "members": [
+        { "kind": "function", "name": "parse", "signature": "semver::parse(s) -> dict", "doc": "Parse a version string into `#{major, minor, patch, pre, build}`. Errors on invalid input." },
+        { "kind": "function", "name": "is_valid", "signature": "semver::is_valid(s) -> bool", "doc": "True if the string parses as a valid semantic version." },
+        { "kind": "function", "name": "format", "signature": "semver::format(version) -> string", "doc": "Render a version (string or dict) back to its canonical string form." },
+        { "kind": "function", "name": "compare", "signature": "semver::compare(a, b) -> int", "doc": "Three-way ordering: returns -1 / 0 / 1." },
+        { "kind": "function", "name": "eq", "signature": "semver::eq(a, b) -> bool", "doc": "True if `a` and `b` are the same version (including pre-release)." },
+        { "kind": "function", "name": "gt", "signature": "semver::gt(a, b) -> bool", "doc": "True if `a > b`." },
+        { "kind": "function", "name": "gte", "signature": "semver::gte(a, b) -> bool", "doc": "True if `a >= b`." },
+        { "kind": "function", "name": "lt", "signature": "semver::lt(a, b) -> bool", "doc": "True if `a < b`." },
+        { "kind": "function", "name": "lte", "signature": "semver::lte(a, b) -> bool", "doc": "True if `a <= b`." },
+        { "kind": "function", "name": "satisfies", "signature": "semver::satisfies(version, req) -> bool", "doc": "True if `version` matches the requirement string (e.g. `^1.0`, `~1.2`, `>=1.0, <2.0`)." },
+        { "kind": "function", "name": "bump_major", "signature": "semver::bump_major(v) -> string", "doc": "Increment major; zero minor and patch; clear pre-release and build." },
+        { "kind": "function", "name": "bump_minor", "signature": "semver::bump_minor(v) -> string", "doc": "Increment minor; zero patch; clear pre-release and build." },
+        { "kind": "function", "name": "bump_patch", "signature": "semver::bump_patch(v) -> string", "doc": "Increment patch (or strip pre-release if present); clear build." }
+      ]
+    },
+    {
+      "name": "os",
+      "summary": "OS / arch detection, environment variables, and process info.",
+      "members": [
+        { "kind": "constant", "name": "name", "signature": "os::name", "doc": "Target OS as reported by `std::env::consts::OS` (e.g. \"linux\", \"macos\", \"windows\")." },
+        { "kind": "constant", "name": "arch", "signature": "os::arch", "doc": "Target architecture (e.g. \"x86_64\", \"aarch64\", \"arm\")." },
+        { "kind": "constant", "name": "family", "signature": "os::family", "doc": "OS family — \"unix\" or \"windows\"." },
+        { "kind": "constant", "name": "pointer_width", "signature": "os::pointer_width", "doc": "Pointer width in bits (32 or 64)." },
+        { "kind": "constant", "name": "dll_extension", "signature": "os::dll_extension", "doc": "Dynamic-library extension without the leading dot (\"so\", \"dylib\", \"dll\")." },
+        { "kind": "constant", "name": "exe_extension", "signature": "os::exe_extension", "doc": "Executable extension without the leading dot (\"\" on Unix, \"exe\" on Windows)." },
+        { "kind": "function", "name": "env_var", "signature": "os::env_var(name [, default]) -> string", "doc": "Read an env var. Errors if missing; the optional 2nd arg is returned instead." },
+        { "kind": "function", "name": "has_env_var", "signature": "os::has_env_var(name) -> bool", "doc": "True if the named env var is set in the current process." },
+        { "kind": "function", "name": "env_vars", "signature": "os::env_vars() -> dict", "doc": "Snapshot of all env vars as a `dict<string, string>`." },
+        { "kind": "function", "name": "cwd", "signature": "os::cwd() -> string", "doc": "Current working directory." },
+        { "kind": "function", "name": "pid", "signature": "os::pid() -> int", "doc": "Current process id." },
+        { "kind": "function", "name": "args", "signature": "os::args() -> list<string>", "doc": "Script-level arguments (host-injected via `Engine::set_args`; default `[]`)." },
+        { "kind": "function", "name": "temp_dir", "signature": "os::temp_dir() -> string", "doc": "Platform temporary directory." }
+      ]
+    },
+    {
+      "name": "path",
+      "summary": "Pure-string path manipulation (no I/O).",
+      "members": [
+        { "kind": "constant", "name": "sep", "signature": "path::sep", "doc": "Platform path separator — `/` on Unix, `\\` on Windows." },
+        { "kind": "function", "name": "join", "signature": "path::join(a, b, ...) -> string", "doc": "Variadic path join using the platform separator." },
+        { "kind": "function", "name": "parent", "signature": "path::parent(p) -> string", "doc": "Directory containing `p`. Empty string if `p` has no parent." },
+        { "kind": "function", "name": "basename", "signature": "path::basename(p) -> string", "doc": "Final component of `p`." },
+        { "kind": "function", "name": "stem", "signature": "path::stem(p) -> string", "doc": "Basename of `p` with the extension stripped." },
+        { "kind": "function", "name": "extension", "signature": "path::extension(p) -> string", "doc": "Extension of `p` without the leading dot. Empty string if none." },
+        { "kind": "function", "name": "with_extension", "signature": "path::with_extension(p, ext) -> string", "doc": "Replace (or add) the extension on `p`." },
+        { "kind": "function", "name": "is_absolute", "signature": "path::is_absolute(p) -> bool", "doc": "True if `p` is absolute on the current platform." },
+        { "kind": "function", "name": "is_relative", "signature": "path::is_relative(p) -> bool", "doc": "True if `p` is relative on the current platform." },
+        { "kind": "function", "name": "components", "signature": "path::components(p) -> list<string>", "doc": "Split `p` into its components." },
+        { "kind": "function", "name": "normalize", "signature": "path::normalize(p) -> string", "doc": "Lexically normalise `p` — collapse `.` and `..` without consulting the filesystem." }
+      ]
+    },
+    {
+      "name": "fs",
+      "summary": "Filesystem I/O. Sync (`std::fs`) or async (`tokio::fs`) impl picked by the build's runtime feature.",
+      "members": [
+        { "kind": "function", "name": "read", "signature": "fs::read(path) -> string", "doc": "Read the file at `path` as UTF-8 text." },
+        { "kind": "function", "name": "read_bytes", "signature": "fs::read_bytes(path) -> bytes", "doc": "Read the file at `path` as raw bytes." },
+        { "kind": "function", "name": "write", "signature": "fs::write(path, contents)", "doc": "Write `contents` (string or bytes) to `path`, replacing the existing file." },
+        { "kind": "function", "name": "append", "signature": "fs::append(path, contents)", "doc": "Append `contents` (string or bytes) to `path`. Creates the file if missing." },
+        { "kind": "function", "name": "exists", "signature": "fs::exists(path) -> bool", "doc": "True if `path` exists." },
+        { "kind": "function", "name": "is_file", "signature": "fs::is_file(path) -> bool", "doc": "True if `path` is an existing regular file." },
+        { "kind": "function", "name": "is_dir", "signature": "fs::is_dir(path) -> bool", "doc": "True if `path` is an existing directory." },
+        { "kind": "function", "name": "list_dir", "signature": "fs::list_dir(path) -> list<string>", "doc": "Names of the entries directly inside the directory at `path` (non-recursive)." },
+        { "kind": "function", "name": "create_dir", "signature": "fs::create_dir(path)", "doc": "Create a single directory. Errors if any parent is missing." },
+        { "kind": "function", "name": "create_dir_all", "signature": "fs::create_dir_all(path)", "doc": "Create the directory and any missing parents." },
+        { "kind": "function", "name": "remove_file", "signature": "fs::remove_file(path)", "doc": "Delete the file at `path`." },
+        { "kind": "function", "name": "remove_dir", "signature": "fs::remove_dir(path)", "doc": "Delete the directory at `path`. Errors if not empty." },
+        { "kind": "function", "name": "remove_dir_all", "signature": "fs::remove_dir_all(path)", "doc": "Recursively delete the directory at `path` and all its contents." },
+        { "kind": "function", "name": "rename", "signature": "fs::rename(from, to)", "doc": "Rename / move `from` to `to`." },
+        { "kind": "function", "name": "copy", "signature": "fs::copy(from, to) -> int", "doc": "Copy `from` to `to`; returns bytes copied." },
+        { "kind": "function", "name": "metadata", "signature": "fs::metadata(path) -> dict", "doc": "Return `#{size, is_file, is_dir, readonly, modified}`." },
+        { "kind": "function", "name": "canonicalize", "signature": "fs::canonicalize(path) -> string", "doc": "Resolve symlinks and normalise `path` against the filesystem." }
+      ]
+    }
+  ]
+}

@@ -617,10 +617,7 @@ async {
 
     let mut val = rx.recv();
     while val != None {
-        match val {
-            Some(msg) => process(msg),
-            None => break,
-        };
+        process(val.unwrap());
         val = rx.recv();
     }
 };

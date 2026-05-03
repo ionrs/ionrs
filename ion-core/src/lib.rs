@@ -97,3 +97,48 @@ pub use value::Value;
 
 #[cfg(feature = "derive")]
 pub use ion_derive::IonType;
+
+/// Canonical doc manifest for the Ion standard library, in the
+/// `ionDocVersion: 2` format (`IonDocManifest`). Embedded at compile time
+/// via `include_str!` so it ships with every `ion-core` build.
+///
+/// Both the LSP (for hover/completion) and the docs site read from this
+/// single source — keeping editor tooltips and the published reference in
+/// sync without an extra build step.
+pub const STDLIB_DOCS_JSON: &str = include_str!("stdlib-docs.json");
+
+#[cfg(test)]
+mod stdlib_docs_tests {
+    use super::STDLIB_DOCS_JSON;
+
+    #[test]
+    fn embedded_manifest_is_valid_v2_json() {
+        let v: serde_json::Value =
+            serde_json::from_str(STDLIB_DOCS_JSON).expect("stdlib-docs.json parses");
+        assert_eq!(v["ionDocVersion"], 2, "must be ionDocVersion: 2");
+        let modules = v["modules"]
+            .as_array()
+            .expect("modules is an array");
+        assert!(
+            modules.iter().any(|m| m["name"] == "core"),
+            "core (global builtins) module is required"
+        );
+        assert!(
+            modules.iter().any(|m| m["name"] == "types"),
+            "types (built-in types) module is required"
+        );
+        for m in modules {
+            assert!(m["name"].is_string(), "every module needs a name");
+            for member in m["members"].as_array().unwrap_or(&Vec::new()) {
+                let kind = member["kind"].as_str().unwrap_or("");
+                assert!(
+                    matches!(
+                        kind,
+                        "function" | "constant" | "method" | "type" | "builtin"
+                    ),
+                    "unknown member kind: {kind}"
+                );
+            }
+        }
+    }
+}

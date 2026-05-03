@@ -126,12 +126,9 @@ async {
     let mut out = [];
     let mut next = rx.recv();
     while next != None {
-        match next {
-            Some(value) => out = out.push(value),
-            None => break,
-        };
+        out = out.push(next.unwrap());
         next = rx.recv();
-    };
+    }
     out
 }
 ```
