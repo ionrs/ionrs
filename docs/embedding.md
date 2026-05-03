@@ -4,7 +4,7 @@
 > module names, struct/field names, enum/variant names) are folded to
 > `u64` FNV-1a hashes at compile time via the `h!()` macro. The literal
 > source text never appears in the release binary's `.rodata`. See
-> [`HIDE_NAMES_PLAN.md`](../HIDE_NAMES_PLAN.md) for the full rationale.
+> [`hide-names.md`](hide-names.md) for the concise overview.
 > Migration: replace each `register_fn("name", …)` with
 > `register_fn(h!("name"), …)`.
 

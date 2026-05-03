@@ -3,7 +3,7 @@
 //! `Module` is the builder API; `ModuleTable` is the immutable value embedded
 //! in `Value::Module(Arc<ModuleTable>)`. Both are keyed by FNV-1a 64-bit
 //! name hashes — no identifier strings touch the binary. See
-//! `HIDE_NAMES_PLAN.md` for the design.
+//! `docs/hide-names.md` for the overview.
 
 use indexmap::IndexMap;
 use std::sync::Arc;

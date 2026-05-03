@@ -1,11 +1,10 @@
 //! Optional hash → name resolution for diagnostics.
 //!
-//! Phase 7 of HIDE_NAMES_PLAN.md. Host-registered identifiers (enum names,
-//! variant names, module names, function names, struct field names) are
-//! stored in `Value`s as `u64` FNV-1a hashes — they don't appear in the
-//! release binary at all. This module provides an *optional* runtime
-//! mapping back to source-form strings, used solely by `Display`, error
-//! messages, and JSON/msgpack rendering.
+//! Host-registered identifiers (enum names, variant names, module names,
+//! function names, struct field names) are stored in `Value`s as `u64`
+//! FNV-1a hashes — they don't appear in the release binary at all. This
+//! module provides an *optional* runtime mapping back to source-form strings,
+//! used solely by `Display`, error messages, and JSON/msgpack rendering.
 //!
 //! # When the registry is populated
 //!

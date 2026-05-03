@@ -34,7 +34,7 @@ pub enum Value {
     /// Host-registered builtin function. `qualified_hash` is the precomputed
     /// `mix(module_hash, fn_name_hash)` so dispatch is one integer compare.
     /// The function's identifier is intentionally NOT stored as a string —
-    /// names live only in the optional sidecar (Phase 7 of HIDE_NAMES_PLAN).
+    /// names live only in the optional sidecar described in docs/hide-names.md.
     BuiltinFn {
         qualified_hash: u64,
         func: BuiltinFn,
@@ -69,7 +69,7 @@ pub enum Value {
     /// Host-injected struct: `TypeName { field: val, ... }`.
     /// `type_hash` is `h("TypeName")` computed at macro-expansion / parse time.
     /// `fields` keys are `h("field_name")`. Field names from script source
-    /// never appear in the host binary's `.rodata` — see HIDE_NAMES_PLAN.md.
+    /// never appear in the host binary's `.rodata` — see docs/hide-names.md.
     HostStruct {
         type_hash: u64,
         fields: IndexMap<u64, Value>,
@@ -437,7 +437,7 @@ impl fmt::Display for Value {
             Value::HostStruct { type_hash, fields } => {
                 // Names live only in the optional `names` registry; debug
                 // builds auto-populate it from h!() sites, release builds
-                // can load a sidecar — see HIDE_NAMES_PLAN.md §10.
+                // can load a sidecar — see docs/hide-names.md.
                 match crate::names::lookup(*type_hash) {
                     Some(name) => write!(f, "{} {{ ", name)?,
                     None => write!(f, "<struct#{:016x}> {{ ", type_hash)?,

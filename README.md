@@ -89,8 +89,8 @@ for (i, item) in enumerate(items) {
 Host-registered names — functions, modules, struct types, enum variants —
 are hashed at compile time via the `h!()` macro. The literal source text
 is consumed by `h!()`'s const evaluation; only the `u64` survives in the
-release binary. See [`HIDE_NAMES_PLAN.md`](HIDE_NAMES_PLAN.md) for the
-full design and `docs/embedding.md` for the migration guide.
+release binary. See [`docs/hide-names.md`](docs/hide-names.md) for a concise
+overview and `docs/embedding.md` for the migration guide.
 
 ```rust
 use ion_core::{Engine, h};

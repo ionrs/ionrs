@@ -3,7 +3,7 @@
 //!
 //! Names are FNV-1a 64-bit hashes computed at macro-expansion / parse time.
 //! No identifier strings end up in the host binary's `.rodata`. See
-//! `HIDE_NAMES_PLAN.md` for the design and rationale.
+//! `docs/hide-names.md` for the overview.
 
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -79,7 +79,7 @@ impl TypeRegistry {
     }
 
     /// Register a struct definition. Panics on hash collision with an
-    /// already-registered struct (see HIDE_NAMES_PLAN.md §11). Re-registering
+    /// already-registered struct (see docs/hide-names.md). Re-registering
     /// the same `T` (same shape) is permitted and replaces silently — common
     /// when an embedder calls `Engine::register_type::<T>()` more than once.
     pub fn register_struct(&mut self, def: HostStructDef) {

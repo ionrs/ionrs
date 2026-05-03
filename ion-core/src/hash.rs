@@ -9,7 +9,7 @@
 //! good distribution at small input sizes (identifiers), and zero deps. It
 //! is **not** a cryptographic hash; it is not designed to resist collision
 //! attacks. Collisions inside a single registry are detected at registration
-//! time and panic the host startup — see HIDE_NAMES_PLAN.md §11.
+//! time and panic the host startup — see docs/hide-names.md.
 
 /// FNV-1a 64-bit hash. `const fn` so the result is computed by `rustc`
 /// during compilation when the input is a constant.
@@ -54,7 +54,7 @@ pub const fn mix(a: u64, b: u64) -> u64 {
 /// registers `(hash, $s)` with [`crate::names`] on first execution, via a
 /// per-site `Once`. This gives readable diagnostics in tests and dev
 /// builds without touching release performance or binary size — see
-/// `HIDE_NAMES_PLAN.md` §10.
+/// `docs/hide-names.md`.
 ///
 /// **Const contexts:** the debug-build registration uses `Once::call_once`
 /// which is not `const`, so under `cfg(debug_assertions)` the macro cannot

@@ -11,10 +11,11 @@ Editor extensions track their own version numbers under each entry.
 
 ## [0.9.0] — 2026-05-03
 
-This release implements `HIDE_NAMES_PLAN.md`: every host-registered
-identifier (enum names, variant names, struct/field names, module names,
-function names, qualified `mod::fn` paths) is folded to a 64-bit FNV-1a
-hash at compile time and never appears in the release binary's `.rodata`.
+This release implements host-name hiding: every host-registered identifier
+(enum names, variant names, struct/field names, module names, function names,
+qualified `mod::fn` paths) is folded to a 64-bit FNV-1a hash at compile time
+and never appears in the release binary's `.rodata`. See
+`docs/hide-names.md`.
 `strings target/release/host_bin` now reveals zero Ion-level identifiers
 from registered types or stdlib functions.
 
@@ -167,10 +168,10 @@ legacy-threaded-concurrency feature combinations.
   functions (`semver_parse_arg`, `fs_arg_str`, `arg_str`, `io_err`)
   refactored to drop `fn_name` parameters. Generic error strings dedup
   across the whole stdlib.
-- The aggressive bytecode-level dispatch reshape from `HIDE_NAMES_PLAN`
-  §8 (u64 operands inline in bytecode, new `GetModuleSlot` op) is
-  **deferred** as a follow-up. `mod::fn` calls still hash the
-  script-source string at runtime in the VM. Hiding goal is unaffected.
+- The aggressive bytecode-level dispatch reshape (u64 operands inline in
+  bytecode, new `GetModuleSlot` op) is **deferred** as a follow-up.
+  `mod::fn` calls still hash the script-source string at runtime in the VM.
+  Hiding goal is unaffected.
 
 ### Trade-offs
 
@@ -193,9 +194,8 @@ legacy-threaded-concurrency feature combinations.
 - **`README.md`** code samples updated to the `h!()` form.
 - **`docs/embedding.md`** updated with the new registration APIs and
   a section on the `names` sidecar workflow.
-- **`HIDE_NAMES_PLAN.md`** preserved at the repo root as the design
-  rationale and migration record, with §16 documenting deviations
-  between the original plan spec and what shipped.
+- **`docs/hide-names.md`** added as the concise reference for the shipped
+  host-name hiding behavior.
 
 ## [0.8.0] — 2026-05-03
 

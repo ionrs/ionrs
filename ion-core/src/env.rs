@@ -21,7 +21,7 @@ struct Binding {
 /// names (modules, builtin functions). Lookups by `&str` hash on the fly and
 /// fall back to this table when a binding isn't found in any scope frame.
 /// This keeps host names entirely outside the `StringPool` so the source
-/// identifier never lives at runtime — see HIDE_NAMES_PLAN.md.
+/// identifier never lives at runtime — see docs/hide-names.md.
 #[derive(Debug, Clone)]
 pub struct Env {
     frames: Vec<Vec<Binding>>,
