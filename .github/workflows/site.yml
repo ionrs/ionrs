@@ -78,8 +78,9 @@ jobs:
           args: >-
             --no-progress
             --root-dir ${{ github.workspace }}/dist
-            --exclude "^https?://github.com/"
-            --exclude "^https?://crates.io/"
+            --exclude "^https?://github\.com/"
+            --exclude "^https?://crates\.io/"
+            --exclude "^https?://ionrs\.github\.io/"
             --exclude-loopback
             'dist/**/*.html'
           fail: true

@@ -167,6 +167,26 @@ for (const job of rootMarkdown) {
   // not comma-separated tags; the rustdoc dialect doesn't apply here.
   body = body.replace(/^```rust,[\w,]+/gm, "```rust");
 
+  // Rewrite repo-relative markdown cross-links to canonical site URLs
+  // so the rendered docs don't link to nonexistent .md files. The
+  // canonical sources keep their GitHub-friendly paths; only the synced
+  // copies get the site URLs.
+  body = body.replace(
+    /\]\(docs\/([\w-]+)\.md(#[^)]*)?\)/g,
+    (_, name, anchor = "") => `](/guides/${name}/${anchor})`
+  );
+  body = body.replace(/\]\(LANGUAGE\.md(#[^)]*)?\)/g,  (_, a = "") => `](/language/${a})`);
+  body = body.replace(/\]\(DESIGN\.md(#[^)]*)?\)/g,    (_, a = "") => `](/design/${a})`);
+  body = body.replace(/\]\(CHANGELOG\.md(#[^)]*)?\)/g, (_, a = "") => `](/changelog/${a})`);
+  if (job.src.startsWith("docs/")) {
+    // Same-directory references like `(concurrency.md#x)` from inside
+    // docs/embedding.md resolve to /guides/concurrency/#x on the site.
+    body = body.replace(
+      /\]\(([\w-]+)\.md(#[^)]*)?\)/g,
+      (_, name, anchor = "") => `](/guides/${name}/${anchor})`
+    );
+  }
+
   // Astro 5's content layer pipes `.md` through the MDX processor, so
   // bare `{` and `}` in prose are interpreted as JSX expression
   // delimiters. Escape them outside fenced code blocks. Backslash-
