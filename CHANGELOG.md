@@ -9,6 +9,35 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.7.7] — 2026-05-03
+
+### Fixed
+- **`ion-lsp` initialize response no longer double-nests `capabilities`.** The
+  server passed the full `InitializeResult` to `Connection::initialize()`, but
+  `lsp-server` itself wraps that argument in `{ "capabilities": ... }`. Strict
+  clients (VS Code) parsed `result.capabilities.hoverProvider` as `undefined`,
+  concluded the server didn't advertise hover, and never sent a single
+  `textDocument/hover` request — hover, completion, and goto-definition all
+  silently no-op'd while the LSP process looked healthy. Switched to
+  `initialize_start` / `initialize_finish` so the result shape is correct.
+- **`ion-lsp` document symbols pass `selectionRange ⊆ range` validation.**
+  `def_to_symbol` returned a zero-length `range` (`(line, 0)..(line, 0)`)
+  alongside a `selectionRange` that extended out to `(line, col + name_len)`,
+  causing VS Code to reject every outline entry with
+  `selectionRange must be contained in fullRange`. Range now spans the full
+  declaration line.
+- **VS Code extension VSIX now bundles `vscode-languageclient`.**
+  `editors/vscode/.vscodeignore` excluded `node_modules/**` while the
+  extension was unbundled (`tsc` only), so the published 9 KB VSIX was missing
+  every runtime dep and crashed on activation with
+  `Cannot find module 'vscode-languageclient/node'`. Highlighting (a static
+  contribution) survived; everything LSP-driven died. Trimmed `.vscodeignore`
+  to keep prod deps and added a `npm run package` script that produces the
+  full ~280 KB VSIX.
+
+### Editor extensions
+- VS Code 0.7.2 → 0.7.7
+
 ## [0.7.6] — 2026-05-02 (JetBrains extension only)
 
 ### Fixed

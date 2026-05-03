@@ -65,7 +65,7 @@ To disable the LSP (syntax highlighting still works):
 ## Install from .vsix
 
 ```bash
-code --install-extension ion-lang-0.7.2.vsix
+code --install-extension ion-lang-0.7.7.vsix
 ```
 
 ## Development
@@ -81,5 +81,6 @@ Press F5 in VS Code to launch an Extension Development Host for testing.
 ### Packaging
 
 ```bash
-npx @vscode/vsce package
+npm run package    # produces ion-lang-<version>.vsix with prod deps bundled
+npm install        # restore dev deps for further development
 ```

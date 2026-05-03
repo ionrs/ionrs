@@ -1,5 +1,12 @@
 src/**
-node_modules/**
 tsconfig.json
 .vscode/**
 *.vsix
+node_modules/typescript/**
+node_modules/@types/**
+node_modules/**/*.ts
+node_modules/**/*.map
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/*.md
+node_modules/**/.bin/**

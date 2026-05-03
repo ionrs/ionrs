@@ -2,7 +2,7 @@
   "name": "ion-lang",
   "displayName": "Ion Language",
   "description": "Syntax highlighting and LSP support for the Ion scripting language",
-  "version": "0.7.2",
+  "version": "0.7.7",
   "publisher": "ionlang",
   "license": "MIT",
   "repository": {
@@ -70,7 +70,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "npm install && npm run compile && npx @vscode/vsce package"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"

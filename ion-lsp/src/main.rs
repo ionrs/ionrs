@@ -1897,17 +1897,19 @@ fn main() {
         ..Default::default()
     };
 
+    let (initialize_id, init_params_value) = connection.initialize_start().unwrap();
+    let init_params = serde_json::from_value::<InitializeParams>(init_params_value).ok();
+
     let init_result = InitializeResult {
         capabilities,
         server_info: Some(lsp_types::ServerInfo {
             name: "ion-lsp".to_string(),
-            version: Some("0.1.0".to_string()),
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
         }),
     };
-
-    let init_json = serde_json::to_value(init_result).unwrap();
-    let init_params_value = connection.initialize(init_json).unwrap();
-    let init_params = serde_json::from_value::<InitializeParams>(init_params_value).ok();
+    connection
+        .initialize_finish(initialize_id, serde_json::to_value(&init_result).unwrap())
+        .unwrap();
     let workspace_roots = workspace_roots_from_initialize(init_params.as_ref());
     let catalog =
         DocCatalog::for_workspace_roots(&workspace_roots, std::env::var_os("ION_LSP_DOCS"));
@@ -2555,7 +2557,7 @@ fn def_to_symbol(def: &Definition) -> DocumentSymbol {
         deprecated: None,
         range: Range {
             start: Position::new(def.line, 0),
-            end: Position::new(def.line, 0),
+            end: Position::new(def.line + 1, 0),
         },
         selection_range: Range {
             start: Position::new(def.line, def.col),
