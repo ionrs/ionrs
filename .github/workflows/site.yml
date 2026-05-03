@@ -77,7 +77,7 @@ jobs:
         with:
           args: >-
             --no-progress
-            --base dist
+            --root-dir ${{ github.workspace }}/dist
             --exclude "^https?://github.com/"
             --exclude "^https?://crates.io/"
             --exclude-loopback
