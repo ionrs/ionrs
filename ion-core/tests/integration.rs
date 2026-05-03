@@ -5,6 +5,7 @@
 #![allow(clippy::approx_constant)]
 
 use ion_core::engine::Engine;
+use ion_core::h;
 use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef, IonType};
 use ion_core::interpreter::Limits;
 use ion_core::module::Module;
@@ -1833,26 +1834,26 @@ fn test_int_parse_error() {
 fn engine_with_types() -> Engine {
     let mut engine = Engine::new();
     engine.register_struct(HostStructDef {
-        name: "Config".into(),
-        fields: vec!["host".into(), "port".into(), "debug".into()],
+        name_hash: h!("Config"),
+        fields: vec![h!("host"), h!("port"), h!("debug")],
     });
     engine.register_enum(HostEnumDef {
-        name: "Color".into(),
+        name_hash: h!("Color"),
         variants: vec![
             HostVariantDef {
-                name: "Red".into(),
+                name_hash: h!("Red"),
                 arity: 0,
             },
             HostVariantDef {
-                name: "Green".into(),
+                name_hash: h!("Green"),
                 arity: 0,
             },
             HostVariantDef {
-                name: "Blue".into(),
+                name_hash: h!("Blue"),
                 arity: 0,
             },
             HostVariantDef {
-                name: "Custom".into(),
+                name_hash: h!("Custom"),
                 arity: 3,
             },
         ],
@@ -1866,11 +1867,11 @@ fn test_host_struct_construct() {
     let val = engine
         .eval(r#"Config { host: "localhost", port: 8080, debug: true }"#)
         .unwrap();
-    if let Value::HostStruct { type_name, fields } = &val {
-        assert_eq!(type_name, "Config");
-        assert_eq!(fields["host"], Value::Str("localhost".into()));
-        assert_eq!(fields["port"], Value::Int(8080));
-        assert_eq!(fields["debug"], Value::Bool(true));
+    if let Value::HostStruct { type_hash, fields } = &val {
+        assert_eq!(*type_hash, h!("Config"));
+        assert_eq!(fields[&h!("host")], Value::Str("localhost".into()));
+        assert_eq!(fields[&h!("port")], Value::Int(8080));
+        assert_eq!(fields[&h!("debug")], Value::Bool(true));
     } else {
         panic!("expected HostStruct, got: {:?}", val);
     }
@@ -1956,8 +1957,8 @@ fn test_host_enum_unit_variant() {
     assert_eq!(
         val,
         Value::HostEnum {
-            enum_name: "Color".into(),
-            variant: "Red".into(),
+            enum_hash: h!("Color"),
+            variant_hash: h!("Red"),
             data: vec![],
         }
     );
@@ -1970,8 +1971,8 @@ fn test_host_enum_data_variant() {
     assert_eq!(
         val,
         Value::HostEnum {
-            enum_name: "Color".into(),
-            variant: "Custom".into(),
+            enum_hash: h!("Color"),
+            variant_hash: h!("Custom"),
             data: vec![Value::Int(255), Value::Int(128), Value::Int(0)],
         }
     );
@@ -2034,6 +2035,9 @@ fn test_host_enum_match_unit_variant() {
 
 #[test]
 fn test_host_struct_display() {
+    // Phase 2: names are out of the binary, so Display is the opaque
+    // hash form `<struct#hhhh> { #fffff: ... }`. Sidecar (Phase 7)
+    // restores readable names. Field values still appear verbatim.
     let mut engine = engine_with_types();
     let val = engine
         .eval(
@@ -2044,7 +2048,7 @@ fn test_host_struct_display() {
         )
         .unwrap();
     if let Value::Str(s) = &val {
-        assert!(s.contains("Config"), "got: {}", s);
+        assert!(s.contains("<struct#"), "got: {}", s);
         assert!(s.contains("localhost"), "got: {}", s);
     } else {
         panic!("expected string");
@@ -2053,9 +2057,15 @@ fn test_host_struct_display() {
 
 #[test]
 fn test_host_enum_display() {
+    // Phase 2: opaque form until sidecar restores `Color::Red`.
     let mut engine = engine_with_types();
     let val = engine.eval(r#"f"{Color::Red}""#).unwrap();
-    assert_eq!(val, Value::Str("Color::Red".into()));
+    if let Value::Str(s) = &val {
+        assert!(s.starts_with("<enum#"), "got: {}", s);
+        assert!(s.contains("::<v#"), "got: {}", s);
+    } else {
+        panic!("expected string");
+    }
 }
 
 #[test]
@@ -2159,10 +2169,10 @@ enum Shape {
 fn test_derive_struct_to_ion() {
     let p = Point { x: 1.0, y: 2.0 };
     let val = p.to_ion();
-    if let Value::HostStruct { type_name, fields } = &val {
-        assert_eq!(type_name, "Point");
-        assert_eq!(fields["x"], Value::Float(1.0));
-        assert_eq!(fields["y"], Value::Float(2.0));
+    if let Value::HostStruct { type_hash, fields } = &val {
+        assert_eq!(*type_hash, h!("Point"));
+        assert_eq!(fields[&h!("x")], Value::Float(1.0));
+        assert_eq!(fields[&h!("y")], Value::Float(2.0));
     } else {
         panic!("expected HostStruct");
     }
@@ -2221,8 +2231,8 @@ fn test_derive_enum_to_ion() {
     assert_eq!(
         val,
         Value::HostEnum {
-            enum_name: "Shape".into(),
-            variant: "Circle".into(),
+            enum_hash: h!("Shape"),
+            variant_hash: h!("Circle"),
             data: vec![Value::Float(5.0)],
         }
     );
@@ -2231,8 +2241,8 @@ fn test_derive_enum_to_ion() {
 #[test]
 fn test_derive_enum_from_ion() {
     let val = Value::HostEnum {
-        enum_name: "Shape".into(),
-        variant: "Rect".into(),
+        enum_hash: h!("Shape"),
+        variant_hash: h!("Rect"),
         data: vec![Value::Float(3.0), Value::Float(4.0)],
     };
     let s = Shape::from_ion(&val).unwrap();

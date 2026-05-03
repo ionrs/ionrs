@@ -605,9 +605,9 @@ async fn eval_async_async_host_programs_match_host_structs_in_bytecode() {
     let mut engine = Engine::new();
     engine.register_async_fn("later_point", |_args| async move {
         let mut fields = IndexMap::new();
-        fields.insert("x".to_string(), Value::Int(42));
+        fields.insert(ion_core::h!("x"), Value::Int(42));
         Ok(Value::HostStruct {
-            type_name: "Point".to_string(),
+            type_hash: ion_core::h!("Point"),
             fields,
         })
     });
@@ -632,9 +632,9 @@ async fn eval_async_async_host_programs_match_host_struct_nested_fields() {
     let mut engine = Engine::new();
     engine.register_async_fn("later_point", |_args| async move {
         let mut fields = IndexMap::new();
-        fields.insert("x".to_string(), Value::Int(42));
+        fields.insert(ion_core::h!("x"), Value::Int(42));
         Ok(Value::HostStruct {
-            type_name: "Point".to_string(),
+            type_hash: ion_core::h!("Point"),
             fields,
         })
     });
@@ -660,9 +660,9 @@ async fn eval_async_async_host_programs_skip_struct_arm_when_field_is_missing() 
     let mut engine = Engine::new();
     engine.register_async_fn("later_point", |_args| async move {
         let mut fields = IndexMap::new();
-        fields.insert("x".to_string(), Value::Int(42));
+        fields.insert(ion_core::h!("x"), Value::Int(42));
         Ok(Value::HostStruct {
-            type_name: "Point".to_string(),
+            type_hash: ion_core::h!("Point"),
             fields,
         })
     });
@@ -687,8 +687,8 @@ async fn eval_async_async_host_programs_match_host_enum_payloads_in_bytecode() {
     let mut engine = Engine::new();
     engine.register_async_fn("later_color", |_args| async move {
         Ok(Value::HostEnum {
-            enum_name: "Color".to_string(),
-            variant: "Custom".to_string(),
+            enum_hash: ion_core::h!("Color"),
+            variant_hash: ion_core::h!("Custom"),
             data: vec![Value::Int(255), Value::Int(128), Value::Int(0)],
         })
     });
@@ -714,8 +714,8 @@ async fn eval_async_async_host_programs_match_host_enum_unit_variants_in_bytecod
     let mut engine = Engine::new();
     engine.register_async_fn("later_color", |_args| async move {
         Ok(Value::HostEnum {
-            enum_name: "Color".to_string(),
-            variant: "Green".to_string(),
+            enum_hash: ion_core::h!("Color"),
+            variant_hash: ion_core::h!("Green"),
             data: vec![],
         })
     });
@@ -741,8 +741,8 @@ async fn eval_async_async_host_programs_match_host_enum_nested_payload_patterns(
     let mut engine = Engine::new();
     engine.register_async_fn("later_status", |_args| async move {
         Ok(Value::HostEnum {
-            enum_name: "Status".to_string(),
-            variant: "Success".to_string(),
+            enum_hash: ion_core::h!("Status"),
+            variant_hash: ion_core::h!("Success"),
             data: vec![Value::Tuple(vec![Value::Int(20), Value::Int(22)])],
         })
     });
@@ -767,10 +767,10 @@ async fn eval_async_async_host_programs_let_destructure_host_structs() {
     let mut engine = Engine::new();
     engine.register_async_fn("later_point", |_args| async move {
         let mut fields = IndexMap::new();
-        fields.insert("x".to_string(), Value::Int(20));
-        fields.insert("y".to_string(), Value::Int(22));
+        fields.insert(ion_core::h!("x"), Value::Int(20));
+        fields.insert(ion_core::h!("y"), Value::Int(22));
         Ok(Value::HostStruct {
-            type_name: "Point".to_string(),
+            type_hash: ion_core::h!("Point"),
             fields,
         })
     });
@@ -793,8 +793,8 @@ async fn eval_async_async_host_programs_let_destructure_host_enums() {
     let mut engine = Engine::new();
     engine.register_async_fn("later_color", |_args| async move {
         Ok(Value::HostEnum {
-            enum_name: "Color".to_string(),
-            variant: "Custom".to_string(),
+            enum_hash: ion_core::h!("Color"),
+            variant_hash: ion_core::h!("Custom"),
             data: vec![Value::Int(20), Value::Int(21), Value::Int(1)],
         })
     });
@@ -817,8 +817,8 @@ async fn eval_async_async_host_programs_report_let_pattern_mismatch() {
     let mut engine = Engine::new();
     engine.register_async_fn("later_color", |_args| async move {
         Ok(Value::HostEnum {
-            enum_name: "Color".to_string(),
-            variant: "Red".to_string(),
+            enum_hash: ion_core::h!("Color"),
+            variant_hash: ion_core::h!("Red"),
             data: vec![],
         })
     });
@@ -845,8 +845,8 @@ async fn eval_async_select_branch_pattern_mismatch_is_reported() {
     let mut engine = Engine::new();
     engine.register_async_fn("later_color", |_args| async move {
         Ok(Value::HostEnum {
-            enum_name: "Color".to_string(),
-            variant: "Red".to_string(),
+            enum_hash: ion_core::h!("Color"),
+            variant_hash: ion_core::h!("Red"),
             data: vec![],
         })
     });
@@ -2629,20 +2629,20 @@ fn step_task_constructs_host_struct_and_enum_scaffold() {
     let root = arena.insert(chunk);
     let mut cont = VmContinuation::new(root);
     cont.types_mut().register_struct(HostStructDef {
-        name: "Point".into(),
-        fields: vec!["x".into(), "y".into()],
+        name_hash: ion_core::h!("Point"),
+        fields: vec![ion_core::h!("x"), ion_core::h!("y")],
     });
     cont.types_mut().register_enum(HostEnumDef {
-        name: "Status".into(),
+        name_hash: ion_core::h!("Status"),
         variants: vec![HostVariantDef {
-            name: "Ok".into(),
+            name_hash: ion_core::h!("Ok"),
             arity: 1,
         }],
     });
 
     let mut fields = indexmap::IndexMap::new();
-    fields.insert("x".into(), Value::Int(3));
-    fields.insert("y".into(), Value::Int(4));
+    fields.insert(ion_core::h!("x"), Value::Int(3));
+    fields.insert(ion_core::h!("y"), Value::Int(4));
     for _ in 0..16 {
         match step_task(&arena, &mut cont) {
             StepOutcome::Continue => {}
@@ -2651,12 +2651,12 @@ fn step_task_constructs_host_struct_and_enum_scaffold() {
                     value,
                     Value::Tuple(vec![
                         Value::HostStruct {
-                            type_name: "Point".into(),
+                            type_hash: ion_core::h!("Point"),
                             fields,
                         },
                         Value::HostEnum {
-                            enum_name: "Status".into(),
-                            variant: "Ok".into(),
+                            enum_hash: ion_core::h!("Status"),
+                            variant_hash: ion_core::h!("Ok"),
                             data: vec![Value::Str("done".into())],
                         },
                     ])

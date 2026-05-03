@@ -2,6 +2,23 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
+/// FNV-1a 64-bit hash. Mirrors `ion_core::hash::fnv1a64` so the macro can
+/// fold name strings into `u64` literals at expansion time. Keep in sync.
+const fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    let mut i = 0;
+    while i < bytes.len() {
+        h ^= bytes[i] as u64;
+        h = h.wrapping_mul(0x100000001b3);
+        i += 1;
+    }
+    h
+}
+
+fn h(s: &str) -> u64 {
+    fnv1a64(s.as_bytes())
+}
+
 #[proc_macro_derive(IonType)]
 pub fn derive_ion_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -29,48 +46,46 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
 
     let field_names: Vec<_> = fields.iter().map(|f| f.ident.as_ref().unwrap()).collect();
     let field_name_strs: Vec<String> = field_names.iter().map(|f| f.to_string()).collect();
+    let field_hashes: Vec<u64> = field_name_strs.iter().map(|s| h(s)).collect();
+    let type_hash: u64 = h(name_str);
 
-    // to_ion: convert each field
-    let to_ion_fields = field_names.iter().zip(field_name_strs.iter()).map(|(ident, name_s)| {
+    let to_ion_fields = field_names.iter().zip(field_hashes.iter()).map(|(ident, fh)| {
         quote! {
-            fields.insert(#name_s.to_string(), ion_core::host_types::IonType::to_ion(&self.#ident));
+            fields.insert(#fh, ion_core::host_types::IonType::to_ion(&self.#ident));
         }
     });
 
-    // from_ion: extract each field
     let from_ion_fields = field_names
         .iter()
-        .zip(field_name_strs.iter())
-        .map(|(ident, name_s)| {
+        .zip(field_hashes.iter())
+        .map(|(ident, fh)| {
             quote! {
                 #ident: {
-                    let v = fields.get(#name_s)
-                        .ok_or_else(|| format!("missing field '{}' in {}", #name_s, #name_str))?;
+                    let v = fields.get(&#fh)
+                        .ok_or_else(|| format!("missing field in {}", #name_str))?;
                     ion_core::host_types::IonType::from_ion(v)?
                 },
             }
         });
 
-    // ion_type_def: field name list
-    let def_fields = field_name_strs.iter().map(|s| {
-        quote! { #s.to_string() }
-    });
+    let def_field_hashes = field_hashes.iter().map(|fh| quote! { #fh });
 
     let expanded = quote! {
         impl ion_core::host_types::IonType for #name {
             fn to_ion(&self) -> ion_core::value::Value {
-                let mut fields = indexmap::IndexMap::new();
+                let mut fields: indexmap::IndexMap<u64, ion_core::value::Value> =
+                    indexmap::IndexMap::new();
                 #(#to_ion_fields)*
                 ion_core::value::Value::HostStruct {
-                    type_name: #name_str.to_string(),
+                    type_hash: #type_hash,
                     fields,
                 }
             }
 
             fn from_ion(val: &ion_core::value::Value) -> Result<Self, String> {
-                if let ion_core::value::Value::HostStruct { type_name, fields } = val {
-                    if type_name != #name_str {
-                        return Err(format!("expected {}, got {}", #name_str, type_name));
+                if let ion_core::value::Value::HostStruct { type_hash, fields } = val {
+                    if *type_hash != #type_hash {
+                        return Err(format!("expected {}, got different host struct", #name_str));
                     }
                     Ok(Self {
                         #(#from_ion_fields)*
@@ -83,8 +98,8 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
             fn ion_type_def() -> ion_core::host_types::IonTypeDef {
                 ion_core::host_types::IonTypeDef::Struct(
                     ion_core::host_types::HostStructDef {
-                        name: #name_str.to_string(),
-                        fields: vec![#(#def_fields),*],
+                        name_hash: #type_hash,
+                        fields: vec![#(#def_field_hashes),*],
                     }
                 )
             }
@@ -107,9 +122,11 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
         }
     }
 
+    let type_hash: u64 = h(name_str);
+
     // ion_type_def: variant definitions
     let variant_defs = variants.iter().map(|v| {
-        let vname = v.ident.to_string();
+        let vh = h(&v.ident.to_string());
         let arity = match &v.fields {
             Fields::Unit => 0usize,
             Fields::Unnamed(f) => f.unnamed.len(),
@@ -117,7 +134,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
         };
         quote! {
             ion_core::host_types::HostVariantDef {
-                name: #vname.to_string(),
+                name_hash: #vh,
                 arity: #arity,
             }
         }
@@ -126,13 +143,13 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
     // to_ion arms
     let to_ion_arms = variants.iter().map(|v| {
         let vident = &v.ident;
-        let vname = v.ident.to_string();
+        let vh = h(&v.ident.to_string());
         match &v.fields {
             Fields::Unit => {
                 quote! {
                     #name::#vident => ion_core::value::Value::HostEnum {
-                        enum_name: #name_str.to_string(),
-                        variant: #vname.to_string(),
+                        enum_hash: #type_hash,
+                        variant_hash: #vh,
                         data: vec![],
                     },
                 }
@@ -146,8 +163,8 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                 });
                 quote! {
                     #name::#vident(#(#bindings),*) => ion_core::value::Value::HostEnum {
-                        enum_name: #name_str.to_string(),
-                        variant: #vname.to_string(),
+                        enum_hash: #type_hash,
+                        variant_hash: #vh,
                         data: vec![#(#to_ions),*],
                     },
                 }
@@ -159,13 +176,13 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
     // from_ion arms
     let from_ion_arms = variants.iter().map(|v| {
         let vident = &v.ident;
-        let vname = v.ident.to_string();
+        let vh = h(&v.ident.to_string());
         match &v.fields {
             Fields::Unit => {
                 quote! {
-                    #vname => {
+                    #vh => {
                         if !data.is_empty() {
-                            return Err(format!("{}::{} takes no arguments", #name_str, #vname));
+                            return Err(format!("variant in {} takes no arguments", #name_str));
                         }
                         Ok(#name::#vident)
                     }
@@ -181,9 +198,9 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                     })
                     .collect();
                 quote! {
-                    #vname => {
+                    #vh => {
                         if data.len() != #count {
-                            return Err(format!("{}::{} expects {} arguments, got {}", #name_str, #vname, #count, data.len()));
+                            return Err(format!("variant in {} expects {} arguments, got {}", #name_str, #count, data.len()));
                         }
                         Ok(#name::#vident(#(#extracts),*))
                     }
@@ -202,13 +219,13 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
             }
 
             fn from_ion(val: &ion_core::value::Value) -> Result<Self, String> {
-                if let ion_core::value::Value::HostEnum { enum_name, variant, data } = val {
-                    if enum_name != #name_str {
-                        return Err(format!("expected {}, got {}", #name_str, enum_name));
+                if let ion_core::value::Value::HostEnum { enum_hash, variant_hash, data } = val {
+                    if *enum_hash != #type_hash {
+                        return Err(format!("expected {}, got different host enum", #name_str));
                     }
-                    match variant.as_str() {
+                    match *variant_hash {
                         #(#from_ion_arms)*
-                        _ => Err(format!("unknown variant '{}' in {}", variant, #name_str)),
+                        _ => Err(format!("unknown variant in {}", #name_str)),
                     }
                 } else {
                     Err(format!("expected {}, got {}", #name_str, val.type_name()))
@@ -218,7 +235,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
             fn ion_type_def() -> ion_core::host_types::IonTypeDef {
                 ion_core::host_types::IonTypeDef::Enum(
                     ion_core::host_types::HostEnumDef {
-                        name: #name_str.to_string(),
+                        name_hash: #type_hash,
                         variants: vec![#(#variant_defs),*],
                     }
                 )

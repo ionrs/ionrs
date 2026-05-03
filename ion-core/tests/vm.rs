@@ -4,6 +4,7 @@
 #![allow(clippy::approx_constant)]
 
 use ion_core::engine::Engine;
+use ion_core::h;
 use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef};
 use ion_core::value::Value;
 
@@ -1291,18 +1292,18 @@ fn test_vm_const_fold_nested() {
 fn vm_engine_with_types() -> Engine {
     let mut engine = Engine::new();
     engine.register_struct(HostStructDef {
-        name: "Config".into(),
-        fields: vec!["host".into(), "port".into(), "debug".into()],
+        name_hash: h!("Config"),
+        fields: vec![h!("host"), h!("port"), h!("debug")],
     });
     engine.register_enum(HostEnumDef {
-        name: "Color".into(),
+        name_hash: h!("Color"),
         variants: vec![
             HostVariantDef {
-                name: "Red".into(),
+                name_hash: h!("Red"),
                 arity: 0,
             },
             HostVariantDef {
-                name: "Custom".into(),
+                name_hash: h!("Custom"),
                 arity: 3,
             },
         ],
@@ -1316,11 +1317,11 @@ fn test_vm_host_struct_construct() {
     let val = engine
         .vm_eval(r#"Config { host: "localhost", port: 8080, debug: true }"#)
         .unwrap();
-    if let Value::HostStruct { type_name, fields } = &val {
-        assert_eq!(type_name, "Config");
-        assert_eq!(fields["host"], Value::Str("localhost".into()));
-        assert_eq!(fields["port"], Value::Int(8080));
-        assert_eq!(fields["debug"], Value::Bool(true));
+    if let Value::HostStruct { type_hash, fields } = &val {
+        assert_eq!(*type_hash, h!("Config"));
+        assert_eq!(fields[&h!("host")], Value::Str("localhost".into()));
+        assert_eq!(fields[&h!("port")], Value::Int(8080));
+        assert_eq!(fields[&h!("debug")], Value::Bool(true));
     } else {
         panic!("expected HostStruct, got: {:?}", val);
     }
@@ -1360,13 +1361,13 @@ fn test_vm_host_enum_variant() {
     let mut engine = vm_engine_with_types();
     let val = engine.vm_eval("Color::Red").unwrap();
     if let Value::HostEnum {
-        enum_name,
-        variant,
+        enum_hash,
+        variant_hash,
         data,
     } = &val
     {
-        assert_eq!(enum_name, "Color");
-        assert_eq!(variant, "Red");
+        assert_eq!(*enum_hash, h!("Color"));
+        assert_eq!(*variant_hash, h!("Red"));
         assert!(data.is_empty());
     } else {
         panic!("expected HostEnum, got: {:?}", val);
@@ -1416,13 +1417,13 @@ fn test_vm_host_enum_variant_with_data() {
     let mut engine = vm_engine_with_types();
     let val = engine.vm_eval("Color::Custom(255, 128, 0)").unwrap();
     if let Value::HostEnum {
-        enum_name,
-        variant,
+        enum_hash,
+        variant_hash,
         data,
     } = &val
     {
-        assert_eq!(enum_name, "Color");
-        assert_eq!(variant, "Custom");
+        assert_eq!(*enum_hash, h!("Color"));
+        assert_eq!(*variant_hash, h!("Custom"));
         assert_eq!(data, &vec![Value::Int(255), Value::Int(128), Value::Int(0)]);
     } else {
         panic!("expected HostEnum, got: {:?}", val);

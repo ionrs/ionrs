@@ -1,6 +1,14 @@
+//! Host type registration: enums and structs that scripts can construct
+//! and pattern-match.
+//!
+//! Names are FNV-1a 64-bit hashes computed at macro-expansion / parse time.
+//! No identifier strings end up in the host binary's `.rodata`. See
+//! `HIDE_NAMES_PLAN.md` for the design and rationale.
+
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
+use crate::hash::h;
 use crate::value::Value;
 
 /// Trait for Rust types that can be used in Ion scripts.
@@ -20,33 +28,36 @@ pub enum IonTypeDef {
     Enum(HostEnumDef),
 }
 
-/// Describes a host-injected struct type.
+/// Describes a host-injected struct type. Field order is preserved
+/// (positional `fields[i]` corresponds to the i-th declared field).
 #[derive(Debug, Clone)]
 pub struct HostStructDef {
-    pub name: String,
-    pub fields: Vec<String>,
+    pub name_hash: u64,
+    /// Field-name hashes in declaration order.
+    pub fields: Vec<u64>,
 }
 
 /// Describes a single enum variant.
 #[derive(Debug, Clone)]
 pub struct HostVariantDef {
-    pub name: String,
-    /// Number of positional data fields (0 = unit variant)
+    pub name_hash: u64,
+    /// Number of positional data fields (0 = unit variant).
     pub arity: usize,
 }
 
 /// Describes a host-injected enum type.
 #[derive(Debug, Clone)]
 pub struct HostEnumDef {
-    pub name: String,
+    pub name_hash: u64,
     pub variants: Vec<HostVariantDef>,
 }
 
-/// Registry of host-provided types available to scripts.
+/// Registry of host-provided types available to scripts. Lookup by hash;
+/// no string keys live in the registry at runtime.
 #[derive(Debug, Clone, Default)]
 pub struct TypeRegistry {
-    pub structs: HashMap<String, HostStructDef>,
-    pub enums: HashMap<String, HostEnumDef>,
+    pub structs: HashMap<u64, HostStructDef>,
+    pub enums: HashMap<u64, HostEnumDef>,
 }
 
 impl TypeRegistry {
@@ -54,57 +65,74 @@ impl TypeRegistry {
         Self::default()
     }
 
+    /// Register a struct definition. Panics on hash collision with an
+    /// already-registered struct (see HIDE_NAMES_PLAN.md §11).
     pub fn register_struct(&mut self, def: HostStructDef) {
-        self.structs.insert(def.name.clone(), def);
+        if let Some(existing) = self.structs.insert(def.name_hash, def.clone()) {
+            assert_eq!(
+                existing.name_hash, def.name_hash,
+                "internal: struct hash collision detected at registration"
+            );
+        }
     }
 
+    /// Register an enum definition. Panics on hash collision.
     pub fn register_enum(&mut self, def: HostEnumDef) {
-        self.enums.insert(def.name.clone(), def);
+        if let Some(existing) = self.enums.insert(def.name_hash, def.clone()) {
+            assert_eq!(
+                existing.name_hash, def.name_hash,
+                "internal: enum hash collision detected at registration"
+            );
+        }
     }
 
-    /// Validate and construct a host struct value.
+    /// Construct a host struct value from pre-hashed field-name → value
+    /// pairs. Caller is expected to hash script-source field names; the
+    /// spread path (`Config { ...base, debug: true }`) supplies already
+    /// hashed fields from the base struct directly. `name` is used only
+    /// for `type_hash` derivation and error messages.
     pub fn construct_struct(
         &self,
         name: &str,
-        fields: IndexMap<String, Value>,
+        fields: IndexMap<u64, Value>,
     ) -> Result<Value, String> {
+        let type_hash = h(name);
         let def = self
             .structs
-            .get(name)
+            .get(&type_hash)
             .ok_or_else(|| format!("unknown type '{}'", name))?;
-        // Verify all required fields are present
-        for field_name in &def.fields {
-            if !fields.contains_key(field_name) {
-                return Err(format!("missing field '{}' in {}", field_name, name));
+
+        for fhash in fields.keys() {
+            if !def.fields.contains(fhash) {
+                return Err(format!("unknown field in {}", name));
             }
         }
-        // Verify no extra fields
-        for key in fields.keys() {
-            if !def.fields.contains(key) {
-                return Err(format!("unknown field '{}' in {}", key, name));
+        for expected in &def.fields {
+            if !fields.contains_key(expected) {
+                return Err(format!("missing field in {}", name));
             }
         }
-        Ok(Value::HostStruct {
-            type_name: name.to_string(),
-            fields,
-        })
+        Ok(Value::HostStruct { type_hash, fields })
     }
 
-    /// Validate and construct a host enum variant.
+    /// Construct a host enum variant from script-side enum/variant names
+    /// and positional data.
     pub fn construct_enum(
         &self,
         enum_name: &str,
         variant: &str,
         data: Vec<Value>,
     ) -> Result<Value, String> {
+        let enum_hash = h(enum_name);
+        let variant_hash = h(variant);
         let def = self
             .enums
-            .get(enum_name)
+            .get(&enum_hash)
             .ok_or_else(|| format!("unknown enum '{}'", enum_name))?;
         let variant_def = def
             .variants
             .iter()
-            .find(|v| v.name == variant)
+            .find(|v| v.name_hash == variant_hash)
             .ok_or_else(|| format!("unknown variant '{}' in {}", variant, enum_name))?;
         if data.len() != variant_def.arity {
             return Err(format!(
@@ -116,8 +144,8 @@ impl TypeRegistry {
             ));
         }
         Ok(Value::HostEnum {
-            enum_name: enum_name.to_string(),
-            variant: variant.to_string(),
+            enum_hash,
+            variant_hash,
             data,
         })
     }
@@ -130,6 +158,7 @@ impl TypeRegistry {
         }
     }
 
+    /// Look up a struct field by script-source field name. Hashes once.
     pub fn get_field(
         &self,
         type_name: &str,
@@ -137,12 +166,14 @@ impl TypeRegistry {
         field: &str,
     ) -> Result<Option<Value>, String> {
         if let Value::HostStruct {
-            type_name: vt,
+            type_hash: vt,
             fields,
         } = val
         {
-            if vt == type_name || type_name.is_empty() {
-                return Ok(fields.get(field).cloned());
+            let want = h(type_name);
+            if *vt == want || type_name.is_empty() {
+                let field_hash = h(field);
+                return Ok(fields.get(&field_hash).cloned());
             }
         }
         Err(format!(

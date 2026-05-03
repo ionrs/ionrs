@@ -830,7 +830,8 @@ impl Vm {
                                 )
                             })
                             .and_then(|value| self.const_as_str(value, line, col))?;
-                        matches!(&val, Value::HostStruct { type_name, .. } if type_name == &expected)
+                        let want = crate::hash::h(&expected);
+                        matches!(&val, Value::HostStruct { type_hash, .. } if *type_hash == want)
                     }
                     7 => {
                         let enum_idx = chunk.read_u16(self.ip) as usize;
@@ -861,14 +862,16 @@ impl Vm {
                                 )
                             })
                             .and_then(|value| self.const_as_str(value, line, col))?;
+                        let want_enum = crate::hash::h(&expected_enum);
+                        let want_variant = crate::hash::h(&expected_variant);
                         matches!(
                             &val,
                             Value::HostEnum {
-                                enum_name,
-                                variant,
+                                enum_hash,
+                                variant_hash,
                                 data,
-                            } if enum_name == &expected_enum
-                                && variant == &expected_variant
+                            } if *enum_hash == want_enum
+                                && *variant_hash == want_variant
                                 && data.len() == expected_arity
                         )
                     }
@@ -935,7 +938,8 @@ impl Vm {
                         let val = self.peek(line, col)?;
                         match val {
                             Value::HostStruct { fields, .. } => {
-                                let field_value = fields.get(&field).cloned();
+                                let fh = crate::hash::h(&field);
+                                let field_value = fields.get(&fh).cloned();
                                 self.stack.push(Value::Option(field_value.map(Box::new)));
                             }
                             _ => self.stack.push(Value::Option(None)),
@@ -995,7 +999,7 @@ impl Vm {
                 };
                 let has_spread = raw_count & 0x8000 != 0;
                 let field_count = raw_count & 0x7FFF;
-                let mut fields = IndexMap::new();
+                let mut fields: IndexMap<u64, Value> = IndexMap::new();
                 if has_spread {
                     // Stack: [..., spread_struct, field_name, field_value, ...]
                     // Pop override fields first
@@ -1017,10 +1021,10 @@ impl Vm {
                             ))
                         }
                     }
-                    // Apply overrides
+                    // Apply overrides — names from chunk constants (script source) hashed at boundary
                     for pair in overrides.chunks(2) {
                         let fname = match &pair[0] {
-                            Value::Str(s) => s.clone(),
+                            Value::Str(s) => s.as_str(),
                             _ => {
                                 return Err(IonError::runtime(
                                     ion_str!("invalid field name"),
@@ -1029,7 +1033,7 @@ impl Vm {
                                 ))
                             }
                         };
-                        fields.insert(fname, pair[1].clone());
+                        fields.insert(crate::hash::h(fname), pair[1].clone());
                     }
                 } else {
                     // No spread: fields are pushed as name, value pairs
@@ -1037,7 +1041,7 @@ impl Vm {
                     let items: Vec<Value> = self.stack.drain(start..).collect();
                     for pair in items.chunks(2) {
                         let fname = match &pair[0] {
-                            Value::Str(s) => s.clone(),
+                            Value::Str(s) => s.as_str(),
                             _ => {
                                 return Err(IonError::runtime(
                                     ion_str!("invalid field name"),
@@ -1046,7 +1050,7 @@ impl Vm {
                                 ))
                             }
                         };
-                        fields.insert(fname, pair[1].clone());
+                        fields.insert(crate::hash::h(fname), pair[1].clone());
                     }
                 }
                 match self.types.construct_struct(&type_name, fields) {
@@ -1719,18 +1723,21 @@ impl Vm {
                 Some(v) => v.clone(),
                 None => Value::Option(None),
             }),
-            Value::HostStruct { fields, .. } => fields.get(field).cloned().ok_or_else(|| {
-                IonError::runtime(
-                    format!(
-                        "{}{}{}",
-                        ion_str!("field '"),
-                        field,
-                        ion_str!("' not found")
-                    ),
-                    line,
-                    col,
-                )
-            }),
+            Value::HostStruct { fields, .. } => {
+                let fh = crate::hash::h(field);
+                fields.get(&fh).cloned().ok_or_else(|| {
+                    IonError::runtime(
+                        format!(
+                            "{}{}{}",
+                            ion_str!("field '"),
+                            field,
+                            ion_str!("' not found")
+                        ),
+                        line,
+                        col,
+                    )
+                })
+            }
             Value::List(items) => match field {
                 "len" => Ok(Value::Int(items.len() as i64)),
                 _ => Err(IonError::runtime(
@@ -1906,20 +1913,20 @@ impl Vm {
                 Ok(Value::Dict(map))
             }
             Value::HostStruct {
-                type_name,
+                type_hash,
                 mut fields,
             } => {
-                if fields.contains_key(field) {
-                    fields.insert(field.to_string(), value);
-                    Ok(Value::HostStruct { type_name, fields })
+                let fh = crate::hash::h(field);
+                if fields.contains_key(&fh) {
+                    fields.insert(fh, value);
+                    Ok(Value::HostStruct { type_hash, fields })
                 } else {
                     Err(IonError::runtime(
                         format!(
-                            "{}{}{}{}",
+                            "{}{}{}",
                             ion_str!("field '"),
                             field,
-                            ion_str!("' not found on "),
-                            type_name
+                            ion_str!("' not found on host struct"),
                         ),
                         line,
                         col,

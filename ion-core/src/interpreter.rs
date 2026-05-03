@@ -616,8 +616,9 @@ impl Interpreter {
                                 map.insert(field.clone(), final_val);
                             }
                             Value::HostStruct { fields, .. } => {
-                                if fields.contains_key(field.as_str()) {
-                                    fields.insert(field.clone(), final_val);
+                                let fh = crate::hash::h(field);
+                                if fields.contains_key(&fh) {
+                                    fields.insert(fh, final_val);
                                 } else {
                                     return Err(IonError::runtime(
                                         format!(
@@ -1346,7 +1347,7 @@ impl Interpreter {
                 fields,
                 spread,
             } => {
-                let mut field_map = IndexMap::new();
+                let mut field_map: IndexMap<u64, Value> = IndexMap::new();
                 if let Some(spread_expr) = spread {
                     let spread_val = self.eval_expr(spread_expr)?;
                     match spread_val {
@@ -1368,7 +1369,7 @@ impl Interpreter {
                 }
                 for (fname, fexpr) in fields {
                     let val = self.eval_expr(fexpr)?;
-                    field_map.insert(fname.clone(), val);
+                    field_map.insert(crate::hash::h(fname), val);
                 }
                 self.types
                     .construct_struct(name, field_map)
@@ -1596,22 +1597,25 @@ impl Interpreter {
                 Some(v) => v.clone(),
                 None => Value::Option(None),
             }),
-            Value::HostStruct { fields, .. } => Ok(match fields.get(field) {
-                Some(v) => v.clone(),
-                None => {
-                    return Err(IonError::type_err(
-                        format!(
-                            "{}{}{}",
-                            ion_str!("no field '"),
-                            field,
-                            ion_str!("' on struct")
-                        ),
-                        span.line,
-                        span.col,
-                    )
-                    .into())
-                }
-            }),
+            Value::HostStruct { fields, .. } => {
+                let field_hash = crate::hash::h(field);
+                Ok(match fields.get(&field_hash) {
+                    Some(v) => v.clone(),
+                    None => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "{}{}{}",
+                                ion_str!("no field '"),
+                                field,
+                                ion_str!("' on struct")
+                            ),
+                            span.line,
+                            span.col,
+                        )
+                        .into())
+                    }
+                })
+            }
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot access field on "), val.type_name()),
                 span.line,
@@ -3471,12 +3475,12 @@ impl Interpreter {
                     fields,
                 },
                 Value::HostEnum {
-                    enum_name: en,
-                    variant: v,
+                    enum_hash: en,
+                    variant_hash: v,
                     data,
                 },
             ) => {
-                if enum_name != en || variant != v {
+                if crate::hash::h(enum_name) != *en || crate::hash::h(variant) != *v {
                     return false;
                 }
                 match fields {
@@ -3485,7 +3489,7 @@ impl Interpreter {
                         pats.len() == data.len()
                             && pats
                                 .iter()
-                                .zip(data)
+                                .zip(data.iter())
                                 .all(|(p, v)| self.pattern_matches(p, v))
                     }
                     EnumPatternFields::Named(_) => false, // named fields not applicable to enum data
@@ -3494,15 +3498,16 @@ impl Interpreter {
             (
                 Pattern::Struct { name, fields },
                 Value::HostStruct {
-                    type_name,
+                    type_hash,
                     fields: val_fields,
                 },
             ) => {
-                if name != type_name {
+                if crate::hash::h(name) != *type_hash {
                     return false;
                 }
                 fields.iter().all(|(fname, fpat)| {
-                    match val_fields.get(fname) {
+                    let fh = crate::hash::h(fname);
+                    match val_fields.get(&fh) {
                         Some(v) => match fpat {
                             Some(p) => self.pattern_matches(p, v),
                             None => true, // just binding, always matches
@@ -3559,7 +3564,7 @@ impl Interpreter {
             (Pattern::EnumVariant { fields, .. }, Value::HostEnum { data, .. }) => match fields {
                 EnumPatternFields::None => Ok(()),
                 EnumPatternFields::Positional(pats) => {
-                    for (p, v) in pats.iter().zip(data) {
+                    for (p, v) in pats.iter().zip(data.iter()) {
                         self.bind_pattern(p, v, mutable, span)?;
                     }
                     Ok(())
@@ -3573,7 +3578,8 @@ impl Interpreter {
                 },
             ) => {
                 for (fname, fpat) in fields {
-                    if let Some(v) = val_fields.get(fname) {
+                    let fh = crate::hash::h(fname);
+                    if let Some(v) = val_fields.get(&fh) {
                         match fpat {
                             Some(p) => self.bind_pattern(p, v, mutable, span)?,
                             None => self.env.define(fname.clone(), v.clone(), mutable),

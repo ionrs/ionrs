@@ -55,15 +55,23 @@ pub enum Value {
     AsyncChannelReceiver(crate::async_runtime::NativeChannelReceiver),
     /// Ordered set of unique values
     Set(Vec<Value>),
-    /// Host-injected struct: `TypeName { field: val, ... }`
+    /// Host-injected struct: `TypeName { field: val, ... }`.
+    /// `type_hash` is `h("TypeName")` computed at macro-expansion / parse time.
+    /// `fields` keys are `h("field_name")`. Field names from script source
+    /// never appear in the host binary's `.rodata` — see HIDE_NAMES_PLAN.md.
     HostStruct {
-        type_name: String,
-        fields: IndexMap<String, Value>,
+        type_hash: u64,
+        fields: IndexMap<u64, Value>,
     },
-    /// Host-injected enum variant: `EnumName::Variant` or `EnumName::Variant(data)`
+    /// Host-injected enum variant: `EnumName::Variant` or `EnumName::Variant(data)`.
+    /// Both `enum_hash` and `variant_hash` are FNV-1a 64-bit hashes computed
+    /// at macro-expansion / parse time. `data` is `Vec<Value>` because
+    /// `SmallVec<[Value; N]>` would make `Value` recursive without indirection,
+    /// and `SmallVec<[Box<Value>; N]>` adds a per-element allocation that
+    /// outweighs the inline-storage win.
     HostEnum {
-        enum_name: String,
-        variant: String,
+        enum_hash: u64,
+        variant_hash: u64,
         data: Vec<Value>,
     },
     /// Async task handle (legacy-threaded-concurrency feature)
@@ -377,22 +385,24 @@ impl fmt::Display for Value {
                 crate::async_rt::ChannelEnd::Sender(_) => write!(f, "<ChannelTx>"),
                 crate::async_rt::ChannelEnd::Receiver(_) => write!(f, "<ChannelRx>"),
             },
-            Value::HostStruct { type_name, fields } => {
-                write!(f, "{} {{ ", type_name)?;
+            Value::HostStruct { type_hash, fields } => {
+                // Names are not in the binary; without a sidecar (Phase 7)
+                // we render the opaque hash form. See HIDE_NAMES_PLAN.md §10.
+                write!(f, "<struct#{:016x}> {{ ", type_hash)?;
                 for (i, (k, v)) in fields.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", k, v)?;
+                    write!(f, "#{:016x}: {}", k, v)?;
                 }
                 write!(f, " }}")
             }
             Value::HostEnum {
-                enum_name,
-                variant,
+                enum_hash,
+                variant_hash,
                 data,
             } => {
-                write!(f, "{}::{}", enum_name, variant)?;
+                write!(f, "<enum#{:016x}>::<v#{:016x}>", enum_hash, variant_hash)?;
                 if !data.is_empty() {
                     write!(f, "(")?;
                     for (i, v) in data.iter().enumerate() {
@@ -444,23 +454,23 @@ impl PartialEq for Value {
             (Value::Result(Err(a)), Value::Result(Err(b))) => a == b,
             (
                 Value::HostStruct {
-                    type_name: a_name,
+                    type_hash: a_h,
                     fields: a_fields,
                 },
                 Value::HostStruct {
-                    type_name: b_name,
+                    type_hash: b_h,
                     fields: b_fields,
                 },
-            ) => a_name == b_name && a_fields == b_fields,
+            ) => a_h == b_h && a_fields == b_fields,
             (
                 Value::HostEnum {
-                    enum_name: a_en,
-                    variant: a_v,
+                    enum_hash: a_en,
+                    variant_hash: a_v,
                     data: a_d,
                 },
                 Value::HostEnum {
-                    enum_name: b_en,
-                    variant: b_v,
+                    enum_hash: b_en,
+                    variant_hash: b_v,
                     data: b_d,
                 },
             ) => a_en == b_en && a_v == b_v && a_d == b_d,
@@ -526,21 +536,28 @@ impl Value {
                 serde_json::Value::Object(map)
             }
             Value::HostStruct { fields, .. } => {
+                // Hash-keyed; without sidecar names, emit hex-keyed object so
+                // round-trip and equality still work. Phase 7 sidecar restores
+                // human-readable field names.
                 let obj: serde_json::Map<String, serde_json::Value> = fields
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.to_json()))
+                    .map(|(k, v)| (format!("#{:016x}", k), v.to_json()))
                     .collect();
                 serde_json::Value::Object(obj)
             }
             Value::HostEnum {
-                enum_name,
-                variant,
+                enum_hash,
+                variant_hash,
                 data,
             } => {
                 let mut map = serde_json::Map::new();
                 map.insert(
-                    "_type".to_string(),
-                    serde_json::Value::String(format!("{}::{}", enum_name, variant)),
+                    "_enum".to_string(),
+                    serde_json::Value::String(format!("#{:016x}", enum_hash)),
+                );
+                map.insert(
+                    "_variant".to_string(),
+                    serde_json::Value::String(format!("#{:016x}", variant_hash)),
                 );
                 if !data.is_empty() {
                     map.insert(
@@ -629,28 +646,28 @@ impl Value {
                 rmpv::Value::Map(pairs)
             }
             Value::HostStruct { fields, .. } => {
+                // Field-name keys hashed; encoded as u64. Compact and lossless
+                // for re-decoding within the same registry.
                 let pairs: Vec<(rmpv::Value, rmpv::Value)> = fields
                     .iter()
-                    .map(|(k, v)| (rmpv::Value::String(k.clone().into()), v.to_msgpack_value()))
+                    .map(|(k, v)| (rmpv::Value::Integer((*k).into()), v.to_msgpack_value()))
                     .collect();
                 rmpv::Value::Map(pairs)
             }
             Value::HostEnum {
-                enum_name,
-                variant,
+                enum_hash,
+                variant_hash,
                 data,
             } => {
-                let mut pairs = vec![(
-                    rmpv::Value::String("_type".into()),
-                    rmpv::Value::String(format!("{}::{}", enum_name, variant).into()),
-                )];
-                if !data.is_empty() {
-                    pairs.push((
-                        rmpv::Value::String("data".into()),
-                        rmpv::Value::Array(data.iter().map(|v| v.to_msgpack_value()).collect()),
-                    ));
+                // Encode as [enum_hash, variant_hash, data...] — ordered array,
+                // not a name-keyed map. Wire format change vs. pre-Phase 2.
+                let mut arr: Vec<rmpv::Value> = Vec::with_capacity(2 + data.len());
+                arr.push(rmpv::Value::Integer((*enum_hash).into()));
+                arr.push(rmpv::Value::Integer((*variant_hash).into()));
+                for v in data {
+                    arr.push(v.to_msgpack_value());
                 }
-                rmpv::Value::Map(pairs)
+                rmpv::Value::Array(arr)
             }
             #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
             Value::Task(_) | Value::Channel(_) => rmpv::Value::Nil,

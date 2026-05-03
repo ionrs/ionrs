@@ -1144,7 +1144,8 @@ fn step_task_inner(
                                 ));
                             }
                         };
-                        matches!(&value, Value::HostStruct { type_name, .. } if type_name == expected)
+                        let want = crate::hash::h(expected);
+                        matches!(&value, Value::HostStruct { type_hash, .. } if *type_hash == want)
                     }
                     7 => {
                         let enum_idx = match read_u16_operand(
@@ -1212,14 +1213,16 @@ fn step_task_inner(
                                 ));
                             }
                         };
+                        let want_enum = crate::hash::h(expected_enum);
+                        let want_variant = crate::hash::h(expected_variant);
                         matches!(
                             &value,
                             Value::HostEnum {
-                                enum_name,
-                                variant,
+                                enum_hash,
+                                variant_hash,
                                 data,
-                            } if enum_name == expected_enum
-                                && variant == expected_variant
+                            } if *enum_hash == want_enum
+                                && *variant_hash == want_variant
                                 && data.len() == expected_arity
                         )
                     }
@@ -1313,7 +1316,8 @@ fn step_task_inner(
                         };
                         match cont.stack.last() {
                             Some(Value::HostStruct { fields, .. }) => {
-                                let field_value = fields.get(field).cloned();
+                                let fh = crate::hash::h(field);
+                                let field_value = fields.get(&fh).cloned();
                                 cont.stack.push(Value::Option(field_value.map(Box::new)));
                             }
                             Some(_) => cont.stack.push(Value::Option(None)),
@@ -2906,10 +2910,13 @@ fn scaffold_get_field(
             .get(field)
             .cloned()
             .unwrap_or_else(|| Value::Option(None))),
-        Value::HostStruct { fields, .. } => fields
-            .get(field)
-            .cloned()
-            .ok_or_else(|| IonError::runtime(format!("field '{}' not found", field), line, col)),
+        Value::HostStruct { fields, .. } => {
+            let fh = crate::hash::h(field);
+            fields
+                .get(&fh)
+                .cloned()
+                .ok_or_else(|| IonError::runtime(format!("field '{}' not found", field), line, col))
+        }
         Value::List(items) if field == "len" => Ok(Value::Int(items.len() as i64)),
         Value::Str(value) if field == "len" => Ok(Value::Int(value.len() as i64)),
         Value::Tuple(items) if field == "len" => Ok(Value::Int(items.len() as i64)),
@@ -3015,15 +3022,16 @@ fn scaffold_set_field(
             Ok(Value::Dict(map))
         }
         Value::HostStruct {
-            type_name,
+            type_hash,
             mut fields,
         } => {
-            if fields.contains_key(field) {
-                fields.insert(field.to_string(), value);
-                Ok(Value::HostStruct { type_name, fields })
+            let fh = crate::hash::h(field);
+            if fields.contains_key(&fh) {
+                fields.insert(fh, value);
+                Ok(Value::HostStruct { type_hash, fields })
             } else {
                 Err(IonError::runtime(
-                    format!("field '{}' not found on {}", field, type_name),
+                    format!("field '{}' not found on host struct", field),
                     line,
                     col,
                 ))
@@ -5045,7 +5053,7 @@ fn construct_host_struct(
 
     let has_spread = raw_count & 0x8000 != 0;
     let field_count = raw_count & 0x7fff;
-    let mut fields = IndexMap::new();
+    let mut fields: IndexMap<u64, Value> = IndexMap::new();
     if has_spread {
         let value_count = field_count.saturating_mul(2);
         if cont.stack.len() < value_count + 1 {
@@ -5077,7 +5085,7 @@ fn construct_host_struct(
                     col,
                 ));
             };
-            fields.insert(name.clone(), pair[1].clone());
+            fields.insert(crate::hash::h(name), pair[1].clone());
         }
     } else {
         let value_count = field_count.saturating_mul(2);
@@ -5094,7 +5102,7 @@ fn construct_host_struct(
                     col,
                 ));
             };
-            fields.insert(name.clone(), pair[1].clone());
+            fields.insert(crate::hash::h(name), pair[1].clone());
         }
     }
 
