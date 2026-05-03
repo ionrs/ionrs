@@ -1,7 +1,7 @@
 {
   "ionDocVersion": 2,
   "profile": "ion-stdlib",
-  "homepage": "https://ionrs.github.io/ionrs/",
+  "homepage": "https://ionrs.github.io/",
   "repository": "https://github.com/ionrs/ionrs",
   "license": "MIT",
   "categories": ["language", "stdlib"],

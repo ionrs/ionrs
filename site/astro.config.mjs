@@ -7,9 +7,15 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
+// Path to the ionrs source repo (where canonical content lives). When the
+// site lives in a dedicated repo, set IONRS_REPO to the checked-out source
+// repo; otherwise fall back to the parent (site/ nested inside ionrs/).
+const ionrsRepo = process.env.IONRS_REPO
+  ? resolve(process.env.IONRS_REPO)
+  : resolve(here, "..");
 const ionGrammarRaw = JSON.parse(
   readFileSync(
-    resolve(here, "..", "editors", "vscode", "syntaxes", "ion.tmLanguage.json"),
+    resolve(ionrsRepo, "editors", "vscode", "syntaxes", "ion.tmLanguage.json"),
     "utf8"
   )
 );
@@ -28,13 +34,11 @@ const gitDescribe = (() => {
   }
 })();
 
-// Public docs site — deployed to https://ionrs.github.io/ionrs/.
-// `base` matters: every internal link must be prefixed with it. Use the
-// Astro-provided `<a href={import.meta.env.BASE_URL + "..."}>` helpers, or
-// Starlight's relative-link resolution which already accounts for it.
+// Public docs site — deployed to https://ionrs.github.io/ from the
+// dedicated `ionrs/ionrs.github.io` repo.
 export default defineConfig({
   site: "https://ionrs.github.io",
-  base: "/ionrs/",
+  base: "/",
   trailingSlash: "always",
   integrations: [
     starlight({

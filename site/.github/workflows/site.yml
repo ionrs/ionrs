@@ -1,23 +1,20 @@
 name: Docs Site
 
+# Workflow for the dedicated `ionrs/ionrs.github.io` repo. Builds the
+# Starlight site against canonical content checked out from `ionrs/ionrs`
+# (LANGUAGE.md, DESIGN.md, examples/*.ion, ion-core/src/stdlib-docs.json,
+# editors/vscode/syntaxes/ion.tmLanguage.json) and deploys to GitHub Pages.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-    paths:
-      - "site/**"
-      - "ion-core/src/stdlib-docs.json"
-      - "LANGUAGE.md"
-      - "DESIGN.md"
-      - "CHANGELOG.md"
-      - "README.md"
-      - "docs/**"
-      - "examples/**"
-      - "editors/vscode/syntaxes/**"
-      - ".github/workflows/site.yml"
+  workflow_dispatch:
+  # Triggered by ionrs/ionrs after canonical content changes.
+  repository_dispatch:
+    types: [ionrs-content-update]
 
-# A push to `main` cancels any in-flight Pages deploy and starts a new one.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -35,29 +32,35 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout site
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # so `git describe` resolves
+          fetch-depth: 0
+      - name: Checkout ionrs source
+        uses: actions/checkout@v4
+        with:
+          repository: ionrs/ionrs
+          path: ionrs
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: site/package-lock.json
       - name: Install
         run: npm ci
-        working-directory: site
       - name: Build
         run: npm run build
-        working-directory: site
+        env:
+          IONRS_REPO: ${{ github.workspace }}/ionrs
       - uses: actions/upload-artifact@v4
         with:
           name: site-dist
-          path: site/dist
+          path: dist
           retention-days: 7
       - uses: actions/upload-pages-artifact@v3
         if: github.ref == 'refs/heads/main'
         with:
-          path: site/dist
+          path: dist
 
   link-check:
     name: Link check
@@ -72,8 +75,6 @@ jobs:
       - name: Lychee
         uses: lycheeverse/lychee-action@v2
         with:
-          # `--offline` would skip external URLs entirely; we want internal
-          # links checked but skip rate-limited externals (github.com, etc.).
           args: >-
             --no-progress
             --base dist
@@ -89,27 +90,34 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ionrs/ionrs
+          path: ionrs
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ionrs
       - name: Build ion CLI
         run: cargo build -p ionrs-cli --release
+        working-directory: ionrs
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: site/package-lock.json
-      - name: Sync content (need synced .mdx for snippet extraction)
-        run: |
-          cd site && npm ci && npm run sync-manifests
+      - name: Sync content
+        run: npm ci && npm run sync-manifests
+        env:
+          IONRS_REPO: ${{ github.workspace }}/ionrs
       - name: Check fenced ion snippets
-        # Extract ```ion blocks from canonical sources + synced site
-        # content and pipe each through `ion --check`. Doc rot fails CI.
-        run: node site/scripts/check-ion-snippets.mjs target/release/ion
+        run: node scripts/check-ion-snippets.mjs ionrs/target/release/ion
+        env:
+          IONRS_REPO: ${{ github.workspace }}/ionrs
 
   deploy:
     name: Deploy
     needs: [build, link-check, ion-snippet-check]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

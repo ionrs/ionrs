@@ -4,16 +4,34 @@ The site is an [Astro] + [Starlight] static build. Most contributors will
 be touching Markdown content; the manifest browser and a few Astro
 components are the only non-prose pieces.
 
+The site lives in its own repo, [`ionrs/ionrs.github.io`][site-repo], and
+pulls canonical content (LANGUAGE.md, DESIGN.md, examples, stdlib
+manifest, the VS Code TextMate grammar) from [`ionrs/ionrs`][src-repo] at
+build time. CI checks out both repos automatically; for local dev clone
+both as siblings:
+
+```
+~/dev/
+├── ionrs/                  # the source repo
+└── ionrs.github.io/        # this repo
+```
+
+[site-repo]: https://github.com/ionrs/ionrs.github.io
+[src-repo]: https://github.com/ionrs/ionrs
+
 ## Local development
 
 ```bash
-cd site
-npm install
-npm run dev
+# from inside this repo
+IONRS_REPO=../ionrs npm install
+IONRS_REPO=../ionrs npm run dev
 ```
 
-Open <http://localhost:4321/ionrs/>. The dev server hot-reloads on
-file changes.
+`IONRS_REPO` points at the `ionrs/ionrs` checkout — set it to a relative
+or absolute path. (Inside `ionrs/ionrs` itself the variable is unnecessary;
+the scripts default to the parent directory.)
+
+Open <http://localhost:4321/>. The dev server hot-reloads on file changes.
 
 `npm run build` produces a static site in `site/dist/`. `npm run preview`
 serves the built output for a final check.
@@ -76,8 +94,8 @@ CI runs `node site/scripts/check-ion-snippets.mjs` against every
 `ion --check`, the build fails. To check locally:
 
 ```bash
-cargo build -p ionrs-cli --release
-node site/scripts/check-ion-snippets.mjs
+cargo build -p ionrs-cli --release    # in ../ionrs
+IONRS_REPO=../ionrs node scripts/check-ion-snippets.mjs ../ionrs/target/release/ion
 ```
 
 ## Debugging a build failure
