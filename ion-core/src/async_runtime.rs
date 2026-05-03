@@ -1863,7 +1863,7 @@ fn call_continuation_function(
     cont.stack.truncate(func_idx);
 
     let Value::Fn(ion_fn) = func else {
-        if let Value::BuiltinFn(_, builtin) = func {
+        if let Value::BuiltinFn { func: builtin, .. } = func {
             return match builtin(&args).map_err(|err| IonError::runtime(err, line, col)) {
                 Ok(value) => {
                     cont.stack.push(value);
@@ -1873,7 +1873,7 @@ fn call_continuation_function(
             };
         }
 
-        if let Value::BuiltinClosure(_, builtin) = func {
+        if let Value::BuiltinClosure { func: builtin, .. } = func {
             return match builtin
                 .call(&args)
                 .map_err(|err| IonError::runtime(err, line, col))
@@ -1887,7 +1887,11 @@ fn call_continuation_function(
         }
 
         #[cfg(feature = "async-runtime")]
-        if let Value::AsyncBuiltinClosure(name, async_fn) = func {
+        if let Value::AsyncBuiltinClosure {
+            qualified_hash,
+            func: async_fn,
+        } = func
+        {
             let Some(task) = task else {
                 return StepOutcome::InstructionError(IonError::runtime(
                     "async host function call requires a runtime task",
@@ -1902,7 +1906,7 @@ fn call_continuation_function(
                     col,
                 ));
             };
-            let future = if name == "timeout" {
+            let future = if qualified_hash == crate::hash::h("timeout") {
                 match timeout_future(arena, cont, args, line, col) {
                     Ok(future) => future,
                     Err(err) => return StepOutcome::InstructionError(err),
@@ -1955,11 +1959,11 @@ fn spawn_continuation_call_task(
     cont.stack.truncate(func_idx);
 
     let future: BoxIonFuture = match func {
-        Value::AsyncBuiltinClosure(_, async_fn) => async_fn.call(args),
-        Value::BuiltinFn(_, builtin) => {
+        Value::AsyncBuiltinClosure { func: async_fn, .. } => async_fn.call(args),
+        Value::BuiltinFn { func: builtin, .. } => {
             Box::pin(async move { builtin(&args).map_err(|err| IonError::runtime(err, line, col)) })
         }
-        Value::BuiltinClosure(_, builtin) => Box::pin(async move {
+        Value::BuiltinClosure { func: builtin, .. } => Box::pin(async move {
             builtin
                 .call(&args)
                 .map_err(|err| IonError::runtime(err, line, col))
@@ -2438,11 +2442,11 @@ fn callback_as_zero_arg_future(
 ) -> Result<BoxIonFuture, IonError> {
     match callback {
         Value::Fn(ion_fn) => spawned_ion_function_future(arena, cont, ion_fn, Vec::new(), line, col),
-        Value::AsyncBuiltinClosure(_, async_fn) => Ok(async_fn.call(Vec::new())),
-        Value::BuiltinFn(_, builtin) => Ok(Box::pin(async move {
+        Value::AsyncBuiltinClosure { func: async_fn, .. } => Ok(async_fn.call(Vec::new())),
+        Value::BuiltinFn { func: builtin, .. } => Ok(Box::pin(async move {
             builtin(&[]).map_err(|err| IonError::runtime(err, line, col))
         })),
-        Value::BuiltinClosure(_, builtin) => Ok(Box::pin(async move {
+        Value::BuiltinClosure { func: builtin, .. } => Ok(Box::pin(async move {
             builtin
                 .call(&[])
                 .map_err(|err| IonError::runtime(err, line, col))
@@ -2822,7 +2826,7 @@ fn get_env_local(
         Err(err) => return StepOutcome::InstructionError(err),
     };
     let symbol = cont.env.intern(&name);
-    match cont.env.get_sym(symbol).cloned() {
+    match cont.env.get_sym_or_global(symbol).cloned() {
         Some(value) => {
             cont.stack.push(value);
             StepOutcome::Continue
@@ -2840,18 +2844,26 @@ fn import_glob(cont: &mut VmContinuation, line: usize, col: usize) -> StepOutcom
         Ok(value) => value,
         Err(err) => return StepOutcome::InstructionError(err),
     };
-    let Value::Dict(map) = module else {
-        return StepOutcome::InstructionError(IonError::type_err(
+    match module {
+        Value::Module(table) => {
+            for (name_hash, value) in table.items.iter() {
+                cont.env.define_h(*name_hash, value.clone());
+            }
+            StepOutcome::Continue
+        }
+        Value::Dict(map) => {
+            for (name, value) in map {
+                let symbol = cont.env.intern(&name);
+                cont.env.define_sym(symbol, value, false);
+            }
+            StepOutcome::Continue
+        }
+        _ => StepOutcome::InstructionError(IonError::type_err(
             ion_str!("use target is not a module"),
             line,
             col,
-        ));
-    };
-    for (name, value) in map {
-        let symbol = cont.env.intern(&name);
-        cont.env.define_sym(symbol, value, false);
+        )),
     }
-    StepOutcome::Continue
 }
 
 fn set_env_local(
@@ -2910,6 +2922,12 @@ fn scaffold_get_field(
             .get(field)
             .cloned()
             .unwrap_or_else(|| Value::Option(None))),
+        Value::Module(table) => {
+            let fh = crate::hash::h(field);
+            table.items.get(&fh).cloned().ok_or_else(|| {
+                IonError::runtime(format!("'{}' not found in module", field), line, col)
+            })
+        }
         Value::HostStruct { fields, .. } => {
             let fh = crate::hash::h(field);
             fields
@@ -4985,9 +5003,9 @@ fn scaffold_check_type(
         "tuple" => matches!(value, Value::Tuple(_)),
         "set" => matches!(value, Value::Set(_)),
         "fn" => match value {
-            Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => true,
+            Value::Fn(_) | Value::BuiltinFn { .. } | Value::BuiltinClosure { .. } => true,
             #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure(_, _) => true,
+            Value::AsyncBuiltinClosure { .. } => true,
             _ => false,
         },
         "cell" => matches!(value, Value::Cell(_)),
@@ -6936,13 +6954,15 @@ impl<'env> AsyncTreeInterpreter<'env> {
                         Err(err) => Err(err),
                     }
                 }
-                Value::BuiltinFn(_, func) => {
+                Value::BuiltinFn { func, .. } => {
                     func(&args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
                 }
-                Value::BuiltinClosure(_, func) => func
+                Value::BuiltinClosure { func, .. } => func
                     .call(&args)
                     .map_err(|msg| IonError::runtime(msg, span.line, span.col).into()),
-                Value::AsyncBuiltinClosure(_, func) => func.call(args).await.map_err(Into::into),
+                Value::AsyncBuiltinClosure { func, .. } => {
+                    func.call(args).await.map_err(Into::into)
+                }
                 other => Err(IonError::type_err(
                     format!("not callable: {}", other.type_name()),
                     span.line,
@@ -7282,13 +7302,14 @@ fn expr_references_async_host(expr: &Expr, env: &Env) -> bool {
 }
 
 fn value_is_async_host(value: &Value) -> bool {
-    matches!(value, Value::AsyncBuiltinClosure(_, _))
+    matches!(value, Value::AsyncBuiltinClosure { .. })
 }
 
 fn module_path_value<'a>(segments: &[String], env: &'a Env) -> Option<&'a Value> {
     let mut current = env.get(segments.first()?)?;
     for segment in &segments[1..] {
         match current {
+            Value::Module(table) => current = table.items.get(&crate::hash::h(segment))?,
             Value::Dict(map) => current = map.get(segment)?,
             _ => return None,
         }
@@ -7297,62 +7318,59 @@ fn module_path_value<'a>(segments: &[String], env: &'a Env) -> Option<&'a Value>
 }
 
 fn install_async_runtime_builtins(env: &mut Env) {
-    if env.get("sleep").is_none() {
-        env.define(
-            "sleep".to_string(),
-            Value::AsyncBuiltinClosure(
-                "sleep".to_string(),
-                crate::value::AsyncBuiltinClosureFn::new(|args| async move {
-                    let ms = args
-                        .first()
-                        .and_then(Value::as_int)
-                        .ok_or_else(|| IonError::runtime("sleep requires int (ms)", 0, 0))?;
-                    tokio::time::sleep(Duration::from_millis(ms as u64)).await;
-                    Ok(Value::Unit)
-                }),
-            ),
-            false,
-        );
+    fn install_async(env: &mut Env, name_hash: u64, func: crate::value::AsyncBuiltinClosureFn) {
+        if env.get_h(name_hash).is_none() {
+            env.define_h(
+                name_hash,
+                Value::AsyncBuiltinClosure {
+                    qualified_hash: name_hash,
+                    func,
+                },
+            );
+        }
     }
 
-    if env.get("channel").is_none() {
-        env.define(
-            "channel".to_string(),
-            Value::AsyncBuiltinClosure(
-                "channel".to_string(),
-                crate::value::AsyncBuiltinClosureFn::new(|args| async move {
-                    let capacity = args
-                        .first()
-                        .and_then(Value::as_int)
-                        .ok_or_else(|| IonError::runtime("channel requires int capacity", 0, 0))?;
-                    let capacity = usize::try_from(capacity).unwrap_or(0).max(1);
-                    let (sender, receiver) = tokio::sync::mpsc::channel(capacity);
-                    Ok(Value::Tuple(vec![
-                        Value::AsyncChannelSender(NativeChannelSender::new(sender)),
-                        Value::AsyncChannelReceiver(NativeChannelReceiver::new(receiver)),
-                    ]))
-                }),
-            ),
-            false,
-        );
-    }
+    install_async(
+        env,
+        crate::h!("sleep"),
+        crate::value::AsyncBuiltinClosureFn::new(|args| async move {
+            let ms = args
+                .first()
+                .and_then(Value::as_int)
+                .ok_or_else(|| IonError::runtime("sleep requires int (ms)", 0, 0))?;
+            tokio::time::sleep(Duration::from_millis(ms as u64)).await;
+            Ok(Value::Unit)
+        }),
+    );
 
-    if env.get("timeout").is_none() {
-        env.define(
-            "timeout".to_string(),
-            Value::AsyncBuiltinClosure(
-                "timeout".to_string(),
-                crate::value::AsyncBuiltinClosureFn::new(|_args| async move {
-                    Err(IonError::runtime(
-                        "timeout requires the async VM runtime",
-                        0,
-                        0,
-                    ))
-                }),
-            ),
-            false,
-        );
-    }
+    install_async(
+        env,
+        crate::h!("channel"),
+        crate::value::AsyncBuiltinClosureFn::new(|args| async move {
+            let capacity = args
+                .first()
+                .and_then(Value::as_int)
+                .ok_or_else(|| IonError::runtime("channel requires int capacity", 0, 0))?;
+            let capacity = usize::try_from(capacity).unwrap_or(0).max(1);
+            let (sender, receiver) = tokio::sync::mpsc::channel(capacity);
+            Ok(Value::Tuple(vec![
+                Value::AsyncChannelSender(NativeChannelSender::new(sender)),
+                Value::AsyncChannelReceiver(NativeChannelReceiver::new(receiver)),
+            ]))
+        }),
+    );
+
+    install_async(
+        env,
+        crate::h!("timeout"),
+        crate::value::AsyncBuiltinClosureFn::new(|_args| async move {
+            Err(IonError::runtime(
+                "timeout requires the async VM runtime",
+                0,
+                0,
+            ))
+        }),
+    );
 }
 
 #[allow(dead_code)]
@@ -7594,11 +7612,11 @@ impl<'a> IonRuntime<'a> {
 
         match func {
             Value::Fn(ion_fn) => spawned_ion_function_future(&self.chunks, cont, ion_fn, args, 0, 0),
-            Value::AsyncBuiltinClosure(_, async_fn) => Ok(async_fn.call(args)),
-            Value::BuiltinFn(_, builtin) => Ok(Box::pin(async move {
+            Value::AsyncBuiltinClosure { func: async_fn, .. } => Ok(async_fn.call(args)),
+            Value::BuiltinFn { func: builtin, .. } => Ok(Box::pin(async move {
                 builtin(&args).map_err(|err| IonError::runtime(err, 0, 0))
             })),
-            Value::BuiltinClosure(_, builtin) => Ok(Box::pin(async move {
+            Value::BuiltinClosure { func: builtin, .. } => Ok(Box::pin(async move {
                 builtin
                     .call(&args)
                     .map_err(|err| IonError::runtime(err, 0, 0))

@@ -1293,7 +1293,7 @@ fn test_engine_last_expr_return() {
 #[test]
 fn test_engine_register_fn() {
     let mut engine = Engine::new();
-    engine.register_fn("square", |args: &[Value]| match &args[0] {
+    engine.register_fn(ion_core::h!("square"), |args: &[Value]| match &args[0] {
         Value::Int(n) => Ok(Value::Int(n * n)),
         _ => Err("expected int".to_string()),
     });
@@ -4013,12 +4013,12 @@ fn test_cell_update_returns_new_value() {
 
 fn engine_with_math_module() -> Engine {
     let mut engine = Engine::new();
-    let mut math = Module::new("math");
-    math.register_fn("add", |args: &[Value]| match (&args[0], &args[1]) {
+    let mut math = Module::new(ion_core::h!("math"));
+    math.register_fn(ion_core::h!("add"), |args: &[Value]| match (&args[0], &args[1]) {
         (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
         _ => Err("expected two ints".to_string()),
     });
-    math.set("PI", Value::Float(std::f64::consts::PI));
+    math.set(ion_core::h!("PI"), Value::Float(std::f64::consts::PI));
     engine.register_module(math);
     engine
 }
@@ -4077,9 +4077,9 @@ fn test_use_named_imports_constant() {
 #[test]
 fn test_module_submodule() {
     let mut engine = Engine::new();
-    let mut net = Module::new("net");
-    let mut http = Module::new("http");
-    http.register_fn("get", |_args: &[Value]| {
+    let mut net = Module::new(ion_core::h!("net"));
+    let mut http = Module::new(ion_core::h!("http"));
+    http.register_fn(ion_core::h!("get"), |_args: &[Value]| {
         Ok(Value::Str("response".to_string()))
     });
     net.register_submodule(http);
@@ -4093,9 +4093,9 @@ fn test_module_submodule() {
 #[test]
 fn test_use_from_submodule() {
     let mut engine = Engine::new();
-    let mut net = Module::new("net");
-    let mut http = Module::new("http");
-    http.register_fn("get", |_args: &[Value]| Ok(Value::Str("ok".to_string())));
+    let mut net = Module::new(ion_core::h!("net"));
+    let mut http = Module::new(ion_core::h!("http"));
+    http.register_fn(ion_core::h!("get"), |_args: &[Value]| Ok(Value::Str("ok".to_string())));
     net.register_submodule(http);
     engine.register_module(net);
     assert_eq!(
@@ -4107,10 +4107,10 @@ fn test_use_from_submodule() {
 #[test]
 fn test_use_glob_from_submodule() {
     let mut engine = Engine::new();
-    let mut net = Module::new("net");
-    let mut http = Module::new("http");
-    http.register_fn("get", |_args: &[Value]| Ok(Value::Str("ok".to_string())));
-    http.set("PORT", Value::Int(8080));
+    let mut net = Module::new(ion_core::h!("net"));
+    let mut http = Module::new(ion_core::h!("http"));
+    http.register_fn(ion_core::h!("get"), |_args: &[Value]| Ok(Value::Str("ok".to_string())));
+    http.set(ion_core::h!("PORT"), Value::Int(8080));
     net.register_submodule(http);
     engine.register_module(net);
     assert_eq!(
@@ -4213,9 +4213,9 @@ fn test_use_alias_original_unbound() {
 #[test]
 fn test_use_alias_submodule() {
     let mut engine = Engine::new();
-    let mut net = Module::new("net");
-    let mut http = Module::new("http");
-    http.register_fn("get", |_args: &[Value]| Ok(Value::Str("ok".to_string())));
+    let mut net = Module::new(ion_core::h!("net"));
+    let mut http = Module::new(ion_core::h!("http"));
+    http.register_fn(ion_core::h!("get"), |_args: &[Value]| Ok(Value::Str("ok".to_string())));
     net.register_submodule(http);
     engine.register_module(net);
     assert_eq!(
@@ -4407,7 +4407,7 @@ fn test_register_closure_captures_counter() {
     let counter_for_closure = counter.clone();
 
     let mut engine = Engine::new();
-    engine.register_closure("host_tick", move |_args| {
+    engine.register_closure(ion_core::h!("host_tick"), move |_args| {
         let n = counter_for_closure.fetch_add(1, Ordering::Relaxed) + 1;
         Ok(Value::Int(n as i64))
     });
@@ -4428,7 +4428,7 @@ fn test_register_closure_type_matches_fn() {
     // The closure-backed variant should satisfy `: fn` type annotations
     // exactly like a plain BuiltinFn does.
     let mut engine = Engine::new();
-    engine.register_closure("noop", |_| Ok(Value::Unit));
+    engine.register_closure(ion_core::h!("noop"), |_| Ok(Value::Unit));
     assert_eq!(engine.eval("let f: fn = noop; f()").unwrap(), Value::Unit);
 }
 
@@ -4449,7 +4449,7 @@ fn test_failed_call_does_not_leak_function_scope() {
 #[test]
 fn test_vm_preserves_host_builtin_shadowing() {
     let mut engine = Engine::new();
-    engine.register_fn("len", |_args| Ok(Value::Int(99)));
+    engine.register_fn(ion_core::h!("len"), |_args| Ok(Value::Int(99)));
     assert_eq!(engine.vm_eval("len([1, 2, 3])").unwrap(), Value::Int(99));
 }
 

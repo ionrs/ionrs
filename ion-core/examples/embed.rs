@@ -61,7 +61,7 @@ fn main() {
     println!("5 |> double |> add_one = {}", result);
 
     // Register a Rust function
-    engine.register_fn("square", |args: &[Value]| match &args[0] {
+    engine.register_fn(ion_core::h!("square"), |args: &[Value]| match &args[0] {
         Value::Int(n) => Ok(Value::Int(n * n)),
         _ => Err("expected int".to_string()),
     });

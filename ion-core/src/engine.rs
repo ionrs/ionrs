@@ -185,9 +185,8 @@ impl Engine {
     pub fn set_output_handler(&mut self, output: Arc<dyn OutputHandler>) {
         self.output = Arc::clone(&output);
         let io = crate::stdlib::io_module_with_output(output);
-        self.interpreter
-            .env
-            .define(io.name.clone(), io.to_value(), false);
+        let h = io.name_hash();
+        self.interpreter.env.define_h(h, io.into_value());
     }
 
     /// Inject script-level arguments reachable from Ion as `os::args()`.
@@ -198,9 +197,8 @@ impl Engine {
         #[cfg(feature = "os")]
         {
             let os = crate::stdlib::os_module_with_args(Arc::clone(&self.script_args));
-            self.interpreter
-                .env
-                .define(os.name.clone(), os.to_value(), false);
+            let h = os.name_hash();
+            self.interpreter.env.define_h(h, os.into_value());
         }
     }
 
@@ -229,9 +227,8 @@ impl Engine {
     pub fn set_log_handler_arc(&mut self, handler: Arc<dyn LogHandler>) {
         self.log_handler = Arc::clone(&handler);
         let log = crate::stdlib::log_module_with_handler(handler, Arc::clone(&self.log_level));
-        self.interpreter
-            .env
-            .define(log.name.clone(), log.to_value(), false);
+        let h = log.name_hash();
+        self.interpreter.env.define_h(h, log.into_value());
     }
 
     /// Set the runtime log level used by the default `StdLogHandler`.
@@ -245,46 +242,47 @@ impl Engine {
         Arc::clone(&self.log_level)
     }
 
-    /// Register a built-in function.
-    pub fn register_fn(&mut self, name: &str, func: fn(&[Value]) -> Result<Value, String>) {
-        self.interpreter.env.define(
-            name.to_string(),
-            Value::BuiltinFn(name.to_string(), func),
-            false,
+    /// Register a top-level builtin function under `name_hash`. Use the
+    /// `h!()` macro at the call site so the source identifier is hashed at
+    /// compile time and never appears in the binary.
+    pub fn register_fn(&mut self, name_hash: u64, func: fn(&[Value]) -> Result<Value, String>) {
+        self.interpreter.env.define_h(
+            name_hash,
+            Value::BuiltinFn {
+                qualified_hash: name_hash,
+                func,
+            },
         );
     }
 
-    /// Register a built-in backed by a closure. Unlike `register_fn`,
-    /// this accepts any `Fn` — including closures that capture
-    /// host-side state such as a `tokio::runtime::Handle`, a database
-    /// pool, or shared counters. See `docs/concurrency.md` for the
-    /// tokio embedding pattern.
-    pub fn register_closure<F>(&mut self, name: &str, func: F)
+    /// Register a closure-backed top-level builtin. Captures host-side
+    /// state — `tokio::runtime::Handle`, DB pool, counters, etc.
+    pub fn register_closure<F>(&mut self, name_hash: u64, func: F)
     where
         F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
     {
-        self.interpreter.env.define(
-            name.to_string(),
-            Value::BuiltinClosure(name.to_string(), crate::value::BuiltinClosureFn::new(func)),
-            false,
+        self.interpreter.env.define_h(
+            name_hash,
+            Value::BuiltinClosure {
+                qualified_hash: name_hash,
+                func: crate::value::BuiltinClosureFn::new(func),
+            },
         );
     }
 
-    /// Register a host async function. Scripts call this like a normal
-    /// function under `eval_async`; sync `eval` rejects it explicitly.
+    /// Register a top-level async builtin. Callable only under `eval_async`.
     #[cfg(feature = "async-runtime")]
-    pub fn register_async_fn<F, Fut>(&mut self, name: &str, func: F)
+    pub fn register_async_fn<F, Fut>(&mut self, name_hash: u64, func: F)
     where
         F: Fn(Vec<Value>) -> Fut + 'static,
         Fut: Future<Output = Result<Value, IonError>> + 'static,
     {
-        self.interpreter.env.define(
-            name.to_string(),
-            Value::AsyncBuiltinClosure(
-                name.to_string(),
-                crate::value::AsyncBuiltinClosureFn::new(func),
-            ),
-            false,
+        self.interpreter.env.define_h(
+            name_hash,
+            Value::AsyncBuiltinClosure {
+                qualified_hash: name_hash,
+                func: crate::value::AsyncBuiltinClosureFn::new(func),
+            },
         );
     }
 
@@ -298,11 +296,12 @@ impl Engine {
         self.interpreter.types.register_enum(def);
     }
 
-    /// Register a module that scripts can access via `module::name` or `use module::*`.
+    /// Register a module that scripts can access via `module::name` or
+    /// `use module::*`. Stored under the module's `name_hash`.
     pub fn register_module(&mut self, module: Module) {
-        let name = module.name.clone();
-        let value = module.to_value();
-        self.interpreter.env.define(name, value, false);
+        let name_hash = module.name_hash();
+        let value = module.into_value();
+        self.interpreter.env.define_h(name_hash, value);
     }
 
     /// Register a type via the IonType trait (used with `#[derive(IonType)]`).

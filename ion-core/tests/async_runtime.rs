@@ -74,7 +74,7 @@ fn _placeholder_for_removed_sync_rejection_tests() {
 #[test]
 fn sync_eval_rejects_async_host_function() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later", |_args| async { Ok(Value::Int(7)) });
+    engine.register_async_fn(ion_core::h!("later"), |_args| async { Ok(Value::Int(7)) });
 
     let err = engine.eval("later()").unwrap_err();
     assert!(
@@ -88,9 +88,9 @@ fn sync_eval_rejects_async_host_function() {
 async fn async_module_function_runs_under_eval_async() {
     let mut engine = Engine::new();
 
-    let mut sensor = Module::new("sensor");
+    let mut sensor = Module::new(ion_core::h!("sensor"));
     sensor.register_async_fn(
-        "call",
+        ion_core::h!("call"),
         |args| async move { Ok(Value::Int(args.len() as i64)) },
     );
     engine.register_module(sensor);
@@ -113,8 +113,8 @@ async fn async_module_function_runs_under_eval_async() {
 fn async_module_function_rejects_sync_eval() {
     let mut engine = Engine::new();
 
-    let mut sensor = Module::new("sensor");
-    sensor.register_async_fn("call", |_args| async move { Ok(Value::Unit) });
+    let mut sensor = Module::new(ion_core::h!("sensor"));
+    sensor.register_async_fn(ion_core::h!("call"), |_args| async move { Ok(Value::Unit) });
     engine.register_module(sensor);
 
     let err = engine.eval("sensor::call()").unwrap_err();
@@ -129,7 +129,7 @@ fn async_module_function_rejects_sync_eval() {
 #[tokio::test]
 async fn eval_async_calls_async_host_function_without_coloring_ion_code() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later", |args| async move {
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
         Ok(Value::Int(args[0].as_int().unwrap() + 1))
     });
 
@@ -151,7 +151,7 @@ async fn eval_async_calls_async_host_function_without_coloring_ion_code() {
 #[tokio::test]
 async fn eval_async_uses_bytecode_runtime_for_async_host_inside_for_loop() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later", |args| async move {
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
         Ok(Value::Int(args[0].as_int().unwrap()))
     });
 
@@ -177,7 +177,7 @@ fn eval_async_parks_on_pending_host_future() {
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     let rx = Rc::new(RefCell::new(Some(rx)));
     let host_rx = Rc::clone(&rx);
-    engine.register_async_fn("later", move |_args| {
+    engine.register_async_fn(ion_core::h!("later"), move |_args| {
         let rx = host_rx.borrow_mut().take().unwrap();
         async move {
             rx.await
@@ -217,7 +217,7 @@ async fn eval_async_sleep_uses_tokio_timer_without_async_host_registration() {
 #[tokio::test]
 async fn eval_async_sleep_overlay_does_not_replace_host_binding() {
     let mut engine = Engine::new();
-    engine.register_fn("sleep", |_args| Ok(Value::Int(99)));
+    engine.register_fn(ion_core::h!("sleep"), |_args| Ok(Value::Int(99)));
 
     let value = engine.eval_async("sleep(1)").await.unwrap();
 
@@ -371,7 +371,7 @@ async fn eval_async_timeout_propagates_callback_errors() {
 #[tokio::test]
 async fn eval_async_try_catch_observes_async_host_error() {
     let mut engine = Engine::new();
-    engine.register_async_fn("fail_later", |_args| async {
+    engine.register_async_fn(ion_core::h!("fail_later"), |_args| async {
         Err(IonError::runtime("network failed", 3, 9))
     });
 
@@ -393,7 +393,7 @@ async fn eval_async_try_catch_observes_async_host_error() {
 #[tokio::test]
 async fn eval_async_try_operator_preserves_function_boundary_result_semantics() {
     let mut engine = Engine::new();
-    engine.register_async_fn("fallible_later", |_args| async {
+    engine.register_async_fn(ion_core::h!("fallible_later"), |_args| async {
         Ok(Value::Result(Err(Box::new(Value::Str("bad".into())))))
     });
 
@@ -428,7 +428,7 @@ fn eval_async_spawned_host_futures_overlap_without_os_threads() {
     let host_receivers = Rc::clone(&receivers);
     let host_active = Rc::clone(&active);
     let host_max_active = Rc::clone(&max_active);
-    engine.register_async_fn("later", move |args| {
+    engine.register_async_fn(ion_core::h!("later"), move |args| {
         let idx = args[0].as_int().unwrap() as usize;
         let rx = host_receivers.borrow_mut()[idx].take().unwrap();
         let active = Rc::clone(&host_active);
@@ -482,7 +482,7 @@ fn eval_async_spawned_ion_functions_overlap_host_futures() {
     let host_receivers = Rc::clone(&receivers);
     let host_active = Rc::clone(&active);
     let host_max_active = Rc::clone(&max_active);
-    engine.register_async_fn("later", move |args| {
+    engine.register_async_fn(ion_core::h!("later"), move |args| {
         let idx = args[0].as_int().unwrap() as usize;
         let rx = host_receivers.borrow_mut()[idx].take().unwrap();
         let active = Rc::clone(&host_active);
@@ -534,7 +534,7 @@ fn eval_async_spawned_ion_function_preserves_named_arguments() {
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     let rx = Rc::new(RefCell::new(Some(rx)));
     let host_rx = Rc::clone(&rx);
-    engine.register_async_fn("later", move |args| {
+    engine.register_async_fn(ion_core::h!("later"), move |args| {
         let rx = host_rx.borrow_mut().take().unwrap();
         async move {
             let offset = rx
@@ -573,7 +573,7 @@ fn eval_async_spawned_ion_function_preserves_named_arguments() {
 #[tokio::test]
 async fn eval_async_spawn_outside_async_block_is_rejected() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later", |_args| async { Ok(Value::Int(1)) });
+    engine.register_async_fn(ion_core::h!("later"), |_args| async { Ok(Value::Int(1)) });
 
     let err = engine.eval_async("spawn later()").await.unwrap_err();
     assert!(err.message.contains("spawn is only allowed inside async"));
@@ -582,7 +582,7 @@ async fn eval_async_spawn_outside_async_block_is_rejected() {
 #[tokio::test]
 async fn eval_async_bytecode_runtime_restores_engine_environment() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later", |args| async move {
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
         Ok(Value::Int(args[0].as_int().unwrap() + 1))
     });
 
@@ -603,7 +603,7 @@ async fn eval_async_bytecode_runtime_restores_engine_environment() {
 #[tokio::test]
 async fn eval_async_async_host_programs_match_host_structs_in_bytecode() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_point", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_point"), |_args| async move {
         let mut fields = IndexMap::new();
         fields.insert(ion_core::h!("x"), Value::Int(42));
         Ok(Value::HostStruct {
@@ -630,7 +630,7 @@ async fn eval_async_async_host_programs_match_host_structs_in_bytecode() {
 #[tokio::test]
 async fn eval_async_async_host_programs_match_host_struct_nested_fields() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_point", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_point"), |_args| async move {
         let mut fields = IndexMap::new();
         fields.insert(ion_core::h!("x"), Value::Int(42));
         Ok(Value::HostStruct {
@@ -658,7 +658,7 @@ async fn eval_async_async_host_programs_match_host_struct_nested_fields() {
 #[tokio::test]
 async fn eval_async_async_host_programs_skip_struct_arm_when_field_is_missing() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_point", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_point"), |_args| async move {
         let mut fields = IndexMap::new();
         fields.insert(ion_core::h!("x"), Value::Int(42));
         Ok(Value::HostStruct {
@@ -685,7 +685,7 @@ async fn eval_async_async_host_programs_skip_struct_arm_when_field_is_missing() 
 #[tokio::test]
 async fn eval_async_async_host_programs_match_host_enum_payloads_in_bytecode() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_color", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_color"), |_args| async move {
         Ok(Value::HostEnum {
             enum_hash: ion_core::h!("Color"),
             variant_hash: ion_core::h!("Custom"),
@@ -712,7 +712,7 @@ async fn eval_async_async_host_programs_match_host_enum_payloads_in_bytecode() {
 #[tokio::test]
 async fn eval_async_async_host_programs_match_host_enum_unit_variants_in_bytecode() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_color", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_color"), |_args| async move {
         Ok(Value::HostEnum {
             enum_hash: ion_core::h!("Color"),
             variant_hash: ion_core::h!("Green"),
@@ -739,7 +739,7 @@ async fn eval_async_async_host_programs_match_host_enum_unit_variants_in_bytecod
 #[tokio::test]
 async fn eval_async_async_host_programs_match_host_enum_nested_payload_patterns() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_status", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_status"), |_args| async move {
         Ok(Value::HostEnum {
             enum_hash: ion_core::h!("Status"),
             variant_hash: ion_core::h!("Success"),
@@ -765,7 +765,7 @@ async fn eval_async_async_host_programs_match_host_enum_nested_payload_patterns(
 #[tokio::test]
 async fn eval_async_async_host_programs_let_destructure_host_structs() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_point", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_point"), |_args| async move {
         let mut fields = IndexMap::new();
         fields.insert(ion_core::h!("x"), Value::Int(20));
         fields.insert(ion_core::h!("y"), Value::Int(22));
@@ -791,7 +791,7 @@ async fn eval_async_async_host_programs_let_destructure_host_structs() {
 #[tokio::test]
 async fn eval_async_async_host_programs_let_destructure_host_enums() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_color", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_color"), |_args| async move {
         Ok(Value::HostEnum {
             enum_hash: ion_core::h!("Color"),
             variant_hash: ion_core::h!("Custom"),
@@ -815,7 +815,7 @@ async fn eval_async_async_host_programs_let_destructure_host_enums() {
 #[tokio::test]
 async fn eval_async_async_host_programs_report_let_pattern_mismatch() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_color", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_color"), |_args| async move {
         Ok(Value::HostEnum {
             enum_hash: ion_core::h!("Color"),
             variant_hash: ion_core::h!("Red"),
@@ -843,7 +843,7 @@ async fn eval_async_async_host_programs_report_let_pattern_mismatch() {
 #[tokio::test]
 async fn eval_async_select_branch_pattern_mismatch_is_reported() {
     let mut engine = Engine::new();
-    engine.register_async_fn("later_color", |_args| async move {
+    engine.register_async_fn(ion_core::h!("later_color"), |_args| async move {
         Ok(Value::HostEnum {
             enum_hash: ion_core::h!("Color"),
             variant_hash: ion_core::h!("Red"),
@@ -874,13 +874,13 @@ async fn eval_async_select_branch_pattern_mismatch_is_reported() {
 #[tokio::test]
 async fn eval_async_async_host_program_can_use_single_module_import() {
     let mut engine = Engine::new();
-    let mut math = Module::new("math");
-    math.register_fn("add", |args: &[Value]| match (&args[0], &args[1]) {
+    let mut math = Module::new(ion_core::h!("math"));
+    math.register_fn(ion_core::h!("add"), |args: &[Value]| match (&args[0], &args[1]) {
         (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
         _ => Err("expected ints".to_string()),
     });
     engine.register_module(math);
-    engine.register_async_fn("later", |args| async move {
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
         Ok(Value::Int(args[0].as_int().unwrap()))
     });
 
@@ -900,14 +900,14 @@ async fn eval_async_async_host_program_can_use_single_module_import() {
 #[tokio::test]
 async fn eval_async_async_host_program_can_use_glob_module_import() {
     let mut engine = Engine::new();
-    let mut math = Module::new("math");
-    math.register_fn("add", |args: &[Value]| match (&args[0], &args[1]) {
+    let mut math = Module::new(ion_core::h!("math"));
+    math.register_fn(ion_core::h!("add"), |args: &[Value]| match (&args[0], &args[1]) {
         (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
         _ => Err("expected ints".to_string()),
     });
-    math.set("offset", Value::Int(20));
+    math.set(ion_core::h!("offset"), Value::Int(20));
     engine.register_module(math);
-    engine.register_async_fn("later", |args| async move {
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
         Ok(Value::Int(args[0].as_int().unwrap()))
     });
 
@@ -930,7 +930,7 @@ fn eval_async_async_block_joins_unawaited_spawned_task() {
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     let rx = Rc::new(RefCell::new(Some(rx)));
     let host_rx = Rc::clone(&rx);
-    engine.register_async_fn("later", move |_args| {
+    engine.register_async_fn(ion_core::h!("later"), move |_args| {
         let rx = host_rx.borrow_mut().take().unwrap();
         async move {
             rx.await
@@ -966,7 +966,7 @@ fn eval_async_select_returns_first_ready_branch() {
     let receivers = Rc::new(RefCell::new(vec![Some(rx_slow), Some(rx_fast)]));
     let host_receivers = Rc::clone(&receivers);
 
-    engine.register_async_fn("later", move |args| {
+    engine.register_async_fn(ion_core::h!("later"), move |args| {
         let idx = args[0].as_int().unwrap() as usize;
         let rx = host_receivers.borrow_mut()[idx].take().unwrap();
         async move {
@@ -1002,7 +1002,7 @@ fn eval_async_select_returns_first_ready_branch() {
 #[tokio::test]
 async fn eval_async_await_rejects_non_task_value() {
     let mut engine = Engine::new();
-    engine.register_async_fn("marker", |_args| async { Ok(Value::Unit) });
+    engine.register_async_fn(ion_core::h!("marker"), |_args| async { Ok(Value::Unit) });
 
     let err = engine
         .eval_async(
@@ -1023,7 +1023,7 @@ async fn eval_async_await_rejects_non_task_value() {
 #[cfg(any())]
 fn _async_host_function_can_return_ion_error_type_legacy() {
     let mut engine = Engine::new();
-    engine.register_async_fn("fail_later", |_args| async {
+    engine.register_async_fn(ion_core::h!("fail_later"), |_args| async {
         Err(IonError::runtime("nope", 0, 0))
     });
 
@@ -1064,7 +1064,7 @@ fn engine_handle_enqueues_external_call_requests() {
 async fn eval_async_host_future_can_call_back_into_ion_function() {
     let mut engine = Engine::new();
     let handle = engine.handle();
-    engine.register_async_fn("trigger", move |args| {
+    engine.register_async_fn(ion_core::h!("trigger"), move |args| {
         let handle = handle.clone();
         async move { handle.call_async("on_event", args).await }
     });
@@ -1089,11 +1089,11 @@ async fn eval_async_host_future_can_call_back_into_ion_function() {
 async fn external_ion_callback_can_park_on_nested_async_host_future() {
     let mut engine = Engine::new();
     let handle = engine.handle();
-    engine.register_async_fn("trigger", move |args| {
+    engine.register_async_fn(ion_core::h!("trigger"), move |args| {
         let handle = handle.clone();
         async move { handle.call_async("on_event", args).await }
     });
-    engine.register_async_fn("later", |args| async move {
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
         tokio::time::sleep(Duration::from_millis(1)).await;
         Ok(args.into_iter().next().unwrap_or(Value::Unit))
     });
@@ -1301,7 +1301,7 @@ fn step_task_async_host_call_suspends_and_resumes_bytecode_continuation() {
             |args| async move { Ok(Value::Int(args[0].as_int().unwrap() * 2)) },
         );
     let mut chunk = Chunk::new();
-    chunk.emit_constant(Value::AsyncBuiltinClosure("double".into(), async_fn), 1);
+    chunk.emit_constant(Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("double"), func: async_fn }, 1);
     chunk.emit_constant(Value::Int(21), 1);
     chunk.emit_op_u8(Op::Call, 1, 1);
     chunk.emit_op(Op::Return, 1);
@@ -1347,7 +1347,7 @@ fn step_task_async_host_error_resumes_through_try_catch() {
         AsyncBuiltinClosureFn::new(|_args| async { Err(IonError::runtime("async boom", 4, 2)) });
     let mut chunk = Chunk::new();
     let catch_jump = chunk.emit_jump(Op::TryBegin, 1);
-    chunk.emit_constant(Value::AsyncBuiltinClosure("fail".into(), async_fn), 1);
+    chunk.emit_constant(Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("fail"), func: async_fn }, 1);
     chunk.emit_op_u8(Op::Call, 0, 1);
     let after_catch_jump = chunk.emit_jump(Op::TryEnd, 1);
     chunk.patch_jump(catch_jump);
@@ -1394,7 +1394,7 @@ fn step_task_async_host_result_error_resumes_into_try_operator() {
         Ok(Value::Result(Err(Box::new(Value::Str("bad".into())))))
     });
     let mut chunk = Chunk::new();
-    chunk.emit_constant(Value::AsyncBuiltinClosure("fallible".into(), async_fn), 1);
+    chunk.emit_constant(Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("fallible"), func: async_fn }, 1);
     chunk.emit_op_u8(Op::Call, 0, 1);
     chunk.emit_op(Op::Try, 1);
     chunk.emit_op(Op::Return, 1);
@@ -1438,7 +1438,7 @@ fn step_task_async_host_tail_call_resumes_as_frame_return() {
             |args| async move { Ok(Value::Int(args[0].as_int().unwrap() * 2)) },
         );
     let mut chunk = Chunk::new();
-    chunk.emit_constant(Value::AsyncBuiltinClosure("double".into(), async_fn), 1);
+    chunk.emit_constant(Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("double"), func: async_fn }, 1);
     chunk.emit_constant(Value::Int(21), 1);
     chunk.emit_op_u8(Op::TailCall, 1, 1);
     let root = arena.insert(chunk);
@@ -1482,7 +1482,7 @@ fn step_task_spawn_call_await_task_suspends_and_resumes() {
             |args| async move { Ok(Value::Int(args[0].as_int().unwrap() + 1)) },
         );
     let mut chunk = Chunk::new();
-    chunk.emit_constant(Value::AsyncBuiltinClosure("later".into(), async_fn), 1);
+    chunk.emit_constant(Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("later"), func: async_fn }, 1);
     chunk.emit_constant(Value::Int(41), 1);
     chunk.emit_op_u8(Op::SpawnCall, 1, 1);
     chunk.emit_op(Op::AwaitTask, 1);
@@ -1509,13 +1509,13 @@ fn step_task_await_polls_other_spawned_tasks_for_overlap() {
 
     let mut arena = ChunkArena::new();
     let mut chunk = Chunk::new();
-    chunk.emit_constant(Value::AsyncBuiltinClosure("later".into(), async_fn), 1);
+    chunk.emit_constant(Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("later"), func: async_fn }, 1);
     chunk.emit_constant(Value::Int(0), 1);
     chunk.emit_op_u8(Op::SpawnCall, 1, 1);
     chunk.emit_constant(
-        Value::AsyncBuiltinClosure(
-            "later".into(),
-            AsyncBuiltinClosureFn::new({
+        Value::AsyncBuiltinClosure {
+            qualified_hash: ion_core::h!("later"),
+            func: AsyncBuiltinClosureFn::new({
                 let poll_counts = Rc::clone(&poll_counts);
                 let states = Rc::clone(&states);
                 move |args| {
@@ -1523,7 +1523,7 @@ fn step_task_await_polls_other_spawned_tasks_for_overlap() {
                     TaskProbeFuture::new(idx, Rc::clone(&poll_counts), Rc::clone(&states))
                 }
             }),
-        ),
+        },
         1,
     );
     chunk.emit_constant(Value::Int(1), 1);
@@ -1616,12 +1616,12 @@ fn compiled_async_spawn_await_runs_on_continuation_runtime() {
     }
     cont.define_global(
         "later",
-        Value::AsyncBuiltinClosure(
-            "later".into(),
-            AsyncBuiltinClosureFn::new(
+        Value::AsyncBuiltinClosure {
+            qualified_hash: ion_core::h!("later"),
+            func: AsyncBuiltinClosureFn::new(
                 |args| async move { Ok(Value::Int(args[0].as_int().unwrap())) },
             ),
-        ),
+        },
         false,
     );
 
@@ -1659,9 +1659,9 @@ fn compiled_async_select_races_branch_tasks_on_continuation_runtime() {
     }
     cont.define_global(
         "later",
-        Value::AsyncBuiltinClosure(
-            "later".into(),
-            AsyncBuiltinClosureFn::new({
+        Value::AsyncBuiltinClosure {
+            qualified_hash: ion_core::h!("later"),
+            func: AsyncBuiltinClosureFn::new({
                 let poll_counts = Rc::clone(&poll_counts);
                 let states = Rc::clone(&states);
                 move |args| {
@@ -1669,7 +1669,7 @@ fn compiled_async_select_races_branch_tasks_on_continuation_runtime() {
                     TaskProbeFuture::new(idx, Rc::clone(&poll_counts), Rc::clone(&states))
                 }
             }),
-        ),
+        },
         false,
     );
 
@@ -2280,7 +2280,7 @@ fn step_task_method_call_filters_with_builtin_closure_continuation() {
         ]),
         1,
     );
-    chunk.emit_constant(Value::BuiltinClosure("keep_even".into(), keep_even), 1);
+    chunk.emit_constant(Value::BuiltinClosure { qualified_hash: ion_core::h!("keep_even"), func: keep_even }, 1);
     emit_method_call(&mut chunk, method, 1, 1);
     chunk.emit_op(Op::Return, 1);
     let root = arena.insert(chunk);
@@ -2302,7 +2302,7 @@ fn step_task_method_call_map_suspends_on_async_host_callback() {
     let method = chunk.add_constant(Value::Str("map".into()));
     chunk.emit_constant(Value::List(vec![Value::Int(20), Value::Int(21)]), 1);
     chunk.emit_constant(
-        Value::AsyncBuiltinClosure("double_later".into(), async_fn),
+        Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("double_later"), func: async_fn },
         1,
     );
     emit_method_call(&mut chunk, method, 1, 1);
@@ -2396,7 +2396,7 @@ fn step_task_result_closure_method_suspends_on_async_host_callback() {
     let method = chunk.add_constant(Value::Str("map_err".into()));
     chunk.emit_constant(Value::Result(Err(Box::new(Value::Str("boom".into())))), 1);
     chunk.emit_constant(
-        Value::AsyncBuiltinClosure("handle_later".into(), async_fn),
+        Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("handle_later"), func: async_fn },
         1,
     );
     emit_method_call(&mut chunk, method, 1, 1);
@@ -2455,10 +2455,10 @@ fn step_task_dict_closure_methods_use_two_arg_continuations() {
     let map_method = chunk.add_constant(Value::Str("map".into()));
     let filter_method = chunk.add_constant(Value::Str("filter".into()));
     chunk.emit_constant(Value::Dict(input.clone()), 1);
-    chunk.emit_constant(Value::BuiltinClosure("map_value".into(), map_value), 1);
+    chunk.emit_constant(Value::BuiltinClosure { qualified_hash: ion_core::h!("map_value"), func: map_value }, 1);
     emit_method_call(&mut chunk, map_method, 1, 1);
     chunk.emit_constant(Value::Dict(input), 1);
-    chunk.emit_constant(Value::BuiltinClosure("keep_even".into(), keep_even), 1);
+    chunk.emit_constant(Value::BuiltinClosure { qualified_hash: ion_core::h!("keep_even"), func: keep_even }, 1);
     emit_method_call(&mut chunk, filter_method, 1, 1);
     chunk.emit_op_u16(Op::BuildTuple, 2, 1);
     chunk.emit_op(Op::Return, 1);
@@ -2498,18 +2498,18 @@ fn step_task_list_fold_reduce_and_flat_map_use_continuations() {
         1,
     );
     chunk.emit_constant(Value::Int(10), 1);
-    chunk.emit_constant(Value::BuiltinFn("add".into(), add), 1);
+    chunk.emit_constant(Value::BuiltinFn { qualified_hash: ion_core::h!("add"), func: add }, 1);
     emit_method_call(&mut chunk, fold, 2, 1);
 
     chunk.emit_constant(
         Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
         1,
     );
-    chunk.emit_constant(Value::BuiltinFn("add".into(), add), 1);
+    chunk.emit_constant(Value::BuiltinFn { qualified_hash: ion_core::h!("add"), func: add }, 1);
     emit_method_call(&mut chunk, reduce, 1, 1);
 
     chunk.emit_constant(Value::List(vec![Value::Int(4), Value::Int(5)]), 1);
-    chunk.emit_constant(Value::BuiltinClosure("duplicate".into(), duplicate), 1);
+    chunk.emit_constant(Value::BuiltinClosure { qualified_hash: ion_core::h!("duplicate"), func: duplicate }, 1);
     emit_method_call(&mut chunk, flat_map, 1, 1);
 
     chunk.emit_op_u16(Op::BuildTuple, 3, 1);
@@ -2545,7 +2545,7 @@ fn step_task_method_call_sort_by_uses_continuation_comparator() {
         Value::List(vec![Value::Int(3), Value::Int(1), Value::Int(2)]),
         4,
     );
-    chunk.emit_constant(Value::BuiltinClosure("compare".into(), compare), 4);
+    chunk.emit_constant(Value::BuiltinClosure { qualified_hash: ion_core::h!("compare"), func: compare }, 4);
     emit_method_call(&mut chunk, method, 1, 4);
     chunk.emit_op(Op::Return, 4);
     let root = arena.insert(chunk);
@@ -2567,7 +2567,7 @@ fn step_task_method_call_sort_by_suspends_on_async_host_comparator() {
     let mut chunk = Chunk::new();
     let method = chunk.add_constant(Value::Str("sort_by".into()));
     chunk.emit_constant(Value::List(vec![Value::Int(2), Value::Int(1)]), 4);
-    chunk.emit_constant(Value::AsyncBuiltinClosure("compare".into(), async_fn), 4);
+    chunk.emit_constant(Value::AsyncBuiltinClosure { qualified_hash: ion_core::h!("compare"), func: async_fn }, 4);
     emit_method_call(&mut chunk, method, 1, 4);
     chunk.emit_op(Op::Return, 4);
     let root = arena.insert(chunk);
@@ -3028,10 +3028,10 @@ fn step_task_calls_sync_builtin_and_closure_inline() {
     let mut arena = ChunkArena::new();
     let closure = BuiltinClosureFn::new(|args| Ok(Value::Int(args[0].as_int().unwrap() + 2)));
     let mut chunk = Chunk::new();
-    chunk.emit_constant(Value::BuiltinFn("inc".into(), inc), 1);
+    chunk.emit_constant(Value::BuiltinFn { qualified_hash: ion_core::h!("inc"), func: inc }, 1);
     chunk.emit_constant(Value::Int(40), 1);
     chunk.emit_op_u8(Op::Call, 1, 1);
-    chunk.emit_constant(Value::BuiltinClosure("plus_two".into(), closure), 1);
+    chunk.emit_constant(Value::BuiltinClosure { qualified_hash: ion_core::h!("plus_two"), func: closure }, 1);
     chunk.emit_constant(Value::Int(40), 1);
     chunk.emit_op_u8(Op::Call, 1, 1);
     chunk.emit_op(Op::Add, 1);

@@ -654,7 +654,11 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             StmtKind::Use { path, imports } => {
-                // Resolve the module dict by walking the path segments
+                // Resolve the module by walking the path segments. Modules
+                // registered via `Engine::register_module` are
+                // `Value::Module(Arc<ModuleTable>)` keyed by name hash; the
+                // legacy `Value::Dict` path is kept for backwards compat with
+                // anything that still injects a string-keyed dict as a module.
                 let root = self.env.get(&path[0]).ok_or_else(|| {
                     SignalOrError::Error(IonError::name(
                         format!("{}{}", ion_str!("undefined module: "), &path[0]),
@@ -664,22 +668,9 @@ impl Interpreter {
                 })?;
                 let mut module_val = root.clone();
                 for seg in &path[1..] {
-                    match &module_val {
-                        Value::Dict(map) => {
-                            module_val = map.get(seg).cloned().ok_or_else(|| {
-                                SignalOrError::Error(IonError::name(
-                                    format!(
-                                        "{}{}{}{}",
-                                        ion_str!("'"),
-                                        seg,
-                                        ion_str!("' not found in module "),
-                                        &path[0]
-                                    ),
-                                    stmt.span.line,
-                                    stmt.span.col,
-                                ))
-                            })?;
-                        }
+                    let next = match &module_val {
+                        Value::Module(table) => table.items.get(&crate::hash::h(seg)).cloned(),
+                        Value::Dict(map) => map.get(seg).cloned(),
                         _ => {
                             return Err(IonError::type_err(
                                 format!(
@@ -693,26 +684,71 @@ impl Interpreter {
                             )
                             .into())
                         }
-                    }
+                    };
+                    module_val = next.ok_or_else(|| {
+                        SignalOrError::Error(IonError::name(
+                            format!(
+                                "{}{}{}{}",
+                                ion_str!("'"),
+                                seg,
+                                ion_str!("' not found in module "),
+                                &path[0]
+                            ),
+                            stmt.span.line,
+                            stmt.span.col,
+                        ))
+                    })?;
                 }
-                // Now import from module_val (which should be a dict)
+                // Import bindings from module_val. For Value::Module, items
+                // are hash-keyed — glob/single/named imports each need a
+                // hash-aware path.
                 match imports {
-                    UseImports::Glob => {
-                        if let Value::Dict(map) = &module_val {
+                    UseImports::Glob => match &module_val {
+                        Value::Module(table) => {
+                            for (k, v) in table.items.iter() {
+                                self.env.define_h(*k, v.clone());
+                            }
+                        }
+                        Value::Dict(map) => {
                             for (name, val) in map {
                                 self.env.define(name.clone(), val.clone(), false);
                             }
-                        } else {
+                        }
+                        _ => {
                             return Err(IonError::type_err(
                                 ion_str!("use target is not a module"),
                                 stmt.span.line,
                                 stmt.span.col,
                             )
-                            .into());
+                            .into())
                         }
-                    }
-                    UseImports::Names(items) => {
-                        if let Value::Dict(map) = &module_val {
+                    },
+                    UseImports::Names(items) => match &module_val {
+                        Value::Module(table) => {
+                            for item in items {
+                                let nh = crate::hash::h(&item.name);
+                                let val = table.items.get(&nh).ok_or_else(|| {
+                                    SignalOrError::Error(IonError::name(
+                                        format!(
+                                            "{}{}{}",
+                                            ion_str!("'"),
+                                            &item.name,
+                                            ion_str!("' not found in module")
+                                        ),
+                                        stmt.span.line,
+                                        stmt.span.col,
+                                    ))
+                                })?;
+                                let binding = item.binding().to_string();
+                                let bh = crate::hash::h(&binding);
+                                if binding == item.name {
+                                    self.env.define_h(bh, val.clone());
+                                } else {
+                                    self.env.define(binding, val.clone(), false);
+                                }
+                            }
+                        }
+                        Value::Dict(map) => {
                             for item in items {
                                 let val = map.get(&item.name).ok_or_else(|| {
                                     SignalOrError::Error(IonError::name(
@@ -729,39 +765,45 @@ impl Interpreter {
                                 self.env
                                     .define(item.binding().to_string(), val.clone(), false);
                             }
-                        } else {
+                        }
+                        _ => {
                             return Err(IonError::type_err(
                                 ion_str!("use target is not a module"),
                                 stmt.span.line,
                                 stmt.span.col,
                             )
-                            .into());
+                            .into())
                         }
-                    }
+                    },
                     UseImports::Single(item) => {
-                        if let Value::Dict(map) = &module_val {
-                            let val = map.get(&item.name).ok_or_else(|| {
-                                SignalOrError::Error(IonError::name(
-                                    format!(
-                                        "{}{}{}",
-                                        ion_str!("'"),
-                                        &item.name,
-                                        ion_str!("' not found in module")
-                                    ),
+                        let val = match &module_val {
+                            Value::Module(table) => {
+                                table.items.get(&crate::hash::h(&item.name)).cloned()
+                            }
+                            Value::Dict(map) => map.get(&item.name).cloned(),
+                            _ => {
+                                return Err(IonError::type_err(
+                                    ion_str!("use target is not a module"),
                                     stmt.span.line,
                                     stmt.span.col,
-                                ))
-                            })?;
-                            self.env
-                                .define(item.binding().to_string(), val.clone(), false);
-                        } else {
-                            return Err(IonError::type_err(
-                                ion_str!("use target is not a module"),
+                                )
+                                .into())
+                            }
+                        };
+                        let val = val.ok_or_else(|| {
+                            SignalOrError::Error(IonError::name(
+                                format!(
+                                    "{}{}{}",
+                                    ion_str!("'"),
+                                    &item.name,
+                                    ion_str!("' not found in module")
+                                ),
                                 stmt.span.line,
                                 stmt.span.col,
-                            )
-                            .into());
-                        }
+                            ))
+                        })?;
+                        self.env
+                            .define(item.binding().to_string(), val.clone(), false);
                     }
                 }
                 Ok(Value::Unit)
@@ -804,7 +846,10 @@ impl Interpreter {
             }),
 
             ExprKind::ModulePath(segments) => {
-                // Resolve a::b::c by walking dict fields from the root module
+                // Resolve a::b::c by walking module items from the root module.
+                // Modules registered through `Engine::register_module` are
+                // `Value::Module` (hash-keyed); the legacy `Value::Dict`
+                // path is preserved for any host that still injects a dict.
                 let root = self.env.get(&segments[0]).ok_or_else(|| {
                     SignalOrError::Error(IonError::name(
                         format!("{}{}", ion_str!("undefined module: "), &segments[0]),
@@ -815,6 +860,23 @@ impl Interpreter {
                 let mut current = root.clone();
                 for seg in &segments[1..] {
                     match &current {
+                        Value::Module(table) => {
+                            current = table.items.get(&crate::hash::h(seg)).cloned().ok_or_else(
+                                || {
+                                    SignalOrError::Error(IonError::name(
+                                        format!(
+                                            "{}{}{}{}",
+                                            ion_str!("'"),
+                                            seg,
+                                            ion_str!("' not found in module "),
+                                            &segments[0]
+                                        ),
+                                        span.line,
+                                        span.col,
+                                    ))
+                                },
+                            )?;
+                        }
                         Value::Dict(map) => {
                             current = map.get(seg).cloned().ok_or_else(|| {
                                 SignalOrError::Error(IonError::name(
@@ -3158,15 +3220,19 @@ impl Interpreter {
                 }
             }
             #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
-            Value::BuiltinFn(ref name, _) if name == "timeout" => self.builtin_timeout(args, span),
-            Value::BuiltinFn(_, func) => {
+            Value::BuiltinFn { qualified_hash, .. }
+                if *qualified_hash == crate::hash::h("timeout") =>
+            {
+                self.builtin_timeout(args, span)
+            }
+            Value::BuiltinFn { func, .. } => {
                 func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
-            Value::BuiltinClosure(_, func) => func
+            Value::BuiltinClosure { func, .. } => func
                 .call(args)
                 .map_err(|msg| IonError::runtime(msg, span.line, span.col).into()),
             #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure(_, _) => Err(IonError::runtime(
+            Value::AsyncBuiltinClosure { .. } => Err(IonError::runtime(
                 ion_str!(
                         "async host function cannot be called by the synchronous evaluator; use eval_async"
                 )
@@ -3353,9 +3419,9 @@ impl Interpreter {
                 "tuple" => matches!(val, Value::Tuple(_)),
                 "set" => matches!(val, Value::Set(_)),
                 "fn" => match val {
-                    Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => true,
+                    Value::Fn(_) | Value::BuiltinFn { .. } | Value::BuiltinClosure { .. } => true,
                     #[cfg(feature = "async-runtime")]
-                    Value::AsyncBuiltinClosure(_, _) => true,
+                    Value::AsyncBuiltinClosure { .. } => true,
                     _ => false,
                 },
                 "cell" => matches!(val, Value::Cell(_)),
@@ -3878,361 +3944,297 @@ pub fn register_builtins_with_handlers(
     // Math: moved to math:: module
     // JSON/Msgpack: moved to json:: module
 
-    env.define(
-        ion_str!("len").to_string(),
-        Value::BuiltinFn(ion_str!("len").to_string(), |args| {
-            if args.is_empty() {
-                return Err(ion_str!("len() requires 1 argument"));
-            }
-            match &args[0] {
-                Value::List(items) => Ok(Value::Int(items.len() as i64)),
-                Value::Str(s) => Ok(Value::Int(s.len() as i64)),
-                Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
-                Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
-                _ => Err(format!(
-                    "{}{}",
-                    ion_str!("len() not supported for "),
-                    args[0].type_name()
-                )),
-            }
-        }),
-        false,
-    );
-    env.define(
-        ion_str!("range").to_string(),
-        Value::BuiltinFn(ion_str!("range").to_string(), |args| match args.len() {
-            1 => {
-                let n = args[0].as_int().ok_or(ion_str!("range requires int"))?;
-                Ok(Value::Range {
-                    start: 0,
-                    end: n,
-                    inclusive: false,
-                })
-            }
-            2 => {
-                let start = args[0].as_int().ok_or(ion_str!("range requires int"))?;
-                let end = args[1].as_int().ok_or(ion_str!("range requires int"))?;
-                Ok(Value::Range {
-                    start,
-                    end,
-                    inclusive: false,
-                })
-            }
-            _ => Err(ion_str!("range takes 1 or 2 arguments").to_string()),
-        }),
-        false,
-    );
-    env.define(
-        ion_str!("set"),
-        Value::BuiltinFn(ion_str!("set"), |args| {
-            if args.is_empty() {
-                return Ok(Value::Set(vec![]));
-            }
-            match &args[0] {
-                Value::List(items) => {
-                    let mut unique = Vec::new();
-                    for v in items {
-                        if !unique.iter().any(|x| x == v) {
-                            unique.push(v.clone());
-                        }
+    global_builtin!(env, "len", |args| {
+        if args.is_empty() {
+            return Err(ion_str!("len() requires 1 argument"));
+        }
+        match &args[0] {
+            Value::List(items) => Ok(Value::Int(items.len() as i64)),
+            Value::Str(s) => Ok(Value::Int(s.len() as i64)),
+            Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
+            Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("len() not supported for "),
+                args[0].type_name()
+            )),
+        }
+    });
+    global_builtin!(env, "range", |args| match args.len() {
+        1 => {
+            let n = args[0].as_int().ok_or(ion_str!("range requires int"))?;
+            Ok(Value::Range {
+                start: 0,
+                end: n,
+                inclusive: false,
+            })
+        }
+        2 => {
+            let start = args[0].as_int().ok_or(ion_str!("range requires int"))?;
+            let end = args[1].as_int().ok_or(ion_str!("range requires int"))?;
+            Ok(Value::Range {
+                start,
+                end,
+                inclusive: false,
+            })
+        }
+        _ => Err(ion_str!("range takes 1 or 2 arguments").to_string()),
+    });
+    global_builtin!(env, "set", |args| {
+        if args.is_empty() {
+            return Ok(Value::Set(vec![]));
+        }
+        match &args[0] {
+            Value::List(items) => {
+                let mut unique = Vec::new();
+                for v in items {
+                    if !unique.iter().any(|x| x == v) {
+                        unique.push(v.clone());
                     }
-                    Ok(Value::Set(unique))
                 }
-                _ => Err(ion_str!("set() requires a list argument")),
+                Ok(Value::Set(unique))
             }
-        }),
-        false,
-    );
-    env.define(
-        ion_str!("cell"),
-        Value::BuiltinFn(ion_str!("cell"), |args| {
-            if args.len() != 1 {
-                return Err(ion_str!("cell() takes 1 argument"));
-            }
-            Ok(Value::Cell(std::sync::Arc::new(std::sync::Mutex::new(
-                args[0].clone(),
-            ))))
-        }),
-        false,
-    );
-    env.define(
-        ion_str!("type_of").to_string(),
-        Value::BuiltinFn(ion_str!("type_of").to_string(), |args| {
-            if args.is_empty() {
-                return Err(ion_str!("type_of() requires 1 argument"));
-            }
-            Ok(Value::Str(args[0].type_name().to_string()))
-        }),
-        false,
-    );
+            _ => Err(ion_str!("set() requires a list argument")),
+        }
+    });
+    global_builtin!(env, "cell", |args| {
+        if args.len() != 1 {
+            return Err(ion_str!("cell() takes 1 argument"));
+        }
+        Ok(Value::Cell(std::sync::Arc::new(std::sync::Mutex::new(
+            args[0].clone(),
+        ))))
+    });
+    global_builtin!(env, "type_of", |args| {
+        if args.is_empty() {
+            return Err(ion_str!("type_of() requires 1 argument"));
+        }
+        Ok(Value::Str(args[0].type_name().to_string()))
+    });
     // json_encode, json_decode, abs, min, max → moved to json:: / math:: modules
-    env.define(
-        ion_str!("str").to_string(),
-        Value::BuiltinFn(ion_str!("str").to_string(), |args| {
-            if args.len() != 1 {
-                return Err(ion_str!("str takes 1 argument"));
-            }
-            Ok(Value::Str(args[0].to_string()))
-        }),
-        false,
-    );
-    env.define(
-        ion_str!("int").to_string(),
-        Value::BuiltinFn(ion_str!("int").to_string(), |args| {
-            if args.len() != 1 {
-                return Err(ion_str!("int takes 1 argument"));
-            }
-            match &args[0] {
-                Value::Int(n) => Ok(Value::Int(*n)),
-                Value::Float(n) => Ok(Value::Int(*n as i64)),
-                Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|_| {
-                    format!(
-                        "{}{}{}",
-                        ion_str!("cannot convert '"),
-                        s,
-                        ion_str!("' to int")
-                    )
-                }),
-                Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
-                _ => Err(format!(
-                    "{}{}",
-                    ion_str!("cannot convert "),
-                    args[0].type_name()
-                )),
-            }
-        }),
-        false,
-    );
-    env.define(
-        ion_str!("float").to_string(),
-        Value::BuiltinFn(ion_str!("float").to_string(), |args| {
-            if args.len() != 1 {
-                return Err(ion_str!("float takes 1 argument"));
-            }
-            match &args[0] {
-                Value::Float(n) => Ok(Value::Float(*n)),
-                Value::Int(n) => Ok(Value::Float(*n as f64)),
-                Value::Str(s) => s.parse::<f64>().map(Value::Float).map_err(|_| {
-                    format!(
-                        "{}{}{}",
-                        ion_str!("cannot convert '"),
-                        s,
-                        ion_str!("' to float")
-                    )
-                }),
-                _ => Err(format!(
-                    "{}{}",
-                    ion_str!("cannot convert "),
-                    args[0].type_name()
-                )),
-            }
-        }),
-        false,
-    );
+    global_builtin!(env, "str", |args| {
+        if args.len() != 1 {
+            return Err(ion_str!("str takes 1 argument"));
+        }
+        Ok(Value::Str(args[0].to_string()))
+    });
+    global_builtin!(env, "int", |args| {
+        if args.len() != 1 {
+            return Err(ion_str!("int takes 1 argument"));
+        }
+        match &args[0] {
+            Value::Int(n) => Ok(Value::Int(*n)),
+            Value::Float(n) => Ok(Value::Int(*n as i64)),
+            Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|_| {
+                format!(
+                    "{}{}{}",
+                    ion_str!("cannot convert '"),
+                    s,
+                    ion_str!("' to int")
+                )
+            }),
+            Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("cannot convert "),
+                args[0].type_name()
+            )),
+        }
+    });
+    global_builtin!(env, "float", |args| {
+        if args.len() != 1 {
+            return Err(ion_str!("float takes 1 argument"));
+        }
+        match &args[0] {
+            Value::Float(n) => Ok(Value::Float(*n)),
+            Value::Int(n) => Ok(Value::Float(*n as f64)),
+            Value::Str(s) => s.parse::<f64>().map(Value::Float).map_err(|_| {
+                format!(
+                    "{}{}{}",
+                    ion_str!("cannot convert '"),
+                    s,
+                    ion_str!("' to float")
+                )
+            }),
+            _ => Err(format!(
+                "{}{}",
+                ion_str!("cannot convert "),
+                args[0].type_name()
+            )),
+        }
+    });
     // floor, ceil, round, pow, sqrt, clamp → moved to math:: module
     // join → moved to str:: module
     // json_encode_pretty, msgpack_encode, msgpack_decode → moved to json:: module
-    env.define(
-        ion_str!("enumerate").to_string(),
-        Value::BuiltinFn(ion_str!("enumerate").to_string(), |args| {
-            if args.len() != 1 {
-                return Err(ion_str!("enumerate takes 1 argument"));
-            }
-            match &args[0] {
-                Value::List(items) => Ok(Value::List(
-                    items
-                        .iter()
-                        .enumerate()
-                        .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
-                        .collect(),
-                )),
-                Value::Str(s) => Ok(Value::List(
-                    s.chars()
-                        .enumerate()
-                        .map(|(i, c)| {
-                            Value::Tuple(vec![Value::Int(i as i64), Value::Str(c.to_string())])
-                        })
-                        .collect(),
-                )),
-                Value::Dict(map) => Ok(Value::List(
-                    map.iter()
-                        .enumerate()
-                        .map(|(i, (k, v))| {
-                            Value::Tuple(vec![
-                                Value::Int(i as i64),
-                                Value::Tuple(vec![Value::Str(k.clone()), v.clone()]),
-                            ])
-                        })
-                        .collect(),
-                )),
-                _ => Err(format!(
-                    "{}{}",
-                    ion_str!("enumerate() not supported for "),
-                    args[0].type_name()
-                )),
-            }
-        }),
-        false,
-    );
-
-    env.define(
-        ion_str!("bytes").to_string(),
-        Value::BuiltinFn(ion_str!("bytes").to_string(), |args| match args.first() {
-            Some(Value::List(items)) => {
-                let mut bytes = Vec::with_capacity(items.len());
-                for item in items {
-                    let n = item
-                        .as_int()
-                        .ok_or_else(|| ion_str!("bytes() list items must be ints"))?;
-                    if !(0..=255).contains(&n) {
-                        return Err(format!("{}{}", ion_str!("byte value out of range: "), n));
-                    }
-                    bytes.push(n as u8);
-                }
-                Ok(Value::Bytes(bytes))
-            }
-            Some(Value::Str(s)) => Ok(Value::Bytes(s.as_bytes().to_vec())),
-            Some(Value::Int(n)) if *n >= 0 && *n <= 10_000_000 => {
-                Ok(Value::Bytes(vec![0u8; *n as usize]))
-            }
-            Some(Value::Int(n)) => Err(format!(
-                "bytes(n): size {} is out of range (0..10_000_000)",
-                n
+    global_builtin!(env, "enumerate", |args| {
+        if args.len() != 1 {
+            return Err(ion_str!("enumerate takes 1 argument"));
+        }
+        match &args[0] {
+            Value::List(items) => Ok(Value::List(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| Value::Tuple(vec![Value::Int(i as i64), v.clone()]))
+                    .collect(),
             )),
-            None => Ok(Value::Bytes(Vec::new())),
+            Value::Str(s) => Ok(Value::List(
+                s.chars()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        Value::Tuple(vec![Value::Int(i as i64), Value::Str(c.to_string())])
+                    })
+                    .collect(),
+            )),
+            Value::Dict(map) => Ok(Value::List(
+                map.iter()
+                    .enumerate()
+                    .map(|(i, (k, v))| {
+                        Value::Tuple(vec![
+                            Value::Int(i as i64),
+                            Value::Tuple(vec![Value::Str(k.clone()), v.clone()]),
+                        ])
+                    })
+                    .collect(),
+            )),
             _ => Err(format!(
                 "{}{}",
-                ion_str!("bytes() not supported for "),
+                ion_str!("enumerate() not supported for "),
                 args[0].type_name()
             )),
-        }),
-        false,
-    );
-    env.define(
-        ion_str!("bytes_from_hex").to_string(),
-        Value::BuiltinFn(ion_str!("bytes_from_hex").to_string(), |args| {
-            if args.len() != 1 {
-                return Err(ion_str!("bytes_from_hex takes 1 argument"));
-            }
-            let s = args[0]
-                .as_str()
-                .ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
-            if !s.is_ascii() {
-                return Err(ion_str!("bytes_from_hex requires an ASCII hex string"));
-            }
-            if s.len() % 2 != 0 {
-                return Err(ion_str!("hex string must have even length").to_string());
-            }
-            let mut bytes = Vec::with_capacity(s.len() / 2);
-            for i in (0..s.len()).step_by(2) {
-                let byte = u8::from_str_radix(&s[i..i + 2], 16)
-                    .map_err(|_| format!("{}{}", ion_str!("invalid hex: "), &s[i..i + 2]))?;
-                bytes.push(byte);
+        }
+    });
+
+    global_builtin!(env, "bytes", |args| match args.first() {
+        Some(Value::List(items)) => {
+            let mut bytes = Vec::with_capacity(items.len());
+            for item in items {
+                let n = item
+                    .as_int()
+                    .ok_or_else(|| ion_str!("bytes() list items must be ints"))?;
+                if !(0..=255).contains(&n) {
+                    return Err(format!("{}{}", ion_str!("byte value out of range: "), n));
+                }
+                bytes.push(n as u8);
             }
             Ok(Value::Bytes(bytes))
-        }),
-        false,
-    );
+        }
+        Some(Value::Str(s)) => Ok(Value::Bytes(s.as_bytes().to_vec())),
+        Some(Value::Int(n)) if *n >= 0 && *n <= 10_000_000 => {
+            Ok(Value::Bytes(vec![0u8; *n as usize]))
+        }
+        Some(Value::Int(n)) => Err(format!(
+            "bytes(n): size {} is out of range (0..10_000_000)",
+            n
+        )),
+        None => Ok(Value::Bytes(Vec::new())),
+        _ => Err(format!(
+            "{}{}",
+            ion_str!("bytes() not supported for "),
+            args[0].type_name()
+        )),
+    });
+    global_builtin!(env, "bytes_from_hex", |args| {
+        if args.len() != 1 {
+            return Err(ion_str!("bytes_from_hex takes 1 argument"));
+        }
+        let s = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
+        if !s.is_ascii() {
+            return Err(ion_str!("bytes_from_hex requires an ASCII hex string"));
+        }
+        if s.len() % 2 != 0 {
+            return Err(ion_str!("hex string must have even length").to_string());
+        }
+        let mut bytes = Vec::with_capacity(s.len() / 2);
+        for i in (0..s.len()).step_by(2) {
+            let byte = u8::from_str_radix(&s[i..i + 2], 16)
+                .map_err(|_| format!("{}{}", ion_str!("invalid hex: "), &s[i..i + 2]))?;
+            bytes.push(byte);
+        }
+        Ok(Value::Bytes(bytes))
+    });
 
-    env.define(
-        ion_str!("assert").to_string(),
-        Value::BuiltinFn(ion_str!("assert").to_string(), |args| {
-            if args.is_empty() {
-                return Err(ion_str!("assert requires at least 1 argument").to_string());
+    global_builtin!(env, "assert", |args| {
+        if args.is_empty() {
+            return Err(ion_str!("assert requires at least 1 argument").to_string());
+        }
+        let condition = match &args[0] {
+            Value::Bool(b) => *b,
+            _ => {
+                return Err(format!(
+                    "{}{}",
+                    ion_str!("assert condition must be bool, got "),
+                    args[0].type_name()
+                ))
             }
-            let condition = match &args[0] {
-                Value::Bool(b) => *b,
-                _ => {
-                    return Err(format!(
-                        "{}{}",
-                        ion_str!("assert condition must be bool, got "),
-                        args[0].type_name()
-                    ))
-                }
+        };
+        if !condition {
+            let msg = if args.len() > 1 {
+                args[1].to_string()
+            } else {
+                ion_str!("assertion failed").to_string()
             };
-            if !condition {
-                let msg = if args.len() > 1 {
-                    args[1].to_string()
-                } else {
-                    ion_str!("assertion failed").to_string()
-                };
-                return Err(msg);
-            }
-            Ok(Value::Unit)
-        }),
-        false,
-    );
+            return Err(msg);
+        }
+        Ok(Value::Unit)
+    });
 
-    env.define(
-        ion_str!("assert_eq").to_string(),
-        Value::BuiltinFn(ion_str!("assert_eq").to_string(), |args| {
-            if args.len() < 2 {
-                return Err(ion_str!("assert_eq requires at least 2 arguments").to_string());
-            }
-            if args[0] != args[1] {
-                let msg = if args.len() > 2 {
-                    format!(
-                        "{}{}{}{}{}",
-                        args[2],
-                        ion_str!(": expected "),
-                        args[0],
-                        ion_str!(", got "),
-                        args[1]
-                    )
-                } else {
-                    format!(
-                        "{}{}{}{}",
-                        ion_str!("assertion failed: expected "),
-                        args[0],
-                        ion_str!(", got "),
-                        args[1]
-                    )
-                };
-                return Err(msg);
-            }
-            Ok(Value::Unit)
-        }),
-        false,
-    );
+    global_builtin!(env, "assert_eq", |args| {
+        if args.len() < 2 {
+            return Err(ion_str!("assert_eq requires at least 2 arguments").to_string());
+        }
+        if args[0] != args[1] {
+            let msg = if args.len() > 2 {
+                format!(
+                    "{}{}{}{}{}",
+                    args[2],
+                    ion_str!(": expected "),
+                    args[0],
+                    ion_str!(", got "),
+                    args[1]
+                )
+            } else {
+                format!(
+                    "{}{}{}{}",
+                    ion_str!("assertion failed: expected "),
+                    args[0],
+                    ion_str!(", got "),
+                    args[1]
+                )
+            };
+            return Err(msg);
+        }
+        Ok(Value::Unit)
+    });
 
     #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
     {
-        env.define(
-            ion_str!("sleep").to_string(),
-            Value::BuiltinFn(ion_str!("sleep").to_string(), |args| {
-                let ms = args
-                    .first()
-                    .and_then(|v| v.as_int())
-                    .ok_or(ion_str!("sleep requires int (ms)"))?;
-                crate::async_rt::sleep(std::time::Duration::from_millis(ms as u64));
-                Ok(Value::Unit)
-            }),
-            false,
-        );
-        env.define(
-            ion_str!("timeout").to_string(),
-            Value::BuiltinFn(ion_str!("timeout").to_string(), |_args| {
-                // Actual implementation is in call_value (needs interpreter context)
-                Err(ion_str!("timeout: internal error (should not reach here)"))
-            }),
-            false,
-        );
-        env.define(
-            ion_str!("channel").to_string(),
-            Value::BuiltinFn(ion_str!("channel").to_string(), |args| {
-                let buffer = if args.is_empty() {
-                    16
-                } else {
-                    args[0]
-                        .as_int()
-                        .ok_or(ion_str!("channel buffer size must be int"))?
-                        as usize
-                };
-                let (tx, rx) = crate::async_rt::create_channel(buffer);
-                Ok(Value::Tuple(vec![tx, rx]))
-            }),
-            false,
-        );
+        global_builtin!(env, "sleep", |args| {
+            let ms = args
+                .first()
+                .and_then(|v| v.as_int())
+                .ok_or(ion_str!("sleep requires int (ms)"))?;
+            crate::async_rt::sleep(std::time::Duration::from_millis(ms as u64));
+            Ok(Value::Unit)
+        });
+        global_builtin!(env, "timeout", |_args| {
+            // Actual implementation is in call_value (needs interpreter context)
+            Err(ion_str!("timeout: internal error (should not reach here)"))
+        });
+        global_builtin!(env, "channel", |args| {
+            let buffer = if args.is_empty() {
+                16
+            } else {
+                args[0]
+                    .as_int()
+                    .ok_or(ion_str!("channel buffer size must be int"))?
+                    as usize
+            };
+            let (tx, rx) = crate::async_rt::create_channel(buffer);
+            Ok(Value::Tuple(vec![tx, rx]))
+        });
     }
 
     // Register stdlib modules (math, json, io, string, log)

@@ -477,7 +477,7 @@ impl Vm {
                 let name_idx = chunk.read_u16(self.ip) as usize;
                 self.ip += 2;
                 let sym = self.const_to_sym(&chunk.constants[name_idx], line, col)?;
-                let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
+                let val = self.env.get_sym_or_global(sym).cloned().ok_or_else(|| {
                     let name = self.env.resolve(sym);
                     IonError::name(
                         format!("{}{}", ion_str!("undefined variable: "), name),
@@ -1305,9 +1305,11 @@ impl Vm {
                     "tuple" => matches!(val, Value::Tuple(_)),
                     "set" => matches!(val, Value::Set(_)),
                     "fn" => match val {
-                        Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => true,
+                        Value::Fn(_) | Value::BuiltinFn { .. } | Value::BuiltinClosure { .. } => {
+                            true
+                        }
                         #[cfg(feature = "async-runtime")]
-                        Value::AsyncBuiltinClosure(_, _) => true,
+                        Value::AsyncBuiltinClosure { .. } => true,
                         _ => false,
                     },
                     "cell" => matches!(val, Value::Cell(_)),
@@ -1723,6 +1725,21 @@ impl Vm {
                 Some(v) => v.clone(),
                 None => Value::Option(None),
             }),
+            Value::Module(table) => {
+                let fh = crate::hash::h(field);
+                table.items.get(&fh).cloned().ok_or_else(|| {
+                    IonError::runtime(
+                        format!(
+                            "{}{}{}",
+                            ion_str!("'"),
+                            field,
+                            ion_str!("' not found in module")
+                        ),
+                        line,
+                        col,
+                    )
+                })
+            }
             Value::HostStruct { fields, .. } => {
                 let fh = crate::hash::h(field);
                 fields.get(&fh).cloned().ok_or_else(|| {
@@ -3354,23 +3371,27 @@ impl Vm {
         loop {
             match func {
                 #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
-                Value::BuiltinFn(ref name, _) if name == "timeout" => {
+                Value::BuiltinFn { qualified_hash, .. }
+                    if qualified_hash == crate::hash::h("timeout") =>
+                {
                     let result = self.builtin_timeout(&args, line, col)?;
                     self.stack.push(result);
                     return Ok(());
                 }
-                Value::BuiltinFn(_name, f) => {
-                    let result = f(&args).map_err(|e| IonError::runtime(e, line, col))?;
+                Value::BuiltinFn { func, .. } => {
+                    let result = func(&args).map_err(|e| IonError::runtime(e, line, col))?;
                     self.stack.push(result);
                     return Ok(());
                 }
-                Value::BuiltinClosure(_name, f) => {
-                    let result = f.call(&args).map_err(|e| IonError::runtime(e, line, col))?;
+                Value::BuiltinClosure { func, .. } => {
+                    let result = func
+                        .call(&args)
+                        .map_err(|e| IonError::runtime(e, line, col))?;
                     self.stack.push(result);
                     return Ok(());
                 }
                 #[cfg(feature = "async-runtime")]
-                Value::AsyncBuiltinClosure(_, _) => {
+                Value::AsyncBuiltinClosure { .. } => {
                     return Err(IonError::runtime(
                         ion_str!(
                             "async host function cannot be called by the synchronous evaluator; use eval_async"
@@ -3559,21 +3580,21 @@ impl Vm {
                 }
                 self.call_function(reordered.len(), line, col)
             }
-            Value::BuiltinFn(_, f) => {
+            Value::BuiltinFn { func, .. } => {
                 // Builtins don't support named args, just pass positionally
-                let result = f(&raw_args).map_err(|e| IonError::runtime(e, line, col))?;
+                let result = func(&raw_args).map_err(|e| IonError::runtime(e, line, col))?;
                 self.stack.push(result);
                 Ok(())
             }
-            Value::BuiltinClosure(_, f) => {
-                let result = f
+            Value::BuiltinClosure { func, .. } => {
+                let result = func
                     .call(&raw_args)
                     .map_err(|e| IonError::runtime(e, line, col))?;
                 self.stack.push(result);
                 Ok(())
             }
             #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure(_, _) => Err(IonError::runtime(
+            Value::AsyncBuiltinClosure { .. } => Err(IonError::runtime(
                 ion_str!(
                     "async host function cannot be called by the synchronous evaluator; use eval_async"
                 ),

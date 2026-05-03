@@ -31,19 +31,30 @@ pub enum Value {
     Option(Option<Box<Value>>),
     Result(Result<Box<Value>, Box<Value>>),
     Fn(IonFn),
-    BuiltinFn(String, BuiltinFn),
-    /// Closure-backed builtin. Unlike `BuiltinFn` (a bare `fn` pointer),
-    /// this variant can capture host-side state — e.g. a
-    /// `tokio::runtime::Handle` for async host calls, a database
-    /// connection pool, or shared counters.
-    ///
-    /// Register via `Engine::register_closure`.
-    BuiltinClosure(String, BuiltinClosureFn),
-    /// Async closure-backed builtin. This is the host-facing value for
-    /// native async integration; it is only executable by the future
-    /// pollable async runtime, not by the current sync evaluator.
+    /// Host-registered builtin function. `qualified_hash` is the precomputed
+    /// `mix(module_hash, fn_name_hash)` so dispatch is one integer compare.
+    /// The function's identifier is intentionally NOT stored as a string —
+    /// names live only in the optional sidecar (Phase 7 of HIDE_NAMES_PLAN).
+    BuiltinFn {
+        qualified_hash: u64,
+        func: BuiltinFn,
+    },
+    /// Closure-backed builtin (captures host-side state like a
+    /// `tokio::runtime::Handle`, DB pool, etc.). Same shape as `BuiltinFn`.
+    BuiltinClosure {
+        qualified_hash: u64,
+        func: BuiltinClosureFn,
+    },
+    /// Async closure-backed builtin — only executable by the async runtime.
     #[cfg(feature = "async-runtime")]
-    AsyncBuiltinClosure(String, AsyncBuiltinClosureFn),
+    AsyncBuiltinClosure {
+        qualified_hash: u64,
+        func: AsyncBuiltinClosureFn,
+    },
+    /// Host-registered module. Items (functions, constants, submodules) are
+    /// keyed by name hash; lookup is `IndexMap::get(&hash)` — no string
+    /// compare. See `module::ModuleTable`.
+    Module(Arc<crate::module::ModuleTable>),
     /// Async-runtime task handle used by the native async scaffold.
     #[cfg(feature = "async-runtime")]
     AsyncTask(crate::async_runtime::AsyncTask),
@@ -207,10 +218,11 @@ impl Value {
             Value::Option(_) => ion_static_str!("Option"),
             Value::Result(_) => ion_static_str!("Result"),
             Value::Fn(_) => ion_static_str!("fn"),
-            Value::BuiltinFn(_, _) => ion_static_str!("builtin_fn"),
-            Value::BuiltinClosure(_, _) => ion_static_str!("builtin_fn"),
+            Value::BuiltinFn { .. } => ion_static_str!("builtin_fn"),
+            Value::BuiltinClosure { .. } => ion_static_str!("builtin_fn"),
             #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure(_, _) => ion_static_str!("async_builtin_fn"),
+            Value::AsyncBuiltinClosure { .. } => ion_static_str!("async_builtin_fn"),
+            Value::Module(_) => ion_static_str!("module"),
             #[cfg(feature = "async-runtime")]
             Value::AsyncTask(_) => ion_static_str!("AsyncTask"),
             #[cfg(feature = "async-runtime")]
@@ -368,10 +380,17 @@ impl fmt::Display for Value {
                 Err(e) => write!(f, "Err({})", e),
             },
             Value::Fn(func) => write!(f, "<fn {}>", func.name),
-            Value::BuiltinFn(name, _) => write!(f, "<builtin {}>", name),
-            Value::BuiltinClosure(name, _) => write!(f, "<builtin {}>", name),
+            Value::BuiltinFn { qualified_hash, .. } => {
+                write!(f, "<builtin #{:016x}>", qualified_hash)
+            }
+            Value::BuiltinClosure { qualified_hash, .. } => {
+                write!(f, "<builtin #{:016x}>", qualified_hash)
+            }
             #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure(name, _) => write!(f, "<async builtin {}>", name),
+            Value::AsyncBuiltinClosure { qualified_hash, .. } => {
+                write!(f, "<async builtin #{:016x}>", qualified_hash)
+            }
+            Value::Module(table) => write!(f, "<module #{:016x}>", table.name_hash),
             #[cfg(feature = "async-runtime")]
             Value::AsyncTask(_) => write!(f, "<AsyncTask>"),
             #[cfg(feature = "async-runtime")]
@@ -584,11 +603,12 @@ impl Value {
                     .map(|v| v.to_json())
                     .collect(),
             ),
-            Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => {
-                serde_json::Value::Null
-            }
+            Value::Fn(_)
+            | Value::BuiltinFn { .. }
+            | Value::BuiltinClosure { .. }
+            | Value::Module(_) => serde_json::Value::Null,
             #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure(_, _)
+            Value::AsyncBuiltinClosure { .. }
             | Value::AsyncTask(_)
             | Value::AsyncChannelSender(_)
             | Value::AsyncChannelReceiver(_) => serde_json::Value::Null,
@@ -682,9 +702,12 @@ impl Value {
                     .map(|v| v.to_msgpack_value())
                     .collect(),
             ),
-            Value::Fn(_) | Value::BuiltinFn(_, _) | Value::BuiltinClosure(_, _) => rmpv::Value::Nil,
+            Value::Fn(_)
+            | Value::BuiltinFn { .. }
+            | Value::BuiltinClosure { .. }
+            | Value::Module(_) => rmpv::Value::Nil,
             #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure(_, _)
+            Value::AsyncBuiltinClosure { .. }
             | Value::AsyncTask(_)
             | Value::AsyncChannelSender(_)
             | Value::AsyncChannelReceiver(_) => rmpv::Value::Nil,

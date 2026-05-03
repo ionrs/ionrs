@@ -63,6 +63,46 @@ macro_rules! ion_static_str {
     };
 }
 
+/// Define a top-level global built-in function in an `Env`. The name literal
+/// is hashed at compile time via `h!`, so the source identifier never reaches
+/// `.rodata`. Equivalent to writing `env.define_h(h!(name), Value::BuiltinFn
+/// { qualified_hash: h!(name), func: $f })` by hand.
+macro_rules! global_builtin {
+    ($env:expr, $name:literal, $f:expr) => {{
+        const __H: u64 = $crate::hash::h($name);
+        $env.define_h(
+            __H,
+            $crate::value::Value::BuiltinFn {
+                qualified_hash: __H,
+                func: $f,
+            },
+        );
+    }};
+}
+
+/// Register a batch of `&str => |args| body` pairs on a `Module`. Each name
+/// literal is hashed at compile time so no identifier strings land in the
+/// binary. Equivalent to a series of `m.register_fn(h!(name), |args| body)`.
+#[macro_export]
+macro_rules! register_fns {
+    ($module:expr, { $( $name:literal => $f:expr ),+ $(,)? }) => {{
+        $(
+            $module.register_fn($crate::hash::h($name), $f);
+        )+
+    }};
+}
+
+/// Closure-backed analogue of `register_fns!` — for builtins that capture
+/// host state (output handlers, log handlers, channel state, etc.).
+#[macro_export]
+macro_rules! register_closures {
+    ($module:expr, { $( $name:literal => $f:expr ),+ $(,)? }) => {{
+        $(
+            $module.register_closure($crate::hash::h($name), $f);
+        )+
+    }};
+}
+
 pub mod ast;
 #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
 pub mod async_rt;

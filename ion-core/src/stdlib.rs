@@ -69,16 +69,16 @@ pub(crate) fn missing_output_handler() -> Arc<dyn OutputHandler> {
 /// Functions: abs, min, max, floor, ceil, round, sqrt, pow, clamp, log, log2, log10, sin, cos, tan, atan2
 /// Constants: PI, E, INF, NAN, TAU
 pub fn math_module() -> Module {
-    let mut m = Module::new("math");
+    let mut m = Module::new(crate::h!("math"));
 
     // Constants
-    m.set("PI", Value::Float(std::f64::consts::PI));
-    m.set("E", Value::Float(std::f64::consts::E));
-    m.set("TAU", Value::Float(std::f64::consts::TAU));
-    m.set("INF", Value::Float(f64::INFINITY));
-    m.set("NAN", Value::Float(f64::NAN));
+    m.set(crate::h!("PI"), Value::Float(std::f64::consts::PI));
+    m.set(crate::h!("E"), Value::Float(std::f64::consts::E));
+    m.set(crate::h!("TAU"), Value::Float(std::f64::consts::TAU));
+    m.set(crate::h!("INF"), Value::Float(f64::INFINITY));
+    m.set(crate::h!("NAN"), Value::Float(f64::NAN));
 
-    m.register_fn("abs", |args: &[Value]| {
+    m.register_fn(crate::h!("abs"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("math::abs takes 1 argument"));
         }
@@ -93,7 +93,7 @@ pub fn math_module() -> Module {
         }
     });
 
-    m.register_fn("min", |args: &[Value]| {
+    m.register_fn(crate::h!("min"), |args: &[Value]| {
         if args.len() < 2 {
             return Err(ion_str!("math::min requires at least 2 arguments"));
         }
@@ -114,7 +114,7 @@ pub fn math_module() -> Module {
         Ok(best)
     });
 
-    m.register_fn("max", |args: &[Value]| {
+    m.register_fn(crate::h!("max"), |args: &[Value]| {
         if args.len() < 2 {
             return Err(ion_str!("math::max requires at least 2 arguments"));
         }
@@ -135,7 +135,7 @@ pub fn math_module() -> Module {
         Ok(best)
     });
 
-    m.register_fn("floor", |args: &[Value]| match &args[0] {
+    m.register_fn(crate::h!("floor"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Float(n.floor())),
         Value::Int(n) => Ok(Value::Int(*n)),
         _ => Err(format!(
@@ -145,7 +145,7 @@ pub fn math_module() -> Module {
         )),
     });
 
-    m.register_fn("ceil", |args: &[Value]| match &args[0] {
+    m.register_fn(crate::h!("ceil"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Float(n.ceil())),
         Value::Int(n) => Ok(Value::Int(*n)),
         _ => Err(format!(
@@ -155,7 +155,7 @@ pub fn math_module() -> Module {
         )),
     });
 
-    m.register_fn("round", |args: &[Value]| match &args[0] {
+    m.register_fn(crate::h!("round"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Float(n.round())),
         Value::Int(n) => Ok(Value::Int(*n)),
         _ => Err(format!(
@@ -165,14 +165,14 @@ pub fn math_module() -> Module {
         )),
     });
 
-    m.register_fn("sqrt", |args: &[Value]| {
+    m.register_fn(crate::h!("sqrt"), |args: &[Value]| {
         let n = args[0]
             .as_float()
             .ok_or(ion_str!("math::sqrt requires a number"))?;
         Ok(Value::Float(n.sqrt()))
     });
 
-    m.register_fn("pow", |args: &[Value]| {
+    m.register_fn(crate::h!("pow"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("math::pow takes 2 arguments"));
         }
@@ -196,7 +196,7 @@ pub fn math_module() -> Module {
         }
     });
 
-    m.register_fn("clamp", |args: &[Value]| {
+    m.register_fn(crate::h!("clamp"), |args: &[Value]| {
         if args.len() != 3 {
             return Err(ion_str!(
                 "math::clamp requires 3 arguments: value, min, max"
@@ -223,28 +223,28 @@ pub fn math_module() -> Module {
     });
 
     // Trigonometry
-    m.register_fn("sin", |args: &[Value]| {
+    m.register_fn(crate::h!("sin"), |args: &[Value]| {
         let n = args[0]
             .as_float()
             .ok_or(ion_str!("math::sin requires a number"))?;
         Ok(Value::Float(n.sin()))
     });
 
-    m.register_fn("cos", |args: &[Value]| {
+    m.register_fn(crate::h!("cos"), |args: &[Value]| {
         let n = args[0]
             .as_float()
             .ok_or(ion_str!("math::cos requires a number"))?;
         Ok(Value::Float(n.cos()))
     });
 
-    m.register_fn("tan", |args: &[Value]| {
+    m.register_fn(crate::h!("tan"), |args: &[Value]| {
         let n = args[0]
             .as_float()
             .ok_or(ion_str!("math::tan requires a number"))?;
         Ok(Value::Float(n.tan()))
     });
 
-    m.register_fn("atan2", |args: &[Value]| {
+    m.register_fn(crate::h!("atan2"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("math::atan2 takes 2 arguments"));
         }
@@ -258,21 +258,21 @@ pub fn math_module() -> Module {
     });
 
     // Logarithms
-    m.register_fn("log", |args: &[Value]| {
+    m.register_fn(crate::h!("log"), |args: &[Value]| {
         let n = args[0]
             .as_float()
             .ok_or(ion_str!("math::log requires a number"))?;
         Ok(Value::Float(n.ln()))
     });
 
-    m.register_fn("log2", |args: &[Value]| {
+    m.register_fn(crate::h!("log2"), |args: &[Value]| {
         let n = args[0]
             .as_float()
             .ok_or(ion_str!("math::log2 requires a number"))?;
         Ok(Value::Float(n.log2()))
     });
 
-    m.register_fn("log10", |args: &[Value]| {
+    m.register_fn(crate::h!("log10"), |args: &[Value]| {
         let n = args[0]
             .as_float()
             .ok_or(ion_str!("math::log10 requires a number"))?;
@@ -280,7 +280,7 @@ pub fn math_module() -> Module {
     });
 
     // Rounding/check
-    m.register_fn("is_nan", |args: &[Value]| match &args[0] {
+    m.register_fn(crate::h!("is_nan"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Bool(n.is_nan())),
         Value::Int(_) => Ok(Value::Bool(false)),
         _ => Err(format!(
@@ -290,7 +290,7 @@ pub fn math_module() -> Module {
         )),
     });
 
-    m.register_fn("is_inf", |args: &[Value]| match &args[0] {
+    m.register_fn(crate::h!("is_inf"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Bool(n.is_infinite())),
         Value::Int(_) => Ok(Value::Bool(false)),
         _ => Err(format!(
@@ -307,9 +307,9 @@ pub fn math_module() -> Module {
 ///
 /// Functions: encode, decode, pretty
 pub fn json_module() -> Module {
-    let mut m = Module::new("json");
+    let mut m = Module::new(crate::h!("json"));
 
-    m.register_fn("encode", |args: &[Value]| {
+    m.register_fn(crate::h!("encode"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("json::encode takes 1 argument"));
         }
@@ -317,7 +317,7 @@ pub fn json_module() -> Module {
         Ok(Value::Str(json.to_string()))
     });
 
-    m.register_fn("decode", |args: &[Value]| {
+    m.register_fn(crate::h!("decode"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("json::decode takes 1 argument"));
         }
@@ -329,7 +329,7 @@ pub fn json_module() -> Module {
         Ok(Value::from_json(json))
     });
 
-    m.register_fn("pretty", |args: &[Value]| {
+    m.register_fn(crate::h!("pretty"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("json::pretty takes 1 argument"));
         }
@@ -340,7 +340,7 @@ pub fn json_module() -> Module {
     });
 
     #[cfg(feature = "msgpack")]
-    m.register_fn("msgpack_encode", |args: &[Value]| {
+    m.register_fn(crate::h!("msgpack_encode"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("json::msgpack_encode takes 1 argument"));
         }
@@ -348,7 +348,7 @@ pub fn json_module() -> Module {
     });
 
     #[cfg(feature = "msgpack")]
-    m.register_fn("msgpack_decode", |args: &[Value]| {
+    m.register_fn(crate::h!("msgpack_decode"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("json::msgpack_decode takes 1 argument"));
         }
@@ -379,15 +379,15 @@ pub fn log_module_with_handler(
 ) -> Module {
     use crate::log::{AtomicLogLevel, LogLevel};
 
-    let mut m = Module::new("log");
+    let mut m = Module::new(crate::h!("log"));
 
     fn register_level(
         m: &mut Module,
-        name: &'static str,
+        name_hash: u64,
         level: LogLevel,
         handler: Arc<dyn crate::log::LogHandler>,
     ) {
-        m.register_closure(name, move |args: &[Value]| {
+        m.register_closure(name_hash, move |args: &[Value]| {
             // Pre-flight check — handlers can short-circuit before any
             // formatting work happens for callsites that survived
             // compile-time stripping but fail the runtime threshold.
@@ -409,14 +409,14 @@ pub fn log_module_with_handler(
         });
     }
 
-    register_level(&mut m, "trace", LogLevel::Trace, Arc::clone(&handler));
-    register_level(&mut m, "debug", LogLevel::Debug, Arc::clone(&handler));
-    register_level(&mut m, "info", LogLevel::Info, Arc::clone(&handler));
-    register_level(&mut m, "warn", LogLevel::Warn, Arc::clone(&handler));
-    register_level(&mut m, "error", LogLevel::Error, Arc::clone(&handler));
+    register_level(&mut m, crate::h!("trace"), LogLevel::Trace, Arc::clone(&handler));
+    register_level(&mut m, crate::h!("debug"), LogLevel::Debug, Arc::clone(&handler));
+    register_level(&mut m, crate::h!("info"), LogLevel::Info, Arc::clone(&handler));
+    register_level(&mut m, crate::h!("warn"), LogLevel::Warn, Arc::clone(&handler));
+    register_level(&mut m, crate::h!("error"), LogLevel::Error, Arc::clone(&handler));
 
     let level_for_set = Arc::clone(&level);
-    m.register_closure("set_level", move |args: &[Value]| {
+    m.register_closure(crate::h!("set_level"), move |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("log::set_level takes 1 argument: name"));
         }
@@ -434,7 +434,7 @@ pub fn log_module_with_handler(
     });
 
     let level_for_get = Arc::clone(&level);
-    m.register_closure("level", move |args: &[Value]| {
+    m.register_closure(crate::h!("level"), move |args: &[Value]| {
         if !args.is_empty() {
             return Err(ion_str!("log::level takes no arguments"));
         }
@@ -442,7 +442,7 @@ pub fn log_module_with_handler(
     });
 
     let handler_for_enabled = Arc::clone(&handler);
-    m.register_closure("enabled", move |args: &[Value]| {
+    m.register_closure(crate::h!("enabled"), move |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("log::enabled takes 1 argument: name"));
         }
@@ -502,23 +502,23 @@ pub fn io_module() -> Module {
 /// build. Calls into [`OutputHandler::write`] directly.
 #[cfg(not(feature = "async-runtime"))]
 pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
-    let mut m = Module::new("io");
+    let mut m = Module::new(crate::h!("io"));
 
     let stdout = Arc::clone(&output);
-    m.register_closure("print", move |args: &[Value]| {
+    m.register_closure(crate::h!("print"), move |args: &[Value]| {
         stdout.write(OutputStream::Stdout, &format_output_args(args))?;
         Ok(Value::Unit)
     });
 
     let stdout = Arc::clone(&output);
-    m.register_closure("println", move |args: &[Value]| {
+    m.register_closure(crate::h!("println"), move |args: &[Value]| {
         let mut text = format_output_args(args);
         text.push('\n');
         stdout.write(OutputStream::Stdout, &text)?;
         Ok(Value::Unit)
     });
 
-    m.register_closure("eprintln", move |args: &[Value]| {
+    m.register_closure(crate::h!("eprintln"), move |args: &[Value]| {
         let mut text = format_output_args(args);
         text.push('\n');
         output.write(OutputStream::Stderr, &text)?;
@@ -535,10 +535,10 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
 #[cfg(feature = "async-runtime")]
 pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
     use crate::error::IonError;
-    let mut m = Module::new("io");
+    let mut m = Module::new(crate::h!("io"));
 
     let stdout = Arc::clone(&output);
-    m.register_async_fn("print", move |args| {
+    m.register_async_fn(crate::h!("print"), move |args| {
         let stdout = Arc::clone(&stdout);
         async move {
             let text = format_output_args(&args);
@@ -551,7 +551,7 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
     });
 
     let stdout = Arc::clone(&output);
-    m.register_async_fn("println", move |args| {
+    m.register_async_fn(crate::h!("println"), move |args| {
         let stdout = Arc::clone(&stdout);
         async move {
             let mut text = format_output_args(&args);
@@ -565,7 +565,7 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
     });
 
     let stderr = Arc::clone(&output);
-    m.register_async_fn("eprintln", move |args| {
+    m.register_async_fn(crate::h!("eprintln"), move |args| {
         let stderr = Arc::clone(&stderr);
         async move {
             let mut text = format_output_args(&args);
@@ -585,9 +585,9 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
 ///
 /// Functions: join
 pub fn string_module() -> Module {
-    let mut m = Module::new("string");
+    let mut m = Module::new(crate::h!("string"));
 
-    m.register_fn("join", |args: &[Value]| {
+    m.register_fn(crate::h!("join"), |args: &[Value]| {
         if args.is_empty() || args.len() > 2 {
             return Err(ion_str!(
                 "string::join requires 1-2 arguments: list, [separator]"
@@ -694,9 +694,9 @@ fn semver_parse_arg(v: &Value, fn_name: &str) -> Result<Version, String> {
 ///            satisfies, bump_major, bump_minor, bump_patch
 #[cfg(feature = "semver")]
 pub fn semver_module() -> Module {
-    let mut m = Module::new("semver");
+    let mut m = Module::new(crate::h!("semver"));
 
-    m.register_fn("parse", |args: &[Value]| {
+    m.register_fn(crate::h!("parse"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("semver::parse takes 1 argument"));
         }
@@ -707,7 +707,7 @@ pub fn semver_module() -> Module {
         Ok(semver_version_to_dict(&v))
     });
 
-    m.register_fn("is_valid", |args: &[Value]| {
+    m.register_fn(crate::h!("is_valid"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("semver::is_valid takes 1 argument"));
         }
@@ -717,7 +717,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Bool(Version::parse(s).is_ok()))
     });
 
-    m.register_fn("format", |args: &[Value]| {
+    m.register_fn(crate::h!("format"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("semver::format takes 1 argument"));
         }
@@ -725,7 +725,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Str(v.to_string()))
     });
 
-    m.register_fn("compare", |args: &[Value]| {
+    m.register_fn(crate::h!("compare"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("semver::compare takes 2 arguments"));
         }
@@ -738,7 +738,7 @@ pub fn semver_module() -> Module {
         }))
     });
 
-    m.register_fn("eq", |args: &[Value]| {
+    m.register_fn(crate::h!("eq"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("semver::eq takes 2 arguments"));
         }
@@ -747,7 +747,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Bool(a == b))
     });
 
-    m.register_fn("gt", |args: &[Value]| {
+    m.register_fn(crate::h!("gt"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("semver::gt takes 2 arguments"));
         }
@@ -756,7 +756,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Bool(a > b))
     });
 
-    m.register_fn("gte", |args: &[Value]| {
+    m.register_fn(crate::h!("gte"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("semver::gte takes 2 arguments"));
         }
@@ -765,7 +765,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Bool(a >= b))
     });
 
-    m.register_fn("lt", |args: &[Value]| {
+    m.register_fn(crate::h!("lt"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("semver::lt takes 2 arguments"));
         }
@@ -774,7 +774,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Bool(a < b))
     });
 
-    m.register_fn("lte", |args: &[Value]| {
+    m.register_fn(crate::h!("lte"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("semver::lte takes 2 arguments"));
         }
@@ -783,7 +783,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Bool(a <= b))
     });
 
-    m.register_fn("satisfies", |args: &[Value]| {
+    m.register_fn(crate::h!("satisfies"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!(
                 "semver::satisfies takes 2 arguments: version, requirement"
@@ -798,7 +798,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Bool(req.matches(&v)))
     });
 
-    m.register_fn("bump_major", |args: &[Value]| {
+    m.register_fn(crate::h!("bump_major"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("semver::bump_major takes 1 argument"));
         }
@@ -807,7 +807,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Str(bumped.to_string()))
     });
 
-    m.register_fn("bump_minor", |args: &[Value]| {
+    m.register_fn(crate::h!("bump_minor"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("semver::bump_minor takes 1 argument"));
         }
@@ -816,7 +816,7 @@ pub fn semver_module() -> Module {
         Ok(Value::Str(bumped.to_string()))
     });
 
-    m.register_fn("bump_patch", |args: &[Value]| {
+    m.register_fn(crate::h!("bump_patch"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("semver::bump_patch takes 1 argument"));
         }
@@ -846,26 +846,26 @@ pub fn semver_module() -> Module {
 /// `os::args()`). Pass `Arc::new(Vec::new())` for the default empty list.
 #[cfg(feature = "os")]
 pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
-    let mut m = Module::new("os");
+    let mut m = Module::new(crate::h!("os"));
 
     // Detection constants
-    m.set("name", Value::Str(std::env::consts::OS.to_string()));
-    m.set("arch", Value::Str(std::env::consts::ARCH.to_string()));
-    m.set("family", Value::Str(std::env::consts::FAMILY.to_string()));
+    m.set(crate::h!("name"), Value::Str(std::env::consts::OS.to_string()));
+    m.set(crate::h!("arch"), Value::Str(std::env::consts::ARCH.to_string()));
+    m.set(crate::h!("family"), Value::Str(std::env::consts::FAMILY.to_string()));
     m.set(
-        "dll_extension",
+        crate::h!("dll_extension"),
         Value::Str(std::env::consts::DLL_EXTENSION.to_string()),
     );
     m.set(
-        "exe_extension",
+        crate::h!("exe_extension"),
         Value::Str(std::env::consts::EXE_EXTENSION.to_string()),
     );
     m.set(
-        "pointer_width",
+        crate::h!("pointer_width"),
         Value::Int((std::mem::size_of::<usize>() * 8) as i64),
     );
 
-    m.register_fn("env_var", |args: &[Value]| {
+    m.register_fn(crate::h!("env_var"), |args: &[Value]| {
         if args.is_empty() || args.len() > 2 {
             return Err(ion_str!(
                 "os::env_var takes 1 or 2 arguments: name, [default]"
@@ -881,7 +881,7 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
         }
     });
 
-    m.register_fn("has_env_var", |args: &[Value]| {
+    m.register_fn(crate::h!("has_env_var"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("os::has_env_var takes 1 argument"));
         }
@@ -891,7 +891,7 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
         Ok(Value::Bool(std::env::var_os(name).is_some()))
     });
 
-    m.register_fn("env_vars", |args: &[Value]| {
+    m.register_fn(crate::h!("env_vars"), |args: &[Value]| {
         if !args.is_empty() {
             return Err(ion_str!("os::env_vars takes no arguments"));
         }
@@ -902,7 +902,7 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
         Ok(Value::Dict(d))
     });
 
-    m.register_fn("cwd", |args: &[Value]| {
+    m.register_fn(crate::h!("cwd"), |args: &[Value]| {
         if !args.is_empty() {
             return Err(ion_str!("os::cwd takes no arguments"));
         }
@@ -911,14 +911,14 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
             .map_err(|e| format!("os::cwd: {}", e))
     });
 
-    m.register_fn("pid", |args: &[Value]| {
+    m.register_fn(crate::h!("pid"), |args: &[Value]| {
         if !args.is_empty() {
             return Err(ion_str!("os::pid takes no arguments"));
         }
         Ok(Value::Int(std::process::id() as i64))
     });
 
-    m.register_fn("temp_dir", |args: &[Value]| {
+    m.register_fn(crate::h!("temp_dir"), |args: &[Value]| {
         if !args.is_empty() {
             return Err(ion_str!("os::temp_dir takes no arguments"));
         }
@@ -928,7 +928,7 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
     });
 
     let args_arc = Arc::clone(&args);
-    m.register_closure("args", move |call_args: &[Value]| {
+    m.register_closure(crate::h!("args"), move |call_args: &[Value]| {
         if !call_args.is_empty() {
             return Err(ion_str!("os::args takes no arguments"));
         }
@@ -957,11 +957,11 @@ pub fn os_module() -> Module {
 pub fn path_module() -> Module {
     use std::path::{Path, PathBuf, MAIN_SEPARATOR_STR};
 
-    let mut m = Module::new("path");
+    let mut m = Module::new(crate::h!("path"));
 
-    m.set("sep", Value::Str(MAIN_SEPARATOR_STR.to_string()));
+    m.set(crate::h!("sep"), Value::Str(MAIN_SEPARATOR_STR.to_string()));
 
-    m.register_fn("join", |args: &[Value]| {
+    m.register_fn(crate::h!("join"), |args: &[Value]| {
         if args.is_empty() {
             return Err(ion_str!("path::join takes at least 1 argument"));
         }
@@ -975,7 +975,7 @@ pub fn path_module() -> Module {
         Ok(Value::Str(buf.to_string_lossy().into_owned()))
     });
 
-    m.register_fn("parent", |args: &[Value]| {
+    m.register_fn(crate::h!("parent"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("path::parent takes 1 argument"));
         }
@@ -990,7 +990,7 @@ pub fn path_module() -> Module {
         ))
     });
 
-    m.register_fn("basename", |args: &[Value]| {
+    m.register_fn(crate::h!("basename"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("path::basename takes 1 argument"));
         }
@@ -1005,7 +1005,7 @@ pub fn path_module() -> Module {
         ))
     });
 
-    m.register_fn("stem", |args: &[Value]| {
+    m.register_fn(crate::h!("stem"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("path::stem takes 1 argument"));
         }
@@ -1020,7 +1020,7 @@ pub fn path_module() -> Module {
         ))
     });
 
-    m.register_fn("extension", |args: &[Value]| {
+    m.register_fn(crate::h!("extension"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("path::extension takes 1 argument"));
         }
@@ -1035,7 +1035,7 @@ pub fn path_module() -> Module {
         ))
     });
 
-    m.register_fn("with_extension", |args: &[Value]| {
+    m.register_fn(crate::h!("with_extension"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("path::with_extension takes 2 arguments: path, ext"));
         }
@@ -1053,7 +1053,7 @@ pub fn path_module() -> Module {
         ))
     });
 
-    m.register_fn("is_absolute", |args: &[Value]| {
+    m.register_fn(crate::h!("is_absolute"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("path::is_absolute takes 1 argument"));
         }
@@ -1063,7 +1063,7 @@ pub fn path_module() -> Module {
         Ok(Value::Bool(Path::new(s).is_absolute()))
     });
 
-    m.register_fn("is_relative", |args: &[Value]| {
+    m.register_fn(crate::h!("is_relative"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("path::is_relative takes 1 argument"));
         }
@@ -1073,7 +1073,7 @@ pub fn path_module() -> Module {
         Ok(Value::Bool(Path::new(s).is_relative()))
     });
 
-    m.register_fn("components", |args: &[Value]| {
+    m.register_fn(crate::h!("components"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("path::components takes 1 argument"));
         }
@@ -1087,7 +1087,7 @@ pub fn path_module() -> Module {
         Ok(Value::List(comps))
     });
 
-    m.register_fn("normalize", |args: &[Value]| {
+    m.register_fn(crate::h!("normalize"), |args: &[Value]| {
         // Lexical normalisation: collapse `.` and `..` without consulting the
         // filesystem. Mirrors `path.Clean` from Go / Node's `path.normalize`.
         if args.len() != 1 {
@@ -1169,9 +1169,9 @@ fn fs_arg_str<'a>(args: &'a [Value], fn_name: &str, idx: usize) -> Result<&'a st
 /// the `async-runtime` feature is **not** enabled.
 #[cfg(all(feature = "fs", not(feature = "async-runtime")))]
 pub fn fs_module() -> Module {
-    let mut m = Module::new("fs");
+    let mut m = Module::new(crate::h!("fs"));
 
-    m.register_fn("read", |args: &[Value]| {
+    m.register_fn(crate::h!("read"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::read takes 1 argument"));
         }
@@ -1181,7 +1181,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::read('{}'): {}", path, e))
     });
 
-    m.register_fn("read_bytes", |args: &[Value]| {
+    m.register_fn(crate::h!("read_bytes"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::read_bytes takes 1 argument"));
         }
@@ -1191,7 +1191,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::read_bytes('{}'): {}", path, e))
     });
 
-    m.register_fn("write", |args: &[Value]| {
+    m.register_fn(crate::h!("write"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("fs::write takes 2 arguments: path, contents"));
         }
@@ -1211,7 +1211,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::write('{}'): {}", path, e))
     });
 
-    m.register_fn("append", |args: &[Value]| {
+    m.register_fn(crate::h!("append"), |args: &[Value]| {
         use std::io::Write;
         if args.len() != 2 {
             return Err(ion_str!("fs::append takes 2 arguments: path, contents"));
@@ -1237,7 +1237,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::append('{}'): {}", path, e))
     });
 
-    m.register_fn("exists", |args: &[Value]| {
+    m.register_fn(crate::h!("exists"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::exists takes 1 argument"));
         }
@@ -1245,7 +1245,7 @@ pub fn fs_module() -> Module {
         Ok(Value::Bool(std::path::Path::new(path).exists()))
     });
 
-    m.register_fn("is_file", |args: &[Value]| {
+    m.register_fn(crate::h!("is_file"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::is_file takes 1 argument"));
         }
@@ -1253,7 +1253,7 @@ pub fn fs_module() -> Module {
         Ok(Value::Bool(std::path::Path::new(path).is_file()))
     });
 
-    m.register_fn("is_dir", |args: &[Value]| {
+    m.register_fn(crate::h!("is_dir"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::is_dir takes 1 argument"));
         }
@@ -1261,7 +1261,7 @@ pub fn fs_module() -> Module {
         Ok(Value::Bool(std::path::Path::new(path).is_dir()))
     });
 
-    m.register_fn("list_dir", |args: &[Value]| {
+    m.register_fn(crate::h!("list_dir"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::list_dir takes 1 argument"));
         }
@@ -1276,7 +1276,7 @@ pub fn fs_module() -> Module {
         Ok(Value::List(names))
     });
 
-    m.register_fn("create_dir", |args: &[Value]| {
+    m.register_fn(crate::h!("create_dir"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::create_dir takes 1 argument"));
         }
@@ -1286,7 +1286,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::create_dir('{}'): {}", path, e))
     });
 
-    m.register_fn("create_dir_all", |args: &[Value]| {
+    m.register_fn(crate::h!("create_dir_all"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::create_dir_all takes 1 argument"));
         }
@@ -1296,7 +1296,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::create_dir_all('{}'): {}", path, e))
     });
 
-    m.register_fn("remove_file", |args: &[Value]| {
+    m.register_fn(crate::h!("remove_file"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::remove_file takes 1 argument"));
         }
@@ -1306,7 +1306,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::remove_file('{}'): {}", path, e))
     });
 
-    m.register_fn("remove_dir", |args: &[Value]| {
+    m.register_fn(crate::h!("remove_dir"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::remove_dir takes 1 argument"));
         }
@@ -1316,7 +1316,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::remove_dir('{}'): {}", path, e))
     });
 
-    m.register_fn("remove_dir_all", |args: &[Value]| {
+    m.register_fn(crate::h!("remove_dir_all"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::remove_dir_all takes 1 argument"));
         }
@@ -1326,7 +1326,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::remove_dir_all('{}'): {}", path, e))
     });
 
-    m.register_fn("rename", |args: &[Value]| {
+    m.register_fn(crate::h!("rename"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("fs::rename takes 2 arguments: from, to"));
         }
@@ -1337,7 +1337,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::rename('{}' -> '{}'): {}", from, to, e))
     });
 
-    m.register_fn("copy", |args: &[Value]| {
+    m.register_fn(crate::h!("copy"), |args: &[Value]| {
         if args.len() != 2 {
             return Err(ion_str!("fs::copy takes 2 arguments: from, to"));
         }
@@ -1348,7 +1348,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| format!("fs::copy('{}' -> '{}'): {}", from, to, e))
     });
 
-    m.register_fn("metadata", |args: &[Value]| {
+    m.register_fn(crate::h!("metadata"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::metadata takes 1 argument"));
         }
@@ -1358,7 +1358,7 @@ pub fn fs_module() -> Module {
         Ok(fs_metadata_to_dict(&md))
     });
 
-    m.register_fn("canonicalize", |args: &[Value]| {
+    m.register_fn(crate::h!("canonicalize"), |args: &[Value]| {
         if args.len() != 1 {
             return Err(ion_str!("fs::canonicalize takes 1 argument"));
         }
@@ -1395,9 +1395,9 @@ pub fn fs_module() -> Module {
         IonError::runtime(format!("fs::{}('{}'): {}", fn_name, target, e), 0, 0)
     }
 
-    let mut m = Module::new("fs");
+    let mut m = Module::new(crate::h!("fs"));
 
-    m.register_async_fn("read", |args| async move {
+    m.register_async_fn(crate::h!("read"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::read takes 1 argument", 0, 0));
         }
@@ -1408,7 +1408,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("read", &path, e))
     });
 
-    m.register_async_fn("read_bytes", |args| async move {
+    m.register_async_fn(crate::h!("read_bytes"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::read_bytes takes 1 argument", 0, 0));
         }
@@ -1419,7 +1419,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("read_bytes", &path, e))
     });
 
-    m.register_async_fn("write", |args| async move {
+    m.register_async_fn(crate::h!("write"), |args| async move {
         if args.len() != 2 {
             return Err(IonError::runtime(
                 "fs::write takes 2 arguments: path, contents",
@@ -1448,7 +1448,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("write", &path, e))
     });
 
-    m.register_async_fn("append", |args| async move {
+    m.register_async_fn(crate::h!("append"), |args| async move {
         use tokio::io::AsyncWriteExt;
         if args.len() != 2 {
             return Err(IonError::runtime(
@@ -1484,7 +1484,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("append", &path, e))
     });
 
-    m.register_async_fn("exists", |args| async move {
+    m.register_async_fn(crate::h!("exists"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::exists takes 1 argument", 0, 0));
         }
@@ -1498,7 +1498,7 @@ pub fn fs_module() -> Module {
         }
     });
 
-    m.register_async_fn("is_file", |args| async move {
+    m.register_async_fn(crate::h!("is_file"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::is_file takes 1 argument", 0, 0));
         }
@@ -1510,7 +1510,7 @@ pub fn fs_module() -> Module {
         }
     });
 
-    m.register_async_fn("is_dir", |args| async move {
+    m.register_async_fn(crate::h!("is_dir"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::is_dir takes 1 argument", 0, 0));
         }
@@ -1522,7 +1522,7 @@ pub fn fs_module() -> Module {
         }
     });
 
-    m.register_async_fn("list_dir", |args| async move {
+    m.register_async_fn(crate::h!("list_dir"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::list_dir takes 1 argument", 0, 0));
         }
@@ -1543,7 +1543,7 @@ pub fn fs_module() -> Module {
         Ok(Value::List(names))
     });
 
-    m.register_async_fn("create_dir", |args| async move {
+    m.register_async_fn(crate::h!("create_dir"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::create_dir takes 1 argument", 0, 0));
         }
@@ -1554,7 +1554,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("create_dir", &path, e))
     });
 
-    m.register_async_fn("create_dir_all", |args| async move {
+    m.register_async_fn(crate::h!("create_dir_all"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime(
                 "fs::create_dir_all takes 1 argument",
@@ -1569,7 +1569,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("create_dir_all", &path, e))
     });
 
-    m.register_async_fn("remove_file", |args| async move {
+    m.register_async_fn(crate::h!("remove_file"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::remove_file takes 1 argument", 0, 0));
         }
@@ -1580,7 +1580,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("remove_file", &path, e))
     });
 
-    m.register_async_fn("remove_dir", |args| async move {
+    m.register_async_fn(crate::h!("remove_dir"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::remove_dir takes 1 argument", 0, 0));
         }
@@ -1591,7 +1591,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("remove_dir", &path, e))
     });
 
-    m.register_async_fn("remove_dir_all", |args| async move {
+    m.register_async_fn(crate::h!("remove_dir_all"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime(
                 "fs::remove_dir_all takes 1 argument",
@@ -1606,7 +1606,7 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err("remove_dir_all", &path, e))
     });
 
-    m.register_async_fn("rename", |args| async move {
+    m.register_async_fn(crate::h!("rename"), |args| async move {
         if args.len() != 2 {
             return Err(IonError::runtime(
                 "fs::rename takes 2 arguments: from, to",
@@ -1624,7 +1624,7 @@ pub fn fs_module() -> Module {
             })
     });
 
-    m.register_async_fn("copy", |args| async move {
+    m.register_async_fn(crate::h!("copy"), |args| async move {
         if args.len() != 2 {
             return Err(IonError::runtime(
                 "fs::copy takes 2 arguments: from, to",
@@ -1642,7 +1642,7 @@ pub fn fs_module() -> Module {
             })
     });
 
-    m.register_async_fn("metadata", |args| async move {
+    m.register_async_fn(crate::h!("metadata"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::metadata takes 1 argument", 0, 0));
         }
@@ -1653,7 +1653,7 @@ pub fn fs_module() -> Module {
         Ok(fs_metadata_to_dict(&md))
     });
 
-    m.register_async_fn("canonicalize", |args| async move {
+    m.register_async_fn(crate::h!("canonicalize"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime("fs::canonicalize takes 1 argument", 0, 0));
         }
@@ -1690,39 +1690,25 @@ pub fn register_stdlib_with_handlers(
     log_handler: Arc<dyn crate::log::LogHandler>,
     level: Arc<crate::log::AtomicLogLevel>,
 ) {
-    let math = math_module();
-    env.define(math.name.clone(), math.to_value(), false);
+    fn install(env: &mut crate::env::Env, m: Module) {
+        let h = m.name_hash();
+        env.define_h(h, m.into_value());
+    }
 
-    let json = json_module();
-    env.define(json.name.clone(), json.to_value(), false);
-
-    let io = io_module_with_output(output);
-    env.define(io.name.clone(), io.to_value(), false);
-
-    let string_mod = string_module();
-    env.define(string_mod.name.clone(), string_mod.to_value(), false);
-
-    let log = log_module_with_handler(log_handler, level);
-    env.define(log.name.clone(), log.to_value(), false);
+    install(env, math_module());
+    install(env, json_module());
+    install(env, io_module_with_output(output));
+    install(env, string_module());
+    install(env, log_module_with_handler(log_handler, level));
 
     #[cfg(feature = "semver")]
-    {
-        let s = semver_module();
-        env.define(s.name.clone(), s.to_value(), false);
-    }
+    install(env, semver_module());
 
     #[cfg(feature = "os")]
-    {
-        let os = os_module();
-        env.define(os.name.clone(), os.to_value(), false);
-    }
+    install(env, os_module());
 
-    let path = path_module();
-    env.define(path.name.clone(), path.to_value(), false);
+    install(env, path_module());
 
     #[cfg(feature = "fs")]
-    {
-        let fs = fs_module();
-        env.define(fs.name.clone(), fs.to_value(), false);
-    }
+    install(env, fs_module());
 }

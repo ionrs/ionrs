@@ -18,7 +18,7 @@ use ion_core::value::Value;
 async fn main() -> Result<(), IonError> {
     let mut engine = Engine::new();
 
-    engine.register_async_fn("tokio_sleep", |args| async move {
+    engine.register_async_fn(ion_core::h!("tokio_sleep"), |args| async move {
         let ms = args
             .first()
             .and_then(Value::as_int)
@@ -27,7 +27,7 @@ async fn main() -> Result<(), IonError> {
         Ok(Value::Int(ms))
     });
 
-    engine.register_async_fn("fake_fetch", |args| async move {
+    engine.register_async_fn(ion_core::h!("fake_fetch"), |args| async move {
         let url = args
             .first()
             .and_then(Value::as_str)
