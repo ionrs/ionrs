@@ -81,6 +81,7 @@ export default defineConfig({
         },
         { label: "Design", autogenerate: { directory: "design" } },
         { label: "Changelog", link: "/changelog/" },
+        { label: "Manifest preview", link: "/preview/", badge: "client-side" },
       ],
     }),
     sitemap(),

@@ -1,0 +1,230 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+---
+
+<StarlightPage
+  frontmatter={{
+    title: "Manifest preview",
+    description:
+      "Upload an IonDocManifest JSON and browse it locally in your browser.",
+    tableOfContents: false,
+  }}
+>
+  <p>
+    Upload an <code>IonDocManifest</code> JSON file (the same schema the LSP
+    consumes for hover/completion). It's stored only in your browser's
+    <code>localStorage</code> and replaced when you upload another. Nothing
+    is sent to any server.
+  </p>
+
+  <div id="ion-preview-controls" class="not-content">
+    <label class="ion-preview-drop" id="ion-preview-drop">
+      <input
+        id="ion-preview-file"
+        type="file"
+        accept="application/json,.json"
+      />
+      <span class="ion-preview-drop-hint">
+        Click to choose or drop a <code>.json</code> manifest here
+      </span>
+    </label>
+    <button id="ion-preview-clear" type="button" class="ion-preview-clear">
+      Clear
+    </button>
+  </div>
+
+  <div id="ion-preview-status" role="status" class="ion-preview-status"></div>
+  <div id="ion-preview-content"></div>
+</StarlightPage>
+
+<script>
+  import { validateManifest } from "../lib/ion-doc";
+  import { renderManifest } from "../lib/render-manifest";
+
+  const STORAGE_KEY = "ion:preview:manifest:v1";
+
+  const fileInput = document.getElementById(
+    "ion-preview-file"
+  ) as HTMLInputElement | null;
+  const dropZone = document.getElementById(
+    "ion-preview-drop"
+  ) as HTMLElement | null;
+  const clearBtn = document.getElementById(
+    "ion-preview-clear"
+  ) as HTMLButtonElement | null;
+  const statusEl = document.getElementById(
+    "ion-preview-status"
+  ) as HTMLElement | null;
+  const contentEl = document.getElementById(
+    "ion-preview-content"
+  ) as HTMLElement | null;
+
+  if (fileInput && dropZone && clearBtn && statusEl && contentEl) {
+    function setStatus(msg: string, kind: "info" | "error" | "ok" = "info") {
+      statusEl!.textContent = msg;
+      statusEl!.dataset.kind = kind;
+    }
+
+    function load(text: string, source: string): void {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        setStatus(`Invalid JSON: ${(e as Error).message}`, "error");
+        return;
+      }
+      const result = validateManifest(parsed);
+      if (!result.ok) {
+        setStatus(`Invalid manifest: ${result.error}`, "error");
+        return;
+      }
+      const m = result.manifest;
+      const moduleCount = m.modules?.length ?? 0;
+      setStatus(
+        `Loaded${source ? ` ${source}` : ""}: ${moduleCount} top-level module${moduleCount === 1 ? "" : "s"}.`,
+        "ok"
+      );
+      renderManifest(m, contentEl!);
+      try {
+        localStorage.setItem(STORAGE_KEY, text);
+      } catch (e) {
+        setStatus(
+          `Loaded but couldn't persist (localStorage full?): ${(e as Error).message}`,
+          "error"
+        );
+      }
+    }
+
+    async function loadFile(f: File): Promise<void> {
+      try {
+        const text = await f.text();
+        load(text, `${f.name}`);
+      } catch (e) {
+        setStatus(`Failed to read file: ${(e as Error).message}`, "error");
+      }
+    }
+
+    fileInput.addEventListener("change", () => {
+      const f = fileInput.files?.[0];
+      if (f) loadFile(f);
+    });
+
+    ["dragenter", "dragover"].forEach((evt) => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropZone.classList.add("ion-preview-drop--hot");
+      });
+    });
+    ["dragleave", "drop"].forEach((evt) => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("ion-preview-drop--hot");
+      });
+    });
+    dropZone.addEventListener("drop", (e) => {
+      const f = (e as DragEvent).dataTransfer?.files?.[0];
+      if (f) loadFile(f);
+    });
+
+    clearBtn.addEventListener("click", () => {
+      localStorage.removeItem(STORAGE_KEY);
+      contentEl.innerHTML = "";
+      fileInput.value = "";
+      setStatus("Cleared.");
+    });
+
+    // Restore the persisted manifest (if any) on initial render.
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) load(saved, "from saved upload");
+    } catch {
+      // Storage access can throw in private-browsing modes; ignore.
+    }
+  }
+</script>
+
+<style is:global>
+  .ion-preview-drop {
+    display: block;
+    padding: 1rem 1.25rem;
+    border: 1px dashed var(--sl-color-gray-4);
+    border-radius: 0.5rem;
+    background: var(--sl-color-gray-7);
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .ion-preview-drop input[type="file"] {
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  .ion-preview-drop-hint {
+    color: var(--sl-color-gray-3);
+    font-size: 0.9rem;
+  }
+  .ion-preview-drop--hot {
+    background: var(--sl-color-accent-low);
+    border-color: var(--sl-color-accent);
+  }
+  .ion-preview-clear {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--sl-color-gray-4);
+    background: var(--sl-color-bg);
+    color: inherit;
+    border-radius: 0.375rem;
+    cursor: pointer;
+  }
+  .ion-preview-clear:hover {
+    background: var(--sl-color-gray-6);
+  }
+  .ion-preview-status {
+    margin: 0.75rem 0;
+    min-height: 1.4em;
+    font-size: 0.9rem;
+    color: var(--sl-color-gray-3);
+  }
+  .ion-preview-status[data-kind="error"] {
+    color: var(--sl-color-red);
+  }
+  .ion-preview-status[data-kind="ok"] {
+    color: var(--sl-color-green);
+  }
+  .ion-preview-meta {
+    margin: 1rem 0 1.5rem;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 1rem;
+    font-size: 0.95rem;
+  }
+  .ion-preview-meta dt {
+    font-weight: 600;
+    color: var(--sl-color-gray-3);
+  }
+  .ion-preview-meta dd {
+    margin: 0;
+  }
+  .ion-preview-toc {
+    margin: 1rem 0 2rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--sl-color-accent);
+    background: var(--sl-color-gray-7);
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+  .ion-preview-toc a {
+    margin-right: 0.5rem;
+  }
+  .ion-preview-module + .ion-preview-module {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+  .ion-preview-code {
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    background: var(--sl-color-gray-7);
+    border-radius: 0.375rem;
+    overflow-x: auto;
+    font-size: 0.875rem;
+  }
+</style>
