@@ -1,0 +1,51 @@
+---
+title: Ion
+description: A fast, embeddable scripting language for Rust applications.
+template: splash
+hero:
+  tagline: |
+    A small, strongly-typed scripting language for embedding in Rust
+    programs — like Lua for game engines, but with Rust-flavored syntax,
+    Serde-native host integration, and a native Tokio async runtime.
+  actions:
+    - text: Get started
+      link: /language/types/
+      icon: right-arrow
+    - text: Stdlib reference
+      link: /reference/
+      variant: minimal
+      icon: external
+    - text: GitHub
+      link: https://github.com/chutuananh2k/ion-lang
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Code } from "@astrojs/starlight/components";
+
+```ion
+let items = [1, 2, 3, 4, 5];
+items
+  .filter(|x| x > 2)
+  .map(|x| x * 10);
+// [30, 40, 50]
+```
+
+<CardGrid stagger>
+  <Card title="Strongly typed" icon="approve-check-circle">
+    Type annotations on `let`, runtime checks at boundaries, generic
+    `Option<T>` / `Result<T, E>` — but no ceremony you don't need.
+  </Card>
+  <Card title="Embeddable" icon="rocket">
+    `cargo add ion-core`, register a few host functions, and you have a
+    scripting layer with predictable evaluation costs and a small surface.
+  </Card>
+  <Card title="Native async" icon="setting">
+    Tokio under the hood — `spawn`, `await`, `select`, channels, timers,
+    and async host calls all work like you'd expect.
+  </Card>
+  <Card title="Real tooling" icon="laptop">
+    Bytecode VM, optimizing compiler, LSP, and editor extensions for VS
+    Code, JetBrains, and Zed.
+  </Card>
+</CardGrid>

@@ -1,0 +1,24 @@
+{
+  "name": "ion-lang-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync-manifests": "node scripts/sync-manifests.mjs",
+    "predev": "npm run sync-manifests",
+    "prebuild": "npm run sync-manifests",
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/sitemap": "^3.4.0",
+    "@astrojs/starlight": "^0.38.0",
+    "astro": "^6.0.0",
+    "sharp": "^0.34.0",
+    "typescript": "^5.9.0"
+  }
+}

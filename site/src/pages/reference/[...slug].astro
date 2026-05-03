@@ -1,0 +1,51 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import ManifestBrowser from "../../components/ManifestBrowser.astro";
+import {
+  stdlib,
+  walkModules,
+  findModule,
+  type ManifestModule,
+} from "../../lib/manifest.ts";
+
+export async function getStaticPaths() {
+  const paths: Array<{
+    params: { slug: string };
+    props: { module: ManifestModule; segments: string[] };
+  }> = [];
+  for (const { pathSegments, module } of walkModules(stdlib.modules)) {
+    paths.push({
+      params: { slug: pathSegments.join("/") },
+      props: { module, segments: pathSegments },
+    });
+  }
+  return paths;
+}
+
+interface Props {
+  module: ManifestModule;
+  segments: string[];
+}
+
+const { module, segments } = Astro.props as Props;
+
+// Defensive — getStaticPaths above guarantees this resolves.
+if (!findModule(stdlib, segments)) {
+  throw new Error(
+    `Reference page rendered for non-existent module: ${segments.join("::")}`
+  );
+}
+
+const title = segments.join("::");
+const description = module.summary || `Stdlib reference for ${title}.`;
+---
+
+<StarlightPage
+  frontmatter={{
+    title,
+    description,
+    tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
+  }}
+>
+  <ManifestBrowser module={module} />
+</StarlightPage>

@@ -271,6 +271,13 @@ cargo run --bin ion-cli              # start REPL
 
 ## Documentation
 
+The full documentation site is at **<https://chutuananh2k.github.io/ion-lang/>** —
+prose guides, the complete language reference, a manifest-driven stdlib
+browser (the same one the LSP reads for hover and completion), and runnable
+examples.
+
+The canonical sources also live in this repository:
+
 - [LANGUAGE.md](LANGUAGE.md) — complete language specification
 - [DESIGN.md](DESIGN.md) — design decisions and implementation phases
 - [docs/embedding.md](docs/embedding.md) — embedding API reference

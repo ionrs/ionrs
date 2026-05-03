@@ -1,0 +1,44 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { stdlib } from "../../lib/manifest.ts";
+
+const topLevel = (stdlib.modules ?? []).map((m) => ({
+  name: m.name,
+  summary: m.summary ?? "",
+  href: `./${m.name}/`,
+}));
+topLevel.sort((a, b) => a.name.localeCompare(b.name));
+---
+
+<StarlightPage
+  frontmatter={{
+    title: "Stdlib reference",
+    description:
+      "Generated from the canonical IonDocManifest in ion-core/src/stdlib-docs.json — the same source the LSP reads for hover and completion.",
+  }}
+>
+  <p>
+    Every entry on this page comes from{" "}
+    <a href="../manifests/stdlib.json">
+      <code>stdlib.json</code>
+    </a>
+    , a single
+    <code>IonDocManifest</code> document embedded in
+    <code>ion-core</code> at compile time. The Ion language server reads
+    the same manifest for hover and completion, so what you see here is
+    what you'll get in your editor.
+  </p>
+  <h2>Modules</h2>
+  <ul>
+    {
+      topLevel.map((m) => (
+        <li>
+          <a href={m.href}>
+            <code>{m.name}</code>
+          </a>
+          {m.summary && <> — {m.summary}</>}
+        </li>
+      ))
+    }
+  </ul>
+</StarlightPage>

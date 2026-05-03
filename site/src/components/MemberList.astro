@@ -1,0 +1,68 @@
+---
+import { Code } from "@astrojs/starlight/components";
+import { memberAnchor, type ManifestMember } from "../lib/manifest.ts";
+
+interface Props {
+  title: string;
+  members: ManifestMember[];
+  kindLabel?: string;
+  /** Heading level for the section title; member entries become +1. */
+  headingLevel?: 2 | 3 | 4;
+}
+
+const { title, members, kindLabel, headingLevel = 2 } = Astro.props;
+const SectionHeading = `h${headingLevel}` as "h2" | "h3" | "h4";
+const ItemHeading = `h${headingLevel + 1}` as "h3" | "h4" | "h5";
+
+function renderInline(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+---
+
+{
+  members.length > 0 && (
+    <section class="ion-api-section">
+      <SectionHeading>{title}</SectionHeading>
+      {members.map((m) => (
+        <article id={memberAnchor(m.name)}>
+          <ItemHeading>
+            <code>{m.name}</code>
+            {m.since && (
+              <span class="ion-api-since" title="Available since">
+                since {m.since}
+              </span>
+            )}
+            {m.receiver && (
+              <span class="ion-api-receiver"> on {m.receiver}</span>
+            )}
+          </ItemHeading>
+          <Code code={m.signature} lang="ion" frame="none" />
+          {m.doc && <p set:html={renderInline(m.doc)} />}
+          {m.examples && m.examples.length > 0 && (
+            <details>
+              <summary>Examples</summary>
+              {m.examples.map((ex) => (
+                <Code code={ex} lang="ion" />
+              ))}
+            </details>
+          )}
+          {kindLabel === "type" && m.variants && m.variants.length > 0 && (
+            <p>
+              Variants:{" "}
+              {m.variants.map((v, i) => (
+                <>
+                  {i > 0 && ", "}
+                  <code>{v}</code>
+                </>
+              ))}
+            </p>
+          )}
+        </article>
+      ))}
+    </section>
+  )
+}

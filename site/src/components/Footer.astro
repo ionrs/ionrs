@@ -1,0 +1,15 @@
+---
+import Default from "@astrojs/starlight/components/Footer.astro";
+
+// `__ION_GIT_DESCRIBE__` is replaced at build time by Vite (see
+// astro.config.mjs). The output of `git describe --tags --always --dirty`
+// at build time pins the docs to a concrete commit so users can tell
+// what version of Ion they're actually reading docs for.
+const gitDescribe =
+  typeof __ION_GIT_DESCRIBE__ !== "undefined" ? __ION_GIT_DESCRIBE__ : "unknown";
+---
+
+<Default><slot /></Default>
+<p class="ion-build-meta">
+  Documentation reflects Ion <code>{gitDescribe}</code>.
+</p>

@@ -1,0 +1,97 @@
+---
+import MemberList from "./MemberList.astro";
+import {
+  partitionMembers,
+  type ManifestModule,
+} from "../lib/manifest.ts";
+
+interface Props {
+  module: ManifestModule;
+}
+
+const { module } = Astro.props;
+const partitioned = partitionMembers(module.members);
+
+// For type pages: each "type" member carries its own methods. Render
+// them as a sub-section per type.
+const typesWithMethods = partitioned.types.map((t) => ({
+  ...t,
+  methods: t.methods ?? [],
+}));
+---
+
+{module.summary && <p>{module.summary}</p>}
+
+<MemberList
+  title="Builtins"
+  members={partitioned.builtins}
+  kindLabel="builtin"
+/>
+<MemberList
+  title="Constants"
+  members={partitioned.constants}
+  kindLabel="constant"
+/>
+<MemberList
+  title="Functions"
+  members={partitioned.functions}
+  kindLabel="function"
+/>
+<MemberList
+  title="Methods"
+  members={partitioned.methods}
+  kindLabel="method"
+/>
+
+{
+  typesWithMethods.length > 0 && (
+    <section class="ion-api-section">
+      <h2>Types</h2>
+      {typesWithMethods.map((t) => (
+        <section>
+          <h3 id={`type-${t.name}`}>
+            <code>{t.name}</code>
+          </h3>
+          {t.doc && <p>{t.doc}</p>}
+          {t.variants && t.variants.length > 0 && (
+            <p>
+              Variants:{" "}
+              {t.variants.map((v, i) => (
+                <>
+                  {i > 0 && ", "}
+                  <code>{v}</code>
+                </>
+              ))}
+            </p>
+          )}
+          {t.methods.length > 0 && (
+            <MemberList
+              title={`${t.name} methods`}
+              members={t.methods}
+              kindLabel="method"
+              headingLevel={4}
+            />
+          )}
+        </section>
+      ))}
+    </section>
+  )
+}
+
+{
+  module.modules && module.modules.length > 0 && (
+    <section class="ion-api-section">
+      <h2>Submodules</h2>
+      <ul>
+        {module.modules.map((sub) => (
+          <li>
+            <a href={`./${sub.name}/`}>
+              <code>{sub.name}</code>
+            </a>
+            {sub.summary && <> — {sub.summary}</>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}

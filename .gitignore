@@ -1,2 +1,14 @@
 /target
 Cargo.lock
+
+# Docs site (Astro/Starlight)
+site/node_modules/
+site/dist/
+site/.astro/
+# Synced from canonical sources at build time — do not commit.
+site/public/manifests/
+site/src/content/docs/changelog.mdx
+site/src/content/docs/language/
+site/src/content/docs/design/
+site/src/content/docs/guides/
+site/src/content/docs/examples/
