@@ -3911,8 +3911,8 @@ impl Interpreter {
         span: Span,
     ) -> SignalResult {
         use crate::async_rt::ChannelEnd;
-        match (ch, method) {
-            (ChannelEnd::Sender(tx), "send") => {
+        match (ch, crate::hash::h(method)) {
+            (ChannelEnd::Sender(tx), h) if h == crate::hash::h("send") => {
                 if args.is_empty() {
                     return Err(IonError::runtime(
                         ion_str!("send requires a value").to_string(),
@@ -3930,19 +3930,20 @@ impl Interpreter {
                 })?;
                 Ok(Value::Unit)
             }
-            (ChannelEnd::Sender(tx), "close") => {
+            (ChannelEnd::Sender(tx), h) if h == crate::hash::h("close") => {
                 tx.close();
                 Ok(Value::Unit)
             }
-            (ChannelEnd::Receiver(rx), "recv") => match rx.recv() {
+            (ChannelEnd::Receiver(rx), h) if h == crate::hash::h("recv") => match rx.recv() {
                 Some(v) => Ok(Value::Option(Some(Box::new(v)))),
                 None => Ok(Value::Option(None)),
             },
-            (ChannelEnd::Receiver(rx), "try_recv") => match rx.try_recv() {
+            (ChannelEnd::Receiver(rx), h) if h == crate::hash::h("try_recv") => match rx.try_recv()
+            {
                 Some(v) => Ok(Value::Option(Some(Box::new(v)))),
                 None => Ok(Value::Option(None)),
             },
-            (ChannelEnd::Receiver(rx), "recv_timeout") => {
+            (ChannelEnd::Receiver(rx), h) if h == crate::hash::h("recv_timeout") => {
                 if args.is_empty() {
                     return Err(IonError::runtime(
                         ion_str!("recv_timeout requires a timeout in ms").to_string(),

@@ -3200,8 +3200,8 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "map",
-        ) => MethodContinuationKind::ListMap {
+            h,
+        ) if h == crate::hash::h("map") => MethodContinuationKind::ListMap {
             func,
             items: Value::range_to_list(start, end, inclusive),
             index: 0,
@@ -3213,8 +3213,8 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "filter",
-        ) => MethodContinuationKind::ListFilter {
+            h,
+        ) if h == crate::hash::h("filter") => MethodContinuationKind::ListFilter {
             func,
             items: Value::range_to_list(start, end, inclusive),
             index: 0,
@@ -3226,8 +3226,8 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "any",
-        ) => MethodContinuationKind::ListAny {
+            h,
+        ) if h == crate::hash::h("any") => MethodContinuationKind::ListAny {
             func,
             items: Value::range_to_list(start, end, inclusive),
             index: 0,
@@ -3239,8 +3239,8 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "all",
-        ) => MethodContinuationKind::ListAll {
+            h,
+        ) if h == crate::hash::h("all") => MethodContinuationKind::ListAll {
             func,
             items: Value::range_to_list(start, end, inclusive),
             index: 0,
@@ -3252,8 +3252,8 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "flat_map",
-        ) => MethodContinuationKind::ListFlatMap {
+            h,
+        ) if h == crate::hash::h("flat_map") => MethodContinuationKind::ListFlatMap {
             func,
             items: Value::range_to_list(start, end, inclusive),
             index: 0,
@@ -3265,8 +3265,8 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "fold",
-        ) => {
+            h,
+        ) if h == crate::hash::h("fold") => {
             let init = args.first().cloned().unwrap_or(Value::Unit);
             let func = args.get(1).cloned().ok_or_else(|| {
                 IonError::runtime("fold requires an initial value and a function", line, col)
@@ -3288,8 +3288,8 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "reduce",
-        ) => {
+            h,
+        ) if h == crate::hash::h("reduce") => {
             let items = Value::range_to_list(start, end, inclusive);
             let Some((first, rest)) = items.split_first() else {
                 return StepOutcome::InstructionError(IonError::runtime(
@@ -3311,14 +3311,14 @@ fn start_continuation_method_call(
                 end,
                 inclusive,
             },
-            "sort_by",
-        ) => MethodContinuationKind::ListSortBy {
+            h,
+        ) if h == crate::hash::h("sort_by") => MethodContinuationKind::ListSortBy {
             func,
             items: Value::range_to_list(start, end, inclusive),
             pass: 0,
             index: 0,
         },
-        (Value::Option(Some(value)), "map") => MethodContinuationKind::SingleCallback {
+        (Value::Option(Some(value)), h) if h == crate::hash::h("map") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![*value],
             started: false,
@@ -3328,13 +3328,13 @@ fn start_continuation_method_call(
             cont.stack.push(Value::Option(None));
             return StepOutcome::Continue;
         }
-        (Value::Option(Some(value)), "and_then") => MethodContinuationKind::SingleCallback {
+        (Value::Option(Some(value)), h) if h == crate::hash::h("and_then") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![*value],
             started: false,
             after: MethodSingleCallbackAfter::Direct,
         },
-        (Value::Option(Some(value)), "or_else") => {
+        (Value::Option(Some(value)), h) if h == crate::hash::h("or_else") => {
             cont.stack.push(Value::Option(Some(value)));
             return StepOutcome::Continue;
         }
@@ -3344,7 +3344,7 @@ fn start_continuation_method_call(
             started: false,
             after: MethodSingleCallbackAfter::Direct,
         },
-        (Value::Option(Some(value)), "unwrap_or_else") => {
+        (Value::Option(Some(value)), h) if h == crate::hash::h("unwrap_or_else") => {
             cont.stack.push(*value);
             return StepOutcome::Continue;
         }
@@ -3354,43 +3354,43 @@ fn start_continuation_method_call(
             started: false,
             after: MethodSingleCallbackAfter::Direct,
         },
-        (Value::Result(Ok(value)), "map") => MethodContinuationKind::SingleCallback {
+        (Value::Result(Ok(value)), h) if h == crate::hash::h("map") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![*value],
             started: false,
             after: MethodSingleCallbackAfter::WrapOk,
         },
-        (Value::Result(Err(value)), "map" | "and_then") => {
+        (Value::Result(Err(value)), h) if h == crate::hash::h("map") || h == crate::hash::h("and_then") => {
             cont.stack.push(Value::Result(Err(value)));
             return StepOutcome::Continue;
         }
-        (Value::Result(Err(value)), "map_err") => MethodContinuationKind::SingleCallback {
+        (Value::Result(Err(value)), h) if h == crate::hash::h("map_err") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![*value],
             started: false,
             after: MethodSingleCallbackAfter::WrapErr,
         },
-        (Value::Result(Ok(value)), "map_err" | "or_else") => {
+        (Value::Result(Ok(value)), h) if h == crate::hash::h("map_err") || h == crate::hash::h("or_else") => {
             cont.stack.push(Value::Result(Ok(value)));
             return StepOutcome::Continue;
         }
-        (Value::Result(Ok(value)), "and_then") => MethodContinuationKind::SingleCallback {
+        (Value::Result(Ok(value)), h) if h == crate::hash::h("and_then") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![*value],
             started: false,
             after: MethodSingleCallbackAfter::Direct,
         },
-        (Value::Result(Err(value)), "or_else") => MethodContinuationKind::SingleCallback {
+        (Value::Result(Err(value)), h) if h == crate::hash::h("or_else") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![*value],
             started: false,
             after: MethodSingleCallbackAfter::Direct,
         },
-        (Value::Result(Ok(value)), "unwrap_or_else") => {
+        (Value::Result(Ok(value)), h) if h == crate::hash::h("unwrap_or_else") => {
             cont.stack.push(*value);
             return StepOutcome::Continue;
         }
-        (Value::Result(Err(value)), "unwrap_or_else") => {
+        (Value::Result(Err(value)), h) if h == crate::hash::h("unwrap_or_else") => {
             MethodContinuationKind::SingleCallback {
                 func,
                 args: vec![*value],
@@ -5011,7 +5011,7 @@ fn scaffold_check_type(
     line: usize,
     col: usize,
 ) -> Result<(), IonError> {
-    let ok = match type_name {
+    let ok = match crate::hash::h(type_name) {
         h if h == crate::hash::h("int") => matches!(value, Value::Int(_)),
         h if h == crate::hash::h("float") => matches!(value, Value::Float(_)),
         h if h == crate::hash::h("bool") => matches!(value, Value::Bool(_)),
@@ -5029,10 +5029,24 @@ fn scaffold_check_type(
         },
         h if h == crate::hash::h("cell") => matches!(value, Value::Cell(_)),
         h if h == crate::hash::h("any") => true,
-        name if name.starts_with("Option") => matches!(value, Value::Option(_)),
-        name if name.starts_with("Result") => matches!(value, Value::Result(_)),
-        name if name.starts_with("list<") => matches!(value, Value::List(_)),
-        name if name.starts_with("dict<") => matches!(value, Value::Dict(_)),
+        _ if type_name
+            .as_bytes()
+            .starts_with(&[79, 112, 116, 105, 111, 110]) =>
+        {
+            matches!(value, Value::Option(_))
+        }
+        _ if type_name
+            .as_bytes()
+            .starts_with(&[82, 101, 115, 117, 108, 116]) =>
+        {
+            matches!(value, Value::Result(_))
+        }
+        _ if type_name.as_bytes().starts_with(&[108, 105, 115, 116, 60]) => {
+            matches!(value, Value::List(_))
+        }
+        _ if type_name.as_bytes().starts_with(&[100, 105, 99, 116, 60]) => {
+            matches!(value, Value::Dict(_))
+        }
         _ => true,
     };
 
