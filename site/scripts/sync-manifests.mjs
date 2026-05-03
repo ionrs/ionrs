@@ -61,16 +61,10 @@ function escapeBracesOutsideFences(src) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-// `repoRoot` is the ionrs source repo (canonical content). `siteRoot` is
-// where the docs site lives. They're the same when site/ is nested inside
-// ionrs/; they differ when the site lives in a dedicated repo.
-const siteRoot = resolve(here, "..");
-const repoRoot = process.env.IONRS_REPO
-  ? resolve(process.env.IONRS_REPO)
-  : resolve(here, "..", "..");
-const siteContent = resolve(siteRoot, "src", "content", "docs");
+const repoRoot = resolve(here, "..", "..");
+const siteContent = resolve(repoRoot, "site", "src", "content", "docs");
 
-await mkdir(resolve(siteRoot, "public", "manifests"), {
+await mkdir(resolve(repoRoot, "site", "public", "manifests"), {
   recursive: true,
 });
 await mkdir(resolve(siteContent, "language"), { recursive: true });
@@ -81,7 +75,13 @@ await mkdir(resolve(siteContent, "examples"), { recursive: true });
 // 1. Stdlib doc manifest (single source of truth shared with the LSP).
 {
   const from = resolve(repoRoot, "ion-core", "src", "stdlib-docs.json");
-  const to = resolve(siteRoot, "public", "manifests", "stdlib.json");
+  const to = resolve(
+    repoRoot,
+    "site",
+    "public",
+    "manifests",
+    "stdlib.json"
+  );
   if (!existsSync(from)) {
     console.error(`sync: missing ${from}`);
     process.exit(1);

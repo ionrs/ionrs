@@ -13,12 +13,7 @@ import { dirname, join, resolve, relative } from "node:path";
 import { readdirSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// `repoRoot` is the ionrs source repo (canonical markdown lives here).
-// `siteRoot` is the docs site (synced .mdx lives here).
-const siteRoot = resolve(here, "..");
-const repoRoot = process.env.IONRS_REPO
-  ? resolve(process.env.IONRS_REPO)
-  : resolve(here, "..", "..");
+const repoRoot = resolve(here, "..", "..");
 const ionBin =
   process.argv[2] ?? resolve(repoRoot, "target", "release", "ion");
 
@@ -29,15 +24,16 @@ if (!exists(ionBin)) {
 }
 
 const roots = [
-  resolve(siteRoot, "src", "content", "docs"),
-  resolve(repoRoot, "docs"),
-  resolve(repoRoot, "LANGUAGE.md"),
-  resolve(repoRoot, "DESIGN.md"),
-  resolve(repoRoot, "README.md"),
+  "site/src/content/docs",
+  "docs",
+  "LANGUAGE.md",
+  "DESIGN.md",
+  "README.md",
 ];
 
 const files = [];
-for (const abs of roots) {
+for (const r of roots) {
+  const abs = resolve(repoRoot, r);
   if (!exists(abs)) continue;
   if (statSync(abs).isDirectory()) {
     walk(abs, (p) => {
@@ -62,7 +58,7 @@ for (const file of files) {
     });
     if (r.status !== 0) {
       failed++;
-      const rel = relative(process.cwd(), file);
+      const rel = relative(repoRoot, file);
       console.error(
         `::error file=${rel},line=${block.line}::ion snippet #${i + 1} failed to parse`
       );

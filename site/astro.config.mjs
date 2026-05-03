@@ -7,15 +7,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// Path to the ionrs source repo (where canonical content lives). When the
-// site lives in a dedicated repo, set IONRS_REPO to the checked-out source
-// repo; otherwise fall back to the parent (site/ nested inside ionrs/).
-const ionrsRepo = process.env.IONRS_REPO
-  ? resolve(process.env.IONRS_REPO)
-  : resolve(here, "..");
 const ionGrammarRaw = JSON.parse(
   readFileSync(
-    resolve(ionrsRepo, "editors", "vscode", "syntaxes", "ion.tmLanguage.json"),
+    resolve(here, "..", "editors", "vscode", "syntaxes", "ion.tmLanguage.json"),
     "utf8"
   )
 );
@@ -34,8 +28,8 @@ const gitDescribe = (() => {
   }
 })();
 
-// Public docs site — deployed to https://ionrs.github.io/ from the
-// dedicated `ionrs/ionrs.github.io` repo.
+// Public docs site — built here and pushed to `ionrs/ionrs.github.io`,
+// which Pages serves at https://ionrs.github.io/ from the `main` branch.
 export default defineConfig({
   site: "https://ionrs.github.io",
   base: "/",

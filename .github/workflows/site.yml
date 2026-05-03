@@ -1,0 +1,130 @@
+name: Docs Site
+
+# Build the Starlight site, run link/snippet checks, and on `main`
+# push the built `dist/` to `ionrs/ionrs.github.io`. That repo's
+# Pages config serves the `main` branch root, so the docs land at
+# https://ionrs.github.io/.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "ion-core/src/stdlib-docs.json"
+      - "LANGUAGE.md"
+      - "DESIGN.md"
+      - "CHANGELOG.md"
+      - "README.md"
+      - "docs/**"
+      - "examples/**"
+      - "editors/vscode/syntaxes/**"
+      - ".github/workflows/site.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "ion-core/src/stdlib-docs.json"
+      - "LANGUAGE.md"
+      - "DESIGN.md"
+      - "CHANGELOG.md"
+      - "README.md"
+      - "docs/**"
+      - "examples/**"
+      - "editors/vscode/syntaxes/**"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install
+        run: npm ci
+        working-directory: site
+      - name: Build
+        run: npm run build
+        working-directory: site
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site-dist
+          path: site/dist
+          retention-days: 7
+
+  link-check:
+    name: Link check
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-dist
+          path: dist
+      - name: Lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --base dist
+            --exclude "^https?://github.com/"
+            --exclude "^https?://crates.io/"
+            --exclude-loopback
+            'dist/**/*.html'
+          fail: true
+
+  ion-snippet-check:
+    name: Ion snippet check
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build ion CLI
+        run: cargo build -p ionrs-cli --release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Sync content
+        run: cd site && npm ci && npm run sync-manifests
+      - name: Check fenced ion snippets
+        run: node site/scripts/check-ion-snippets.mjs target/release/ion
+
+  publish:
+    name: Publish to ionrs.github.io
+    needs: [build, link-check, ion-snippet-check]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-dist
+          path: dist
+      # Push the built site to the `main` branch of ionrs/ionrs.github.io.
+      # Requires a PAT named DOCS_REPO_TOKEN with `Contents: write` on
+      # that repo, configured as a secret on this repo.
+      - name: Push to ionrs/ionrs.github.io
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.DOCS_REPO_TOKEN }}
+          external_repository: ionrs/ionrs.github.io
+          publish_branch: main
+          publish_dir: ./dist
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_message: "Site build from ionrs/ionrs@${{ github.sha }}"
