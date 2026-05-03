@@ -18,6 +18,21 @@ use crate::hash::mix;
 use crate::value::AsyncBuiltinClosureFn;
 use crate::value::{BuiltinClosureFn, BuiltinFn, Value};
 
+fn register_qualified_name(qualified_hash: u64, module_hash: u64, name_hash: u64) {
+    if crate::names::lookup(qualified_hash).is_some() {
+        return;
+    }
+    let (Some(module_name), Some(item_name)) = (
+        crate::names::lookup(module_hash),
+        crate::names::lookup(name_hash),
+    ) else {
+        return;
+    };
+    let joined: &'static str =
+        Box::leak(format!("{}::{}", module_name, item_name).into_boxed_str());
+    crate::names::register(qualified_hash, joined);
+}
+
 /// Frozen, hash-keyed module table embedded in `Value::Module`.
 ///
 /// `items` holds functions, constants, and submodules indexed by their
@@ -59,6 +74,7 @@ impl Module {
     /// `mix(module_hash, name_hash)`.
     pub fn register_fn(&mut self, name_hash: u64, func: BuiltinFn) {
         let qualified_hash = mix(self.name_hash, name_hash);
+        register_qualified_name(qualified_hash, self.name_hash, name_hash);
         let prev = self.items.insert(
             name_hash,
             Value::BuiltinFn {
@@ -79,6 +95,7 @@ impl Module {
         F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
     {
         let qualified_hash = mix(self.name_hash, name_hash);
+        register_qualified_name(qualified_hash, self.name_hash, name_hash);
         let prev = self.items.insert(
             name_hash,
             Value::BuiltinClosure {
@@ -102,6 +119,7 @@ impl Module {
         Fut: Future<Output = Result<Value, IonError>> + 'static,
     {
         let qualified_hash = mix(self.name_hash, name_hash);
+        register_qualified_name(qualified_hash, self.name_hash, name_hash);
         let prev = self.items.insert(
             name_hash,
             Value::AsyncBuiltinClosure {

@@ -86,10 +86,16 @@ pub enum Value {
         data: Vec<Value>,
     },
     /// Async task handle (legacy-threaded-concurrency feature)
-    #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+    #[cfg(all(
+        feature = "legacy-threaded-concurrency",
+        not(feature = "async-runtime")
+    ))]
     Task(std::sync::Arc<dyn crate::async_rt::TaskHandle>),
     /// Channel sender/receiver pair
-    #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+    #[cfg(all(
+        feature = "legacy-threaded-concurrency",
+        not(feature = "async-runtime")
+    ))]
     Channel(crate::async_rt::ChannelEnd),
     /// Shared mutable reference cell for closure state
     Cell(Arc<Mutex<Value>>),
@@ -231,9 +237,15 @@ impl Value {
             Value::AsyncChannelReceiver(_) => ion_static_str!("AsyncChannelReceiver"),
             Value::HostStruct { .. } => ion_static_str!("struct"),
             Value::HostEnum { .. } => ion_static_str!("enum"),
-            #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+            #[cfg(all(
+                feature = "legacy-threaded-concurrency",
+                not(feature = "async-runtime")
+            ))]
             Value::Task(_) => ion_static_str!("Task"),
-            #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+            #[cfg(all(
+                feature = "legacy-threaded-concurrency",
+                not(feature = "async-runtime")
+            ))]
             Value::Channel(_) => ion_static_str!("Channel"),
             Value::Cell(_) => ion_static_str!("cell"),
             Value::Range { .. } => ion_static_str!("range"),
@@ -380,10 +392,12 @@ impl fmt::Display for Value {
                 Err(e) => write!(f, "Err({})", e),
             },
             Value::Fn(func) => write!(f, "<fn {}>", func.name),
-            Value::BuiltinFn { qualified_hash, .. } => match crate::names::lookup(*qualified_hash) {
-                Some(name) => write!(f, "<builtin {}>", name),
-                None => write!(f, "<builtin #{:016x}>", qualified_hash),
-            },
+            Value::BuiltinFn { qualified_hash, .. } => {
+                match crate::names::lookup(*qualified_hash) {
+                    Some(name) => write!(f, "<builtin {}>", name),
+                    None => write!(f, "<builtin #{:016x}>", qualified_hash),
+                }
+            }
             Value::BuiltinClosure { qualified_hash, .. } => {
                 match crate::names::lookup(*qualified_hash) {
                     Some(name) => write!(f, "<builtin {}>", name),
@@ -407,9 +421,15 @@ impl fmt::Display for Value {
             Value::AsyncChannelSender(_) => write!(f, "<AsyncChannelTx>"),
             #[cfg(feature = "async-runtime")]
             Value::AsyncChannelReceiver(_) => write!(f, "<AsyncChannelRx>"),
-            #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+            #[cfg(all(
+                feature = "legacy-threaded-concurrency",
+                not(feature = "async-runtime")
+            ))]
             Value::Task(_) => write!(f, "<Task>"),
-            #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+            #[cfg(all(
+                feature = "legacy-threaded-concurrency",
+                not(feature = "async-runtime")
+            ))]
             Value::Channel(ch) => match ch {
                 crate::async_rt::ChannelEnd::Sender(_) => write!(f, "<ChannelTx>"),
                 crate::async_rt::ChannelEnd::Receiver(_) => write!(f, "<ChannelRx>"),
@@ -619,7 +639,10 @@ impl Value {
                 }
                 serde_json::Value::Object(map)
             }
-            #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+            #[cfg(all(
+                feature = "legacy-threaded-concurrency",
+                not(feature = "async-runtime")
+            ))]
             Value::Task(_) | Value::Channel(_) => serde_json::Value::Null,
             Value::Cell(cell) => cell.lock().unwrap().to_json(),
             Value::Bytes(b) => {
@@ -722,7 +745,10 @@ impl Value {
                 }
                 rmpv::Value::Array(arr)
             }
-            #[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+            #[cfg(all(
+                feature = "legacy-threaded-concurrency",
+                not(feature = "async-runtime")
+            ))]
             Value::Task(_) | Value::Channel(_) => rmpv::Value::Nil,
             Value::Cell(cell) => cell.lock().unwrap().to_msgpack_value(),
             Value::Range {

@@ -7,9 +7,9 @@ use crate::error::IonError;
 use crate::host_types::{HostEnumDef, HostStructDef, IonType, IonTypeDef};
 use crate::interpreter::{Interpreter, Limits};
 use crate::lexer::Lexer;
+use crate::log::{AtomicLogLevel, LogHandler, LogLevel, StdLogHandler};
 use crate::module::Module;
 use crate::parser::Parser;
-use crate::log::{AtomicLogLevel, LogHandler, LogLevel, StdLogHandler};
 use crate::stdlib::OutputHandler;
 use crate::value::Value;
 
@@ -51,10 +51,7 @@ impl Engine {
     /// The log handler manages its own filtering — `log::set_level` still
     /// updates the engine-wide threshold but the supplied handler can ignore
     /// it (e.g. [`crate::log::TracingLogHandler`] defers to `tracing`).
-    pub fn with_handlers(
-        output: Arc<dyn OutputHandler>,
-        log_handler: Arc<dyn LogHandler>,
-    ) -> Self {
+    pub fn with_handlers(output: Arc<dyn OutputHandler>, log_handler: Arc<dyn LogHandler>) -> Self {
         Self::build(output, log_handler, AtomicLogLevel::default_runtime())
     }
 
@@ -373,4 +370,3 @@ impl Default for Engine {
         Self::new()
     }
 }
-

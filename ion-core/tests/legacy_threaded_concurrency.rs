@@ -1,4 +1,7 @@
-#![cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+#![cfg(all(
+    feature = "legacy-threaded-concurrency",
+    not(feature = "async-runtime")
+))]
 
 use ion_core::engine::Engine;
 use ion_core::value::Value;

@@ -2124,10 +2124,7 @@ fn test_derive_auto_registers_names_in_debug_builds() {
         ion_core::names::lookup(ion_core::hash::h("Point")),
         Some("Point"),
     );
-    assert_eq!(
-        ion_core::names::lookup(ion_core::hash::h("x")),
-        Some("x"),
-    );
+    assert_eq!(ion_core::names::lookup(ion_core::hash::h("x")), Some("x"),);
 
     // Same for an enum touched via to_ion.
     let _ = Shape::Circle(1.0).to_ion();
@@ -2139,6 +2136,25 @@ fn test_derive_auto_registers_names_in_debug_builds() {
         ion_core::names::lookup(ion_core::hash::h("Circle")),
         Some("Circle"),
     );
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn test_module_builtin_qualified_names_register_in_debug_builds() {
+    let mut module = Module::new(h!("audit_mod"));
+    module.register_fn(h!("audit_fn"), |_args| Ok(Value::Unit));
+
+    let Value::Module(table) = module.into_value() else {
+        panic!("expected module value");
+    };
+    let builtin = table.items.get(&h!("audit_fn")).unwrap();
+    let qualified_hash = ion_core::hash::mix(h!("audit_mod"), h!("audit_fn"));
+
+    assert_eq!(
+        ion_core::names::lookup(qualified_hash),
+        Some("audit_mod::audit_fn")
+    );
+    assert_eq!(format!("{}", builtin), "<builtin audit_mod::audit_fn>");
 }
 
 // ============================================================
@@ -4080,9 +4096,11 @@ fn test_cell_update_returns_new_value() {
 fn engine_with_math_module() -> Engine {
     let mut engine = Engine::new();
     let mut math = Module::new(ion_core::h!("math"));
-    math.register_fn(ion_core::h!("add"), |args: &[Value]| match (&args[0], &args[1]) {
-        (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
-        _ => Err("expected two ints".to_string()),
+    math.register_fn(ion_core::h!("add"), |args: &[Value]| {
+        match (&args[0], &args[1]) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+            _ => Err("expected two ints".to_string()),
+        }
     });
     math.set(ion_core::h!("PI"), Value::Float(std::f64::consts::PI));
     engine.register_module(math);
@@ -4161,7 +4179,9 @@ fn test_use_from_submodule() {
     let mut engine = Engine::new();
     let mut net = Module::new(ion_core::h!("net"));
     let mut http = Module::new(ion_core::h!("http"));
-    http.register_fn(ion_core::h!("get"), |_args: &[Value]| Ok(Value::Str("ok".to_string())));
+    http.register_fn(ion_core::h!("get"), |_args: &[Value]| {
+        Ok(Value::Str("ok".to_string()))
+    });
     net.register_submodule(http);
     engine.register_module(net);
     assert_eq!(
@@ -4175,7 +4195,9 @@ fn test_use_glob_from_submodule() {
     let mut engine = Engine::new();
     let mut net = Module::new(ion_core::h!("net"));
     let mut http = Module::new(ion_core::h!("http"));
-    http.register_fn(ion_core::h!("get"), |_args: &[Value]| Ok(Value::Str("ok".to_string())));
+    http.register_fn(ion_core::h!("get"), |_args: &[Value]| {
+        Ok(Value::Str("ok".to_string()))
+    });
     http.set(ion_core::h!("PORT"), Value::Int(8080));
     net.register_submodule(http);
     engine.register_module(net);
@@ -4251,9 +4273,7 @@ fn test_use_named_alias_all() {
         Value::Int(3)
     );
     assert_eq!(
-        engine
-            .eval("use math::{add as sum, PI as pi}; pi")
-            .unwrap(),
+        engine.eval("use math::{add as sum, PI as pi}; pi").unwrap(),
         Value::Float(std::f64::consts::PI)
     );
 }
@@ -4281,7 +4301,9 @@ fn test_use_alias_submodule() {
     let mut engine = Engine::new();
     let mut net = Module::new(ion_core::h!("net"));
     let mut http = Module::new(ion_core::h!("http"));
-    http.register_fn(ion_core::h!("get"), |_args: &[Value]| Ok(Value::Str("ok".to_string())));
+    http.register_fn(ion_core::h!("get"), |_args: &[Value]| {
+        Ok(Value::Str("ok".to_string()))
+    });
     net.register_submodule(http);
     engine.register_module(net);
     assert_eq!(
@@ -4298,7 +4320,10 @@ fn test_use_alias_missing_member_reports_original_name() {
     let result = engine.eval("use math::nonexistent as x;");
     assert!(result.is_err());
     let err = result.unwrap_err().message;
-    assert!(err.contains("nonexistent"), "error should name the original member, got: {err}");
+    assert!(
+        err.contains("nonexistent"),
+        "error should name the original member, got: {err}"
+    );
     assert!(err.contains("not found in module"));
 }
 
@@ -4761,7 +4786,10 @@ fn test_stdlib_os_family_is_known() {
 #[cfg(feature = "os")]
 #[test]
 fn test_stdlib_os_pointer_width() {
-    assert!(matches!(eval("os::pointer_width"), Value::Int(32) | Value::Int(64)));
+    assert!(matches!(
+        eval("os::pointer_width"),
+        Value::Int(32) | Value::Int(64)
+    ));
 }
 
 #[cfg(feature = "os")]
@@ -4793,7 +4821,11 @@ fn test_stdlib_os_env_var_missing() {
     let mut engine = Engine::new();
     let result = engine.eval(r#"os::env_var("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS")"#);
     let msg = result.unwrap_err().message;
-    assert!(msg.contains("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS"), "got: {}", msg);
+    assert!(
+        msg.contains("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS"),
+        "got: {}",
+        msg
+    );
 }
 
 #[cfg(feature = "os")]
@@ -4927,9 +4959,7 @@ fn test_stdlib_os_arity_errors() {
     assert!(engine.eval("os::cwd(1)").is_err());
     assert!(engine.eval("os::env_vars(1)").is_err());
     assert!(engine.eval("os::env_var()").is_err());
-    assert!(engine
-        .eval(r#"os::env_var("a", "b", "c")"#)
-        .is_err());
+    assert!(engine.eval(r#"os::env_var("a", "b", "c")"#).is_err());
 }
 
 // --- path stdlib ---
@@ -5033,10 +5063,7 @@ fn test_stdlib_path_normalize() {
         Value::Str("a/c".to_string())
     );
     // Bare `.` collapses to `.`
-    assert_eq!(
-        eval(r#"path::normalize(".")"#),
-        Value::Str(".".to_string())
-    );
+    assert_eq!(eval(r#"path::normalize(".")"#), Value::Str(".".to_string()));
     // Leading `..` is preserved when there's nothing to pop
     assert_eq!(
         eval(r#"path::normalize("../a")"#),
@@ -5049,9 +5076,7 @@ fn test_stdlib_path_arity_errors() {
     let mut engine = Engine::new();
     assert!(engine.eval("path::join()").is_err());
     assert!(engine.eval("path::basename()").is_err());
-    assert!(engine
-        .eval(r#"path::with_extension("a")"#)
-        .is_err());
+    assert!(engine.eval(r#"path::with_extension("a")"#).is_err());
 }
 
 // --- fs stdlib (sync build) ---
@@ -5159,7 +5184,9 @@ fn test_stdlib_fs_exists_is_file_is_dir() {
     let missing_s = dir.join("nope.txt").to_string_lossy().to_string();
     let mut engine = Engine::new();
     assert_eq!(
-        engine.eval(&format!(r#"fs::exists("{}")"#, file_s)).unwrap(),
+        engine
+            .eval(&format!(r#"fs::exists("{}")"#, file_s))
+            .unwrap(),
         Value::Bool(true)
     );
     assert_eq!(
@@ -5169,7 +5196,9 @@ fn test_stdlib_fs_exists_is_file_is_dir() {
         Value::Bool(false)
     );
     assert_eq!(
-        engine.eval(&format!(r#"fs::is_file("{}")"#, file_s)).unwrap(),
+        engine
+            .eval(&format!(r#"fs::is_file("{}")"#, file_s))
+            .unwrap(),
         Value::Bool(true)
     );
     assert_eq!(
@@ -5177,7 +5206,9 @@ fn test_stdlib_fs_exists_is_file_is_dir() {
         Value::Bool(true)
     );
     assert_eq!(
-        engine.eval(&format!(r#"fs::is_dir("{}")"#, file_s)).unwrap(),
+        engine
+            .eval(&format!(r#"fs::is_dir("{}")"#, file_s))
+            .unwrap(),
         Value::Bool(false)
     );
     let _ = std::fs::remove_dir_all(&dir);
@@ -5218,7 +5249,10 @@ fn test_stdlib_fs_create_remove_dirs() {
         .unwrap();
     assert!(nested.exists());
     engine
-        .eval(&format!(r#"fs::remove_dir_all("{}")"#, root.to_string_lossy()))
+        .eval(&format!(
+            r#"fs::remove_dir_all("{}")"#,
+            root.to_string_lossy()
+        ))
         .unwrap();
     assert!(!root.exists());
 }
@@ -5258,10 +5292,7 @@ fn test_stdlib_fs_metadata() {
     let dir = fs_test_dir("meta");
     let file = dir.join("m.txt");
     std::fs::write(&file, "12345").unwrap();
-    let v = eval(&format!(
-        r#"fs::metadata("{}")"#,
-        file.to_string_lossy()
-    ));
+    let v = eval(&format!(r#"fs::metadata("{}")"#, file.to_string_lossy()));
     let Value::Dict(map) = v else {
         panic!("expected dict, got {:?}", v);
     };

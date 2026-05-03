@@ -444,13 +444,22 @@ fn edge_dict_insert_arity() {
 #[test]
 fn edge_bytes_allocation_cap() {
     let msg = eval_err("bytes(100000000)");
-    assert!(msg.contains("out of range"), "got: {}", msg);
+    // 0.9.0 cleanup: error literal genericised — accepts either old or new wording.
+    assert!(
+        msg.contains("out of range") || msg.contains("invalid byte count"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]
 fn edge_bytes_negative() {
     let msg = eval_err("bytes(-1)");
-    assert!(msg.contains("out of range"), "got: {}", msg);
+    assert!(
+        msg.contains("out of range") || msg.contains("invalid byte count"),
+        "got: {}",
+        msg
+    );
 }
 
 #[test]

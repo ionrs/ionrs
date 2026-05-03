@@ -1179,21 +1179,25 @@ impl Compiler {
             ExprKind::SelectExpr(branches) => {
                 self.compile_select_expr(branches, line, col)?;
             }
-            #[cfg(all(not(feature = "async-runtime"), feature = "legacy-threaded-concurrency"))]
+            #[cfg(all(
+                not(feature = "async-runtime"),
+                feature = "legacy-threaded-concurrency"
+            ))]
             ExprKind::AsyncBlock(_)
             | ExprKind::SpawnExpr(_)
             | ExprKind::AwaitExpr(_)
             | ExprKind::SelectExpr(_) => {
                 return Err(IonError::runtime(
-                    ion_str!(
-                        "legacy-threaded-concurrency is not supported in bytecode VM"
-                    )
-                    .to_string(),
+                    ion_str!("legacy-threaded-concurrency is not supported in bytecode VM")
+                        .to_string(),
                     line,
                     col,
                 ));
             }
-            #[cfg(all(not(feature = "async-runtime"), not(feature = "legacy-threaded-concurrency")))]
+            #[cfg(all(
+                not(feature = "async-runtime"),
+                not(feature = "legacy-threaded-concurrency")
+            ))]
             ExprKind::AsyncBlock(_)
             | ExprKind::SpawnExpr(_)
             | ExprKind::AwaitExpr(_)
@@ -2485,15 +2489,16 @@ impl Compiler {
 fn recognize_log_call(func: &Expr) -> Option<crate::log::LogLevel> {
     match &func.kind {
         ExprKind::ModulePath(segments) if segments.len() == 2 && segments[0] == "log" => {
-            crate::log::LogLevel::from_str_ci(&segments[1])
-                .filter(|l| matches!(
+            crate::log::LogLevel::from_str_ci(&segments[1]).filter(|l| {
+                matches!(
                     l,
                     crate::log::LogLevel::Trace
                         | crate::log::LogLevel::Debug
                         | crate::log::LogLevel::Info
                         | crate::log::LogLevel::Warn
                         | crate::log::LogLevel::Error
-                ))
+                )
+            })
         }
         _ => None,
     }

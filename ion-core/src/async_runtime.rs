@@ -2418,9 +2418,9 @@ fn timeout_future(
             col,
         ));
     }
-    let ms = args[0].as_int().ok_or_else(|| {
-        IonError::runtime("timeout: first argument must be int (ms)", line, col)
-    })?;
+    let ms = args[0]
+        .as_int()
+        .ok_or_else(|| IonError::runtime("timeout: first argument must be int (ms)", line, col))?;
     let callback = args[1].clone();
     let callback_future = callback_as_zero_arg_future(arena, cont, callback, line, col)?;
 
@@ -2441,7 +2441,9 @@ fn callback_as_zero_arg_future(
     col: usize,
 ) -> Result<BoxIonFuture, IonError> {
     match callback {
-        Value::Fn(ion_fn) => spawned_ion_function_future(arena, cont, ion_fn, Vec::new(), line, col),
+        Value::Fn(ion_fn) => {
+            spawned_ion_function_future(arena, cont, ion_fn, Vec::new(), line, col)
+        }
         Value::AsyncBuiltinClosure { func: async_fn, .. } => Ok(async_fn.call(Vec::new())),
         Value::BuiltinFn { func: builtin, .. } => Ok(Box::pin(async move {
             builtin(&[]).map_err(|err| IonError::runtime(err, line, col))
@@ -2452,7 +2454,10 @@ fn callback_as_zero_arg_future(
                 .map_err(|err| IonError::runtime(err, line, col))
         })),
         other => Err(IonError::type_err(
-            format!("timeout callback must be callable, got {}", other.type_name()),
+            format!(
+                "timeout callback must be callable, got {}",
+                other.type_name()
+            ),
             line,
             col,
         )),
@@ -3121,38 +3126,38 @@ fn start_continuation_method_call(
         }
     };
 
-    let method = match (receiver, method) {
-        (Value::List(items), "map") => MethodContinuationKind::ListMap {
+    let method = match (receiver, crate::hash::h(method)) {
+        (Value::List(items), h) if h == crate::hash::h("map") => MethodContinuationKind::ListMap {
             func,
             items,
             index: 0,
             result: Vec::new(),
         },
-        (Value::List(items), "filter") => MethodContinuationKind::ListFilter {
+        (Value::List(items), h) if h == crate::hash::h("filter") => MethodContinuationKind::ListFilter {
             func,
             items,
             index: 0,
             result: Vec::new(),
         },
-        (Value::List(items), "any") => MethodContinuationKind::ListAny {
+        (Value::List(items), h) if h == crate::hash::h("any") => MethodContinuationKind::ListAny {
             func,
             items,
             index: 0,
             found: false,
         },
-        (Value::List(items), "all") => MethodContinuationKind::ListAll {
+        (Value::List(items), h) if h == crate::hash::h("all") => MethodContinuationKind::ListAll {
             func,
             items,
             index: 0,
             failed: false,
         },
-        (Value::List(items), "flat_map") => MethodContinuationKind::ListFlatMap {
+        (Value::List(items), h) if h == crate::hash::h("flat_map") => MethodContinuationKind::ListFlatMap {
             func,
             items,
             index: 0,
             result: Vec::new(),
         },
-        (Value::List(items), "fold") => {
+        (Value::List(items), h) if h == crate::hash::h("fold") => {
             let init = args.first().cloned().unwrap_or(Value::Unit);
             let func = args.get(1).cloned().ok_or_else(|| {
                 IonError::runtime("fold requires an initial value and a function", line, col)
@@ -3168,7 +3173,7 @@ fn start_continuation_method_call(
                 acc: init,
             }
         }
-        (Value::List(items), "reduce") => {
+        (Value::List(items), h) if h == crate::hash::h("reduce") => {
             let Some((first, rest)) = items.split_first() else {
                 return StepOutcome::InstructionError(IonError::runtime(
                     "reduce on empty list",
@@ -3183,7 +3188,7 @@ fn start_continuation_method_call(
                 acc: first.clone(),
             }
         }
-        (Value::List(items), "sort_by") => MethodContinuationKind::ListSortBy {
+        (Value::List(items), h) if h == crate::hash::h("sort_by") => MethodContinuationKind::ListSortBy {
             func,
             items,
             pass: 0,
@@ -3319,7 +3324,7 @@ fn start_continuation_method_call(
             started: false,
             after: MethodSingleCallbackAfter::WrapSome,
         },
-        (Value::Option(None), "map" | "and_then") => {
+        (Value::Option(None), h) if h == crate::hash::h("map") || h == crate::hash::h("and_then") => {
             cont.stack.push(Value::Option(None));
             return StepOutcome::Continue;
         }
@@ -3333,7 +3338,7 @@ fn start_continuation_method_call(
             cont.stack.push(Value::Option(Some(value)));
             return StepOutcome::Continue;
         }
-        (Value::Option(None), "or_else") => MethodContinuationKind::SingleCallback {
+        (Value::Option(None), h) if h == crate::hash::h("or_else") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![],
             started: false,
@@ -3343,7 +3348,7 @@ fn start_continuation_method_call(
             cont.stack.push(*value);
             return StepOutcome::Continue;
         }
-        (Value::Option(None), "unwrap_or_else") => MethodContinuationKind::SingleCallback {
+        (Value::Option(None), h) if h == crate::hash::h("unwrap_or_else") => MethodContinuationKind::SingleCallback {
             func,
             args: vec![],
             started: false,
@@ -3393,7 +3398,7 @@ fn start_continuation_method_call(
                 after: MethodSingleCallbackAfter::Direct,
             }
         }
-        (Value::Cell(cell), "update") => {
+        (Value::Cell(cell), h) if h == crate::hash::h("update") => {
             let current = cell.lock().unwrap().clone();
             MethodContinuationKind::SingleCallback {
                 func,
@@ -3402,13 +3407,13 @@ fn start_continuation_method_call(
                 after: MethodSingleCallbackAfter::CellSet(cell),
             }
         }
-        (Value::Dict(map), "map") => MethodContinuationKind::DictMap {
+        (Value::Dict(map), h) if h == crate::hash::h("map") => MethodContinuationKind::DictMap {
             func,
             entries: map.into_iter().collect(),
             index: 0,
             result: IndexMap::new(),
         },
-        (Value::Dict(map), "filter") => MethodContinuationKind::DictFilter {
+        (Value::Dict(map), h) if h == crate::hash::h("filter") => MethodContinuationKind::DictFilter {
             func,
             entries: map.into_iter().collect(),
             index: 0,
@@ -3879,9 +3884,11 @@ fn scaffold_call_method(
             start,
             end,
             inclusive,
-        } => match method {
-            "len" => Ok(Value::Int(Value::range_len(*start, *end, *inclusive))),
-            "contains" => {
+        } => match crate::hash::h(method) {
+            h if h == crate::hash::h("len") => {
+                Ok(Value::Int(Value::range_len(*start, *end, *inclusive)))
+            }
+            h if h == crate::hash::h("contains") => {
                 let value = args
                     .first()
                     .and_then(Value::as_int)
@@ -3893,15 +3900,17 @@ fn scaffold_call_method(
                 };
                 Ok(Value::Bool(in_range))
             }
-            "to_list" => Ok(Value::List(Value::range_to_list(*start, *end, *inclusive))),
+            h if h == crate::hash::h("to_list") => {
+                Ok(Value::List(Value::range_to_list(*start, *end, *inclusive)))
+            }
             _ => {
                 let items = Value::range_to_list(*start, *end, *inclusive);
                 scaffold_list_method(&items, method, args, line, col)
             }
         },
-        Value::Cell(cell) => match method {
-            "get" => Ok(cell.lock().unwrap().clone()),
-            "set" => {
+        Value::Cell(cell) => match crate::hash::h(method) {
+            h if h == crate::hash::h("get") => Ok(cell.lock().unwrap().clone()),
+            h if h == crate::hash::h("set") => {
                 let value = args.first().cloned().ok_or_else(|| {
                     IonError::runtime("cell.set() requires 1 argument", line, col)
                 })?;
@@ -3967,8 +3976,8 @@ fn call_native_async_sender_method(
     task: Option<TaskId>,
     host_futures: Option<&mut HostFutureTable>,
 ) -> StepOutcome {
-    match method {
-        "send" => {
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("send") => {
             let Some(value) = args.first().cloned() else {
                 return StepOutcome::InstructionError(IonError::runtime(
                     "send requires a value",
@@ -3996,7 +4005,7 @@ fn call_native_async_sender_method(
                 }),
             )
         }
-        "close" => {
+        h if h == crate::hash::h("close") => {
             sender.close();
             cont.stack.push(Value::Unit);
             StepOutcome::Continue
@@ -4019,8 +4028,8 @@ fn call_native_async_receiver_method(
     task: Option<TaskId>,
     host_futures: Option<&mut HostFutureTable>,
 ) -> StepOutcome {
-    match method {
-        "recv" => suspend_native_channel_future(
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("recv") => suspend_native_channel_future(
             task,
             host_futures,
             line,
@@ -4032,7 +4041,7 @@ fn call_native_async_receiver_method(
                 ))
             }),
         ),
-        "try_recv" => match receiver.inner.try_lock() {
+        h if h == crate::hash::h("try_recv") => match receiver.inner.try_lock() {
             Ok(mut receiver) => match receiver.try_recv() {
                 Ok(value) => {
                     cont.stack.push(Value::Option(Some(Box::new(value))));
@@ -4053,7 +4062,7 @@ fn call_native_async_receiver_method(
                 col,
             )),
         },
-        "recv_timeout" => {
+        h if h == crate::hash::h("recv_timeout") => {
             let Some(ms) = args.first().and_then(Value::as_int) else {
                 return StepOutcome::InstructionError(IonError::runtime(
                     "recv_timeout requires int (ms)",
@@ -4078,7 +4087,7 @@ fn call_native_async_receiver_method(
                 }),
             )
         }
-        "close" => suspend_native_channel_future(
+        h if h == crate::hash::h("close") => suspend_native_channel_future(
             task,
             host_futures,
             line,
@@ -4123,25 +4132,35 @@ fn suspend_native_channel_future(
 }
 
 fn scaffold_is_closure_method(receiver: &Value, method: &str) -> bool {
-    matches!(
-        (receiver, method),
-        (
-            Value::List(_),
-            "map" | "filter" | "fold" | "reduce" | "flat_map" | "any" | "all" | "sort_by"
-        ) | (
-            Value::Range { .. },
-            "map" | "filter" | "fold" | "reduce" | "flat_map" | "any" | "all" | "sort_by"
-        ) | (Value::Dict(_), "map" | "filter")
-            | (
-                Value::Option(_),
-                "map" | "and_then" | "or_else" | "unwrap_or_else"
-            )
-            | (
-                Value::Result(_),
-                "map" | "map_err" | "and_then" | "or_else" | "unwrap_or_else"
-            )
-            | (Value::Cell(_), "update")
-    )
+    let h = crate::hash::h(method);
+    match receiver {
+        Value::List(_) | Value::Range { .. } => {
+            h == crate::hash::h("map")
+                || h == crate::hash::h("filter")
+                || h == crate::hash::h("fold")
+                || h == crate::hash::h("reduce")
+                || h == crate::hash::h("flat_map")
+                || h == crate::hash::h("any")
+                || h == crate::hash::h("all")
+                || h == crate::hash::h("sort_by")
+        }
+        Value::Dict(_) => h == crate::hash::h("map") || h == crate::hash::h("filter"),
+        Value::Option(_) => {
+            h == crate::hash::h("map")
+                || h == crate::hash::h("and_then")
+                || h == crate::hash::h("or_else")
+                || h == crate::hash::h("unwrap_or_else")
+        }
+        Value::Result(_) => {
+            h == crate::hash::h("map")
+                || h == crate::hash::h("map_err")
+                || h == crate::hash::h("and_then")
+                || h == crate::hash::h("or_else")
+                || h == crate::hash::h("unwrap_or_else")
+        }
+        Value::Cell(_) => h == crate::hash::h("update"),
+        _ => false,
+    }
 }
 
 fn scaffold_list_method(
@@ -4151,14 +4170,14 @@ fn scaffold_list_method(
     line: usize,
     col: usize,
 ) -> Result<Value, IonError> {
-    match method {
-        "len" => Ok(Value::Int(items.len() as i64)),
-        "push" => {
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("len") => Ok(Value::Int(items.len() as i64)),
+        h if h == crate::hash::h("push") => {
             let mut new = items.to_vec();
             new.extend(args.iter().cloned());
             Ok(Value::List(new))
         }
-        "pop" => {
+        h if h == crate::hash::h("pop") => {
             if items.is_empty() {
                 Ok(Value::Tuple(vec![Value::List(vec![]), Value::Option(None)]))
             } else {
@@ -4170,16 +4189,16 @@ fn scaffold_list_method(
                 ]))
             }
         }
-        "contains" => Ok(Value::Bool(
+        h if h == crate::hash::h("contains") => Ok(Value::Bool(
             args.first().is_some_and(|arg| items.contains(arg)),
         )),
-        "is_empty" => Ok(Value::Bool(items.is_empty())),
-        "reverse" => {
+        h if h == crate::hash::h("is_empty") => Ok(Value::Bool(items.is_empty())),
+        h if h == crate::hash::h("reverse") => {
             let mut new = items.to_vec();
             new.reverse();
             Ok(Value::List(new))
         }
-        "join" => {
+        h if h == crate::hash::h("join") => {
             let sep = args.first().and_then(Value::as_str).unwrap_or("");
             Ok(Value::Str(
                 items
@@ -4189,25 +4208,25 @@ fn scaffold_list_method(
                     .join(sep),
             ))
         }
-        "enumerate" => Ok(Value::List(
+        h if h == crate::hash::h("enumerate") => Ok(Value::List(
             items
                 .iter()
                 .enumerate()
                 .map(|(index, value)| Value::Tuple(vec![Value::Int(index as i64), value.clone()]))
                 .collect(),
         )),
-        "first" => Ok(items
+        h if h == crate::hash::h("first") => Ok(items
             .first()
             .cloned()
             .map(|value| Value::Option(Some(Box::new(value))))
             .unwrap_or(Value::Option(None))),
-        "last" => Ok(items
+        h if h == crate::hash::h("last") => Ok(items
             .last()
             .cloned()
             .map(|value| Value::Option(Some(Box::new(value))))
             .unwrap_or(Value::Option(None))),
-        "sort" => scaffold_sort_list(items, line, col),
-        "flatten" => {
+        h if h == crate::hash::h("sort") => scaffold_sort_list(items, line, col),
+        h if h == crate::hash::h("flatten") => {
             let mut result = Vec::new();
             for item in items {
                 if let Value::List(inner) = item {
@@ -4218,7 +4237,7 @@ fn scaffold_list_method(
             }
             Ok(Value::List(result))
         }
-        "zip" => {
+        h if h == crate::hash::h("zip") => {
             let Some(Value::List(other)) = args.first() else {
                 return Err(IonError::type_err(
                     "zip requires a list argument",
@@ -4234,7 +4253,7 @@ fn scaffold_list_method(
                     .collect(),
             ))
         }
-        "index" => {
+        h if h == crate::hash::h("index") => {
             let target = args
                 .first()
                 .ok_or_else(|| IonError::type_err("index requires an argument", line, col))?;
@@ -4243,7 +4262,7 @@ fn scaffold_list_method(
                 None => Value::Option(None),
             })
         }
-        "count" => {
+        h if h == crate::hash::h("count") => {
             let target = args
                 .first()
                 .ok_or_else(|| IonError::type_err("count requires an argument", line, col))?;
@@ -4251,7 +4270,7 @@ fn scaffold_list_method(
                 items.iter().filter(|value| *value == target).count() as i64,
             ))
         }
-        "slice" => {
+        h if h == crate::hash::h("slice") => {
             let start = args.first().and_then(Value::as_int).unwrap_or(0) as usize;
             let end = args
                 .get(1)
@@ -4262,7 +4281,7 @@ fn scaffold_list_method(
                 items[start.min(items.len())..end.min(items.len())].to_vec(),
             ))
         }
-        "dedup" => {
+        h if h == crate::hash::h("dedup") => {
             let mut result = Vec::new();
             for item in items {
                 if result.last() != Some(item) {
@@ -4271,7 +4290,7 @@ fn scaffold_list_method(
             }
             Ok(Value::List(result))
         }
-        "unique" => {
+        h if h == crate::hash::h("unique") => {
             let mut seen = Vec::new();
             let mut result = Vec::new();
             for item in items {
@@ -4282,10 +4301,10 @@ fn scaffold_list_method(
             }
             Ok(Value::List(result))
         }
-        "min" => scaffold_min_max_list(items, true, line, col),
-        "max" => scaffold_min_max_list(items, false, line, col),
-        "sum" => scaffold_sum_list(items, line, col),
-        "window" => {
+        h if h == crate::hash::h("min") => scaffold_min_max_list(items, true, line, col),
+        h if h == crate::hash::h("max") => scaffold_min_max_list(items, false, line, col),
+        h if h == crate::hash::h("sum") => scaffold_sum_list(items, line, col),
+        h if h == crate::hash::h("window") => {
             let size = args
                 .first()
                 .and_then(Value::as_int)
@@ -4301,7 +4320,7 @@ fn scaffold_list_method(
                     .collect(),
             ))
         }
-        "chunk" => {
+        h if h == crate::hash::h("chunk") => {
             let size = args
                 .first()
                 .and_then(Value::as_int)
@@ -4332,12 +4351,12 @@ fn scaffold_tuple_method(
     line: usize,
     col: usize,
 ) -> Result<Value, IonError> {
-    match method {
-        "len" => Ok(Value::Int(items.len() as i64)),
-        "contains" => Ok(Value::Bool(
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("len") => Ok(Value::Int(items.len() as i64)),
+        h if h == crate::hash::h("contains") => Ok(Value::Bool(
             args.first().is_some_and(|arg| items.contains(arg)),
         )),
-        "to_list" => Ok(Value::List(items.to_vec())),
+        h if h == crate::hash::h("to_list") => Ok(Value::List(items.to_vec())),
         _ => Err(IonError::type_err(
             format!("tuple has no method '{}'", method),
             line,
@@ -4353,12 +4372,12 @@ fn scaffold_str_method(
     line: usize,
     col: usize,
 ) -> Result<Value, IonError> {
-    match method {
-        "len" => Ok(Value::Int(value.len() as i64)),
-        "to_upper" => Ok(Value::Str(value.to_uppercase())),
-        "to_lower" => Ok(Value::Str(value.to_lowercase())),
-        "trim" => Ok(Value::Str(value.trim().to_string())),
-        "contains" => match args.first() {
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("len") => Ok(Value::Int(value.len() as i64)),
+        h if h == crate::hash::h("to_upper") => Ok(Value::Str(value.to_uppercase())),
+        h if h == crate::hash::h("to_lower") => Ok(Value::Str(value.to_lowercase())),
+        h if h == crate::hash::h("trim") => Ok(Value::Str(value.trim().to_string())),
+        h if h == crate::hash::h("contains") => match args.first() {
             Some(Value::Str(needle)) => Ok(Value::Bool(value.contains(needle.as_str()))),
             Some(Value::Int(code)) => {
                 let ch = char::from_u32(*code as u32)
@@ -4371,37 +4390,37 @@ fn scaffold_str_method(
                 col,
             )),
         },
-        "starts_with" => Ok(Value::Bool(
+        h if h == crate::hash::h("starts_with") => Ok(Value::Bool(
             value.starts_with(args.first().and_then(Value::as_str).unwrap_or("")),
         )),
-        "ends_with" => Ok(Value::Bool(
+        h if h == crate::hash::h("ends_with") => Ok(Value::Bool(
             value.ends_with(args.first().and_then(Value::as_str).unwrap_or("")),
         )),
-        "split" => Ok(Value::List(
+        h if h == crate::hash::h("split") => Ok(Value::List(
             value
                 .split(args.first().and_then(Value::as_str).unwrap_or(" "))
                 .map(|part| Value::Str(part.to_string()))
                 .collect(),
         )),
-        "replace" => Ok(Value::Str(value.replace(
+        h if h == crate::hash::h("replace") => Ok(Value::Str(value.replace(
             args.first().and_then(Value::as_str).unwrap_or(""),
             args.get(1).and_then(Value::as_str).unwrap_or(""),
         ))),
-        "chars" => Ok(Value::List(
+        h if h == crate::hash::h("chars") => Ok(Value::List(
             value.chars().map(|ch| Value::Str(ch.to_string())).collect(),
         )),
-        "char_len" => Ok(Value::Int(value.chars().count() as i64)),
-        "is_empty" => Ok(Value::Bool(value.is_empty())),
-        "trim_start" => Ok(Value::Str(value.trim_start().to_string())),
-        "trim_end" => Ok(Value::Str(value.trim_end().to_string())),
-        "repeat" => {
+        h if h == crate::hash::h("char_len") => Ok(Value::Int(value.chars().count() as i64)),
+        h if h == crate::hash::h("is_empty") => Ok(Value::Bool(value.is_empty())),
+        h if h == crate::hash::h("trim_start") => Ok(Value::Str(value.trim_start().to_string())),
+        h if h == crate::hash::h("trim_end") => Ok(Value::Str(value.trim_end().to_string())),
+        h if h == crate::hash::h("repeat") => {
             let count = args
                 .first()
                 .and_then(Value::as_int)
                 .ok_or_else(|| IonError::type_err("repeat requires int argument", line, col))?;
             Ok(Value::Str(value.repeat(count as usize)))
         }
-        "find" => {
+        h if h == crate::hash::h("find") => {
             let needle = args.first().and_then(Value::as_str).unwrap_or("");
             Ok(match value.find(needle) {
                 Some(byte_idx) => {
@@ -4411,33 +4430,33 @@ fn scaffold_str_method(
                 None => Value::Option(None),
             })
         }
-        "to_int" => Ok(match value.trim().parse::<i64>() {
+        h if h == crate::hash::h("to_int") => Ok(match value.trim().parse::<i64>() {
             Ok(number) => Value::Result(Ok(Box::new(Value::Int(number)))),
             Err(err) => Value::Result(Err(Box::new(Value::Str(err.to_string())))),
         }),
-        "to_float" => Ok(match value.trim().parse::<f64>() {
+        h if h == crate::hash::h("to_float") => Ok(match value.trim().parse::<f64>() {
             Ok(number) => Value::Result(Ok(Box::new(Value::Float(number)))),
             Err(err) => Value::Result(Err(Box::new(Value::Str(err.to_string())))),
         }),
-        "bytes" => Ok(Value::List(
+        h if h == crate::hash::h("bytes") => Ok(Value::List(
             value.bytes().map(|byte| Value::Int(byte as i64)).collect(),
         )),
-        "strip_prefix" => {
+        h if h == crate::hash::h("strip_prefix") => {
             let prefix = args.first().and_then(Value::as_str).unwrap_or("");
             Ok(Value::Str(
                 value.strip_prefix(prefix).unwrap_or(value).to_string(),
             ))
         }
-        "strip_suffix" => {
+        h if h == crate::hash::h("strip_suffix") => {
             let suffix = args.first().and_then(Value::as_str).unwrap_or("");
             Ok(Value::Str(
                 value.strip_suffix(suffix).unwrap_or(value).to_string(),
             ))
         }
-        "pad_start" => scaffold_pad_string(value, args, true, line, col),
-        "pad_end" => scaffold_pad_string(value, args, false, line, col),
-        "reverse" => Ok(Value::Str(value.chars().rev().collect())),
-        "slice" => {
+        h if h == crate::hash::h("pad_start") => scaffold_pad_string(value, args, true, line, col),
+        h if h == crate::hash::h("pad_end") => scaffold_pad_string(value, args, false, line, col),
+        h if h == crate::hash::h("reverse") => Ok(Value::Str(value.chars().rev().collect())),
+        h if h == crate::hash::h("slice") => {
             let chars: Vec<char> = value.chars().collect();
             let start = args.first().and_then(Value::as_int).unwrap_or(0) as usize;
             let end = args
@@ -4466,16 +4485,16 @@ fn scaffold_dict_method(
     line: usize,
     col: usize,
 ) -> Result<Value, IonError> {
-    match method {
-        "len" => Ok(Value::Int(map.len() as i64)),
-        "keys" => Ok(Value::List(
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("len") => Ok(Value::Int(map.len() as i64)),
+        h if h == crate::hash::h("keys") => Ok(Value::List(
             map.keys().map(|key| Value::Str(key.clone())).collect(),
         )),
-        "values" => Ok(Value::List(map.values().cloned().collect())),
-        "contains_key" => Ok(Value::Bool(
+        h if h == crate::hash::h("values") => Ok(Value::List(map.values().cloned().collect())),
+        h if h == crate::hash::h("contains_key") => Ok(Value::Bool(
             map.contains_key(args.first().and_then(Value::as_str).unwrap_or("")),
         )),
-        "get" => {
+        h if h == crate::hash::h("get") => {
             let key = args.first().and_then(Value::as_str).unwrap_or("");
             Ok(map
                 .get(key)
@@ -4483,26 +4502,26 @@ fn scaffold_dict_method(
                 .map(|value| Value::Option(Some(Box::new(value))))
                 .unwrap_or(Value::Option(None)))
         }
-        "is_empty" => Ok(Value::Bool(map.is_empty())),
-        "entries" => Ok(Value::List(
+        h if h == crate::hash::h("is_empty") => Ok(Value::Bool(map.is_empty())),
+        h if h == crate::hash::h("entries") => Ok(Value::List(
             map.iter()
                 .map(|(key, value)| Value::Tuple(vec![Value::Str(key.clone()), value.clone()]))
                 .collect(),
         )),
-        "insert" => {
+        h if h == crate::hash::h("insert") => {
             let key = args.first().and_then(Value::as_str).unwrap_or("");
             let value = args.get(1).cloned().unwrap_or(Value::Unit);
             let mut new = map.clone();
             new.insert(key.to_string(), value);
             Ok(Value::Dict(new))
         }
-        "remove" => {
+        h if h == crate::hash::h("remove") => {
             let key = args.first().and_then(Value::as_str).unwrap_or("");
             let mut new = map.clone();
             new.shift_remove(key);
             Ok(Value::Dict(new))
         }
-        "merge" | "update" => {
+        h if h == crate::hash::h("merge") || h == crate::hash::h("update") => {
             let Some(Value::Dict(other)) = args.first() else {
                 return Err(IonError::type_err(
                     format!("{} requires a dict argument", method),
@@ -4516,7 +4535,7 @@ fn scaffold_dict_method(
             }
             Ok(Value::Dict(new))
         }
-        "keys_of" => {
+        h if h == crate::hash::h("keys_of") => {
             let target = args
                 .first()
                 .ok_or_else(|| IonError::type_err("keys_of requires an argument", line, col))?;
@@ -4527,7 +4546,7 @@ fn scaffold_dict_method(
                     .collect(),
             ))
         }
-        "zip" => {
+        h if h == crate::hash::h("zip") => {
             let Some(Value::Dict(other)) = args.first() else {
                 return Err(IonError::type_err(
                     "zip requires a dict argument",
@@ -4561,17 +4580,17 @@ fn scaffold_bytes_method(
     line: usize,
     col: usize,
 ) -> Result<Value, IonError> {
-    match method {
-        "len" => Ok(Value::Int(bytes.len() as i64)),
-        "is_empty" => Ok(Value::Bool(bytes.is_empty())),
-        "contains" => {
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("len") => Ok(Value::Int(bytes.len() as i64)),
+        h if h == crate::hash::h("is_empty") => Ok(Value::Bool(bytes.is_empty())),
+        h if h == crate::hash::h("contains") => {
             let byte = args
                 .first()
                 .and_then(Value::as_int)
                 .ok_or_else(|| IonError::type_err("bytes.contains() requires an int", line, col))?;
             Ok(Value::Bool(bytes.contains(&(byte as u8))))
         }
-        "slice" => {
+        h if h == crate::hash::h("slice") => {
             let start = args.first().and_then(Value::as_int).unwrap_or(0) as usize;
             let end = args
                 .get(1)
@@ -4582,17 +4601,17 @@ fn scaffold_bytes_method(
                 bytes[start.min(bytes.len())..end.min(bytes.len())].to_vec(),
             ))
         }
-        "to_list" => Ok(Value::List(
+        h if h == crate::hash::h("to_list") => Ok(Value::List(
             bytes.iter().map(|byte| Value::Int(*byte as i64)).collect(),
         )),
-        "to_str" => Ok(match std::str::from_utf8(bytes) {
+        h if h == crate::hash::h("to_str") => Ok(match std::str::from_utf8(bytes) {
             Ok(value) => Value::Result(Ok(Box::new(Value::Str(value.to_string())))),
             Err(err) => Value::Result(Err(Box::new(Value::Str(err.to_string())))),
         }),
-        "to_hex" => Ok(Value::Str(
+        h if h == crate::hash::h("to_hex") => Ok(Value::Str(
             bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
         )),
-        "find" => {
+        h if h == crate::hash::h("find") => {
             let needle = args
                 .first()
                 .and_then(Value::as_int)
@@ -4602,12 +4621,12 @@ fn scaffold_bytes_method(
                 None => Value::Option(None),
             })
         }
-        "reverse" => {
+        h if h == crate::hash::h("reverse") => {
             let mut reversed = bytes.to_vec();
             reversed.reverse();
             Ok(Value::Bytes(reversed))
         }
-        "push" => {
+        h if h == crate::hash::h("push") => {
             let byte = args
                 .first()
                 .and_then(Value::as_int)
@@ -4631,13 +4650,13 @@ fn scaffold_set_method(
     line: usize,
     col: usize,
 ) -> Result<Value, IonError> {
-    match method {
-        "len" => Ok(Value::Int(items.len() as i64)),
-        "contains" => Ok(Value::Bool(
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("len") => Ok(Value::Int(items.len() as i64)),
+        h if h == crate::hash::h("contains") => Ok(Value::Bool(
             args.first().is_some_and(|arg| items.contains(arg)),
         )),
-        "is_empty" => Ok(Value::Bool(items.is_empty())),
-        "add" => {
+        h if h == crate::hash::h("is_empty") => Ok(Value::Bool(items.is_empty())),
+        h if h == crate::hash::h("add") => {
             let value = args
                 .first()
                 .ok_or_else(|| IonError::type_err("set.add requires an argument", line, col))?;
@@ -4647,7 +4666,7 @@ fn scaffold_set_method(
             }
             Ok(Value::Set(new))
         }
-        "remove" => {
+        h if h == crate::hash::h("remove") => {
             let value = args
                 .first()
                 .ok_or_else(|| IonError::type_err("set.remove requires an argument", line, col))?;
@@ -4659,7 +4678,7 @@ fn scaffold_set_method(
                     .collect(),
             ))
         }
-        "union" => {
+        h if h == crate::hash::h("union") => {
             let Some(Value::Set(other)) = args.first() else {
                 return Err(IonError::type_err(
                     "union requires a set argument",
@@ -4675,7 +4694,7 @@ fn scaffold_set_method(
             }
             Ok(Value::Set(new))
         }
-        "intersection" => {
+        h if h == crate::hash::h("intersection") => {
             let Some(Value::Set(other)) = args.first() else {
                 return Err(IonError::type_err(
                     "intersection requires a set argument",
@@ -4691,7 +4710,7 @@ fn scaffold_set_method(
                     .collect(),
             ))
         }
-        "difference" => {
+        h if h == crate::hash::h("difference") => {
             let Some(Value::Set(other)) = args.first() else {
                 return Err(IonError::type_err(
                     "difference requires a set argument",
@@ -4707,7 +4726,7 @@ fn scaffold_set_method(
                     .collect(),
             ))
         }
-        "to_list" => Ok(Value::List(items.to_vec())),
+        h if h == crate::hash::h("to_list") => Ok(Value::List(items.to_vec())),
         _ => Err(IonError::type_err(
             format!("set has no method '{}'", method),
             line,
@@ -4726,18 +4745,18 @@ fn scaffold_option_method(
     let Value::Option(option) = value else {
         return Err(IonError::type_err("expected Option", line, col));
     };
-    match method {
-        "is_some" => Ok(Value::Bool(option.is_some())),
-        "is_none" => Ok(Value::Bool(option.is_none())),
-        "unwrap" => match option {
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("is_some") => Ok(Value::Bool(option.is_some())),
+        h if h == crate::hash::h("is_none") => Ok(Value::Bool(option.is_none())),
+        h if h == crate::hash::h("unwrap") => match option {
             Some(value) => Ok(*value.clone()),
             None => Err(IonError::runtime("called unwrap on None", line, col)),
         },
-        "unwrap_or" => Ok(option
+        h if h == crate::hash::h("unwrap_or") => Ok(option
             .as_ref()
             .map(|value| *value.clone())
             .unwrap_or_else(|| args.first().cloned().unwrap_or(Value::Unit))),
-        "expect" => match option {
+        h if h == crate::hash::h("expect") => match option {
             Some(value) => Ok(*value.clone()),
             None => Err(IonError::runtime(
                 args.first()
@@ -4766,10 +4785,10 @@ fn scaffold_result_method(
     let Value::Result(result) = value else {
         return Err(IonError::type_err("expected Result", line, col));
     };
-    match method {
-        "is_ok" => Ok(Value::Bool(result.is_ok())),
-        "is_err" => Ok(Value::Bool(result.is_err())),
-        "unwrap" => match result {
+    match crate::hash::h(method) {
+        h if h == crate::hash::h("is_ok") => Ok(Value::Bool(result.is_ok())),
+        h if h == crate::hash::h("is_err") => Ok(Value::Bool(result.is_err())),
+        h if h == crate::hash::h("unwrap") => match result {
             Ok(value) => Ok(*value.clone()),
             Err(err) => Err(IonError::runtime(
                 format!("called unwrap on Err: {}", err),
@@ -4777,11 +4796,11 @@ fn scaffold_result_method(
                 col,
             )),
         },
-        "unwrap_or" => Ok(match result {
+        h if h == crate::hash::h("unwrap_or") => Ok(match result {
             Ok(value) => *value.clone(),
             Err(_) => args.first().cloned().unwrap_or(Value::Unit),
         }),
-        "expect" => match result {
+        h if h == crate::hash::h("expect") => match result {
             Ok(value) => Ok(*value.clone()),
             Err(err) => Err(IonError::runtime(
                 format!(
@@ -4993,23 +5012,23 @@ fn scaffold_check_type(
     col: usize,
 ) -> Result<(), IonError> {
     let ok = match type_name {
-        "int" => matches!(value, Value::Int(_)),
-        "float" => matches!(value, Value::Float(_)),
-        "bool" => matches!(value, Value::Bool(_)),
-        "string" => matches!(value, Value::Str(_)),
-        "bytes" => matches!(value, Value::Bytes(_)),
-        "list" => matches!(value, Value::List(_)),
-        "dict" => matches!(value, Value::Dict(_)),
-        "tuple" => matches!(value, Value::Tuple(_)),
-        "set" => matches!(value, Value::Set(_)),
-        "fn" => match value {
+        h if h == crate::hash::h("int") => matches!(value, Value::Int(_)),
+        h if h == crate::hash::h("float") => matches!(value, Value::Float(_)),
+        h if h == crate::hash::h("bool") => matches!(value, Value::Bool(_)),
+        h if h == crate::hash::h("string") => matches!(value, Value::Str(_)),
+        h if h == crate::hash::h("bytes") => matches!(value, Value::Bytes(_)),
+        h if h == crate::hash::h("list") => matches!(value, Value::List(_)),
+        h if h == crate::hash::h("dict") => matches!(value, Value::Dict(_)),
+        h if h == crate::hash::h("tuple") => matches!(value, Value::Tuple(_)),
+        h if h == crate::hash::h("set") => matches!(value, Value::Set(_)),
+        h if h == crate::hash::h("fn") => match value {
             Value::Fn(_) | Value::BuiltinFn { .. } | Value::BuiltinClosure { .. } => true,
             #[cfg(feature = "async-runtime")]
             Value::AsyncBuiltinClosure { .. } => true,
             _ => false,
         },
-        "cell" => matches!(value, Value::Cell(_)),
-        "any" => true,
+        h if h == crate::hash::h("cell") => matches!(value, Value::Cell(_)),
+        h if h == crate::hash::h("any") => true,
         name if name.starts_with("Option") => matches!(value, Value::Option(_)),
         name if name.starts_with("Result") => matches!(value, Value::Result(_)),
         name if name.starts_with("list<") => matches!(value, Value::List(_)),
@@ -7557,10 +7576,7 @@ impl<'a> IonRuntime<'a> {
         let ready = self.host_futures.poll_ready(cx);
         debug_assert!(ready.is_empty(), "unexpected host future without VM task");
         let ready_timers = self.timers.poll_ready(cx);
-        debug_assert!(
-            ready_timers.is_empty(),
-            "unexpected timer without VM task"
-        );
+        debug_assert!(ready_timers.is_empty(), "unexpected timer without VM task");
 
         let source = self.source;
         let engine = self
@@ -7611,7 +7627,9 @@ impl<'a> IonRuntime<'a> {
         };
 
         match func {
-            Value::Fn(ion_fn) => spawned_ion_function_future(&self.chunks, cont, ion_fn, args, 0, 0),
+            Value::Fn(ion_fn) => {
+                spawned_ion_function_future(&self.chunks, cont, ion_fn, args, 0, 0)
+            }
             Value::AsyncBuiltinClosure { func: async_fn, .. } => Ok(async_fn.call(args)),
             Value::BuiltinFn { func: builtin, .. } => Ok(Box::pin(async move {
                 builtin(&args).map_err(|err| IonError::runtime(err, 0, 0))

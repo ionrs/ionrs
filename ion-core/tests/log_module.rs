@@ -154,9 +154,7 @@ fn set_level_and_level_round_trip() {
 fn set_level_rejects_unknown() {
     let h = RecordingHandler::new();
     let mut engine = engine_with(Arc::clone(&h));
-    let err = engine
-        .eval(r#"log::set_level("verbose");"#)
-        .unwrap_err();
+    let err = engine.eval(r#"log::set_level("verbose");"#).unwrap_err();
     assert!(
         err.message.contains("unknown level"),
         "got: {}",
@@ -177,9 +175,7 @@ fn arity_validation() {
     // Zero args
     assert!(engine.eval(r#"log::error();"#).is_err());
     // Three args (max is two: message, fields)
-    assert!(engine
-        .eval(r#"log::error("a", #{}, "extra");"#)
-        .is_err());
+    assert!(engine.eval(r#"log::error("a", #{}, "extra");"#).is_err());
     // Wrong fields type
     assert!(engine.eval(r#"log::error("a", 42);"#).is_err());
 }

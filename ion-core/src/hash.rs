@@ -90,15 +90,13 @@ macro_rules! h {
 #[macro_export]
 macro_rules! qh {
     ($mod:expr, $name:expr) => {{
-        const __ION_QHASH: u64 =
-            $crate::hash::mix($crate::hash::h($mod), $crate::hash::h($name));
+        const __ION_QHASH: u64 = $crate::hash::mix($crate::hash::h($mod), $crate::hash::h($name));
         #[cfg(debug_assertions)]
         {
             static __ION_REG: ::std::sync::Once = ::std::sync::Once::new();
             __ION_REG.call_once(|| {
-                let joined: &'static str = ::std::boxed::Box::leak(
-                    format!("{}::{}", $mod, $name).into_boxed_str(),
-                );
+                let joined: &'static str =
+                    ::std::boxed::Box::leak(format!("{}::{}", $mod, $name).into_boxed_str());
                 $crate::names::register(__ION_QHASH, joined);
             });
         }
@@ -128,18 +126,56 @@ mod tests {
     fn distinct_inputs_distinct_hashes() {
         // Sanity: identifiers we expect to use don't collide.
         let names = [
-            "Color", "Red", "Green", "Blue", "Custom",
-            "Shape", "Circle", "Rect", "Empty",
-            "math", "json", "io", "str", "log", "os", "path", "fs", "semver",
-            "abs", "min", "max", "sqrt", "pow", "floor", "ceil", "round",
-            "encode", "decode", "pretty", "msgpack_encode", "msgpack_decode",
-            "join", "parse", "format", "compare", "eq", "lt", "gt", "lte", "gte",
+            "Color",
+            "Red",
+            "Green",
+            "Blue",
+            "Custom",
+            "Shape",
+            "Circle",
+            "Rect",
+            "Empty",
+            "math",
+            "json",
+            "io",
+            "str",
+            "log",
+            "os",
+            "path",
+            "fs",
+            "semver",
+            "abs",
+            "min",
+            "max",
+            "sqrt",
+            "pow",
+            "floor",
+            "ceil",
+            "round",
+            "encode",
+            "decode",
+            "pretty",
+            "msgpack_encode",
+            "msgpack_decode",
+            "join",
+            "parse",
+            "format",
+            "compare",
+            "eq",
+            "lt",
+            "gt",
+            "lte",
+            "gte",
         ];
         let mut hashes: Vec<u64> = names.iter().map(|n| h(n)).collect();
         hashes.sort();
         let len_before = hashes.len();
         hashes.dedup();
-        assert_eq!(hashes.len(), len_before, "unexpected collision in stdlib name set");
+        assert_eq!(
+            hashes.len(),
+            len_before,
+            "unexpected collision in stdlib name set"
+        );
     }
 
     #[test]

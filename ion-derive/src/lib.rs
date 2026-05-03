@@ -54,13 +54,12 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
     // diagnostic output render readably without a sidecar. Gated on
     // `cfg(debug_assertions)` of the *user* crate, so release builds
     // contain neither the literal strings nor the registration call.
-    let register_pairs = std::iter::once(quote! { (#type_hash, #name_str) })
-        .chain(
-            field_hashes
-                .iter()
-                .zip(field_name_strs.iter())
-                .map(|(fh, fname)| quote! { (#fh, #fname) }),
-        );
+    let register_pairs = std::iter::once(quote! { (#type_hash, #name_str) }).chain(
+        field_hashes
+            .iter()
+            .zip(field_name_strs.iter())
+            .map(|(fh, fname)| quote! { (#fh, #fname) }),
+    );
     let register_names_block = quote! {
         #[cfg(debug_assertions)]
         {
@@ -73,11 +72,14 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
         }
     };
 
-    let to_ion_fields = field_names.iter().zip(field_hashes.iter()).map(|(ident, fh)| {
-        quote! {
-            fields.insert(#fh, ion_core::host_types::IonType::to_ion(&self.#ident));
-        }
-    });
+    let to_ion_fields = field_names
+        .iter()
+        .zip(field_hashes.iter())
+        .map(|(ident, fh)| {
+            quote! {
+                fields.insert(#fh, ion_core::host_types::IonType::to_ion(&self.#ident));
+            }
+        });
 
     let from_ion_fields = field_names
         .iter()
@@ -86,7 +88,16 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
             quote! {
                 #ident: {
                     let v = fields.get(&#fh)
-                        .ok_or_else(|| format!("missing field in {}", #name_str))?;
+                        .ok_or_else(|| {
+                            #[cfg(debug_assertions)]
+                            {
+                                format!("missing field in {}", #name_str)
+                            }
+                            #[cfg(not(debug_assertions))]
+                            {
+                                format!("missing field in host struct #{:016x}", #type_hash)
+                            }
+                        })?;
                     ion_core::host_types::IonType::from_ion(v)?
                 },
             }
@@ -110,13 +121,31 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
             fn from_ion(val: &ion_core::value::Value) -> Result<Self, String> {
                 if let ion_core::value::Value::HostStruct { type_hash, fields } = val {
                     if *type_hash != #type_hash {
-                        return Err(format!("expected {}, got different host struct", #name_str));
+                        return Err({
+                            #[cfg(debug_assertions)]
+                            {
+                                format!("expected {}, got different host struct", #name_str)
+                            }
+                            #[cfg(not(debug_assertions))]
+                            {
+                                format!("expected host struct #{:016x}, got different host struct", #type_hash)
+                            }
+                        });
                     }
                     Ok(Self {
                         #(#from_ion_fields)*
                     })
                 } else {
-                    Err(format!("expected {}, got {}", #name_str, val.type_name()))
+                    Err({
+                        #[cfg(debug_assertions)]
+                        {
+                            format!("expected {}, got {}", #name_str, val.type_name())
+                        }
+                        #[cfg(not(debug_assertions))]
+                        {
+                            format!("expected host struct #{:016x}, got {}", #type_hash, val.type_name())
+                        }
+                    })
                 }
             }
 
@@ -230,7 +259,16 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                 quote! {
                     #vh => {
                         if !data.is_empty() {
-                            return Err(format!("variant in {} takes no arguments", #name_str));
+                            return Err({
+                                #[cfg(debug_assertions)]
+                                {
+                                    format!("variant in {} takes no arguments", #name_str)
+                                }
+                                #[cfg(not(debug_assertions))]
+                                {
+                                    format!("variant in host enum #{:016x} takes no arguments", #type_hash)
+                                }
+                            });
                         }
                         Ok(#name::#vident)
                     }
@@ -248,7 +286,16 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                 quote! {
                     #vh => {
                         if data.len() != #count {
-                            return Err(format!("variant in {} expects {} arguments, got {}", #name_str, #count, data.len()));
+                            return Err({
+                                #[cfg(debug_assertions)]
+                                {
+                                    format!("variant in {} expects {} arguments, got {}", #name_str, #count, data.len())
+                                }
+                                #[cfg(not(debug_assertions))]
+                                {
+                                    format!("variant in host enum #{:016x} expects {} arguments, got {}", #type_hash, #count, data.len())
+                                }
+                            });
                         }
                         Ok(#name::#vident(#(#extracts),*))
                     }
@@ -270,14 +317,41 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
             fn from_ion(val: &ion_core::value::Value) -> Result<Self, String> {
                 if let ion_core::value::Value::HostEnum { enum_hash, variant_hash, data } = val {
                     if *enum_hash != #type_hash {
-                        return Err(format!("expected {}, got different host enum", #name_str));
+                        return Err({
+                            #[cfg(debug_assertions)]
+                            {
+                                format!("expected {}, got different host enum", #name_str)
+                            }
+                            #[cfg(not(debug_assertions))]
+                            {
+                                format!("expected host enum #{:016x}, got different host enum", #type_hash)
+                            }
+                        });
                     }
                     match *variant_hash {
                         #(#from_ion_arms)*
-                        _ => Err(format!("unknown variant in {}", #name_str)),
+                        _ => Err({
+                            #[cfg(debug_assertions)]
+                            {
+                                format!("unknown variant in {}", #name_str)
+                            }
+                            #[cfg(not(debug_assertions))]
+                            {
+                                format!("unknown variant in host enum #{:016x}", #type_hash)
+                            }
+                        }),
                     }
                 } else {
-                    Err(format!("expected {}, got {}", #name_str, val.type_name()))
+                    Err({
+                        #[cfg(debug_assertions)]
+                        {
+                            format!("expected {}, got {}", #name_str, val.type_name())
+                        }
+                        #[cfg(not(debug_assertions))]
+                        {
+                            format!("expected host enum #{:016x}, got {}", #type_hash, val.type_name())
+                        }
+                    })
                 }
             }
 

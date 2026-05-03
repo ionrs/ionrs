@@ -86,14 +86,20 @@ for (i, item) in enumerate(items) {
 
 ## Embedding in Rust
 
+Host-registered names — functions, modules, struct types, enum variants —
+are hashed at compile time via the `h!()` macro. The literal source text
+is consumed by `h!()`'s const evaluation; only the `u64` survives in the
+release binary. See [`HIDE_NAMES_PLAN.md`](HIDE_NAMES_PLAN.md) for the
+full design and `docs/embedding.md` for the migration guide.
+
 ```rust
-use ion_core::Engine;
+use ion_core::{Engine, h};
 use ion_core::value::Value;
 
 let mut engine = Engine::new();
 
 // Register host functions (plain fn pointer — no captures)
-engine.register_fn("fetch_score", |args: &[Value]| {
+engine.register_fn(h!("fetch_score"), |args: &[Value]| {
     let name = args[0].as_str().unwrap_or("unknown");
     Ok(Value::Int(match name {
         "alice" => 95,
@@ -105,7 +111,7 @@ engine.register_fn("fetch_score", |args: &[Value]| {
 // Register closures that capture host state (DB pool, shared counter, etc.)
 let hits = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 let hits_c = hits.clone();
-engine.register_closure("record_hit", move |_args| {
+engine.register_closure(h!("record_hit"), move |_args| {
     hits_c.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     Ok(Value::Unit)
 });
@@ -123,14 +129,14 @@ assert_eq!(result, Value::Str("A".to_string()));
 ### Register Modules
 
 ```rust
-use ion_core::module::Module;
+use ion_core::{h, module::Module};
 use ion_core::value::Value;
 
-let mut math = Module::new("math");
-math.register_fn("add", |args: &[Value]| {
+let mut math = Module::new(h!("math"));
+math.register_fn(h!("add"), |args: &[Value]| {
     Ok(Value::Int(args[0].as_int().unwrap() + args[1].as_int().unwrap()))
 });
-math.set("PI", Value::Float(std::f64::consts::PI));
+math.set(h!("PI"), Value::Float(std::f64::consts::PI));
 engine.register_module(math);
 
 // Scripts can use: math::add(1, 2) or `use math::*;`
@@ -139,8 +145,8 @@ engine.register_module(math);
 With `async-runtime`, modules can expose native async host functions too:
 
 ```rust
-let mut sensor = Module::new("sensor");
-sensor.register_async_fn("call", |args| async move {
+let mut sensor = Module::new(h!("sensor"));
+sensor.register_async_fn(h!("call"), |args| async move {
     Ok(Value::Int(args.len() as i64))
 });
 engine.register_module(sensor);

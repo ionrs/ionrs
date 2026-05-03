@@ -1,6 +1,6 @@
 [package]
 name = "ion-core"
-version = "0.7.1"
+version = "0.9.0"
 edition = "2021"
 description = "Embeddable scripting language with a bytecode VM"
 license = "MIT"
@@ -18,6 +18,7 @@ async-runtime = ["vm", "dep:tokio", "tokio/sync", "tokio/time", "tokio/rt", "tok
 vm = []
 msgpack = ["rmpv"]
 rewrite = []
+embedded-stdlib-docs = []
 
 # Compile-time cap for `log::*` callsites in scripts. The `vm` compiler strips
 # `log::trace`/`log::debug`/etc. calls (args and all) when the level is above
@@ -60,7 +61,7 @@ crossbeam-channel = { version = "0.5", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 indexmap = { version = "2", features = ["serde"] }
-ion-derive = { version = "0.7.0", path = "../ion-derive", optional = true }
+ion-derive = { version = "0.9.0", path = "../ion-derive", optional = true }
 rmpv = { version = "1", optional = true }
 tokio = { version = "1", features = ["time"], optional = true }
 tracing = { version = "0.1", optional = true, default-features = false, features = ["std", "attributes"] }

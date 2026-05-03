@@ -89,10 +89,14 @@ pub fn dump_sidecar_json() -> String {
     let guard = registry().read().unwrap_or_else(|e| e.into_inner());
     let map: serde_json::Map<String, serde_json::Value> = guard
         .iter()
-        .map(|(h, n)| (format!("{:016x}", h), serde_json::Value::String(n.to_string())))
+        .map(|(h, n)| {
+            (
+                format!("{:016x}", h),
+                serde_json::Value::String(n.to_string()),
+            )
+        })
         .collect();
-    serde_json::to_string(&serde_json::Value::Object(map))
-        .unwrap_or_else(|_| String::from("{}"))
+    serde_json::to_string(&serde_json::Value::Object(map)).unwrap_or_else(|_| String::from("{}"))
 }
 
 /// Load a sidecar JSON written by [`dump_sidecar_json`]. Names are leaked

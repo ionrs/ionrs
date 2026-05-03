@@ -1,10 +1,18 @@
 # Ion Embedding API
 
+> **0.9.0 breaking change.** Host-registered identifiers (function names,
+> module names, struct/field names, enum/variant names) are folded to
+> `u64` FNV-1a hashes at compile time via the `h!()` macro. The literal
+> source text never appears in the release binary's `.rodata`. See
+> [`HIDE_NAMES_PLAN.md`](../HIDE_NAMES_PLAN.md) for the full rationale.
+> Migration: replace each `register_fn("name", …)` with
+> `register_fn(h!("name"), …)`.
+
 ## Engine (`ion-core/src/engine.rs`)
 Primary public API for embedding Ion in Rust applications.
 
 ```rust
-use ion_core::engine::Engine;
+use ion_core::{h, engine::Engine};
 use ion_core::value::Value;
 
 let mut engine = Engine::new();
@@ -23,33 +31,33 @@ engine.set_typed("player", &player);       // T: IonType → Value
 engine.get_typed::<Player>("player")?;     // Value → T: IonType
 
 // Register Rust functions (plain fn pointer — no captures)
-engine.register_fn("square", |args| { ... });
+engine.register_fn(h!("square"), |args| { ... });
 
 // Register closures — can capture host state like database pools,
 // shared counters, etc.
 let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 let counter_c = counter.clone();
-engine.register_closure("tick", move |_args| {
+engine.register_closure(h!("tick"), move |_args| {
     counter_c.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     Ok(Value::Unit)
 });
 
 // Register native async host functions (feature: async-runtime).
-engine.register_async_fn("later", |args| async move {
+engine.register_async_fn(h!("later"), |args| async move {
     let ms = args.first().and_then(Value::as_int).unwrap_or(1);
     tokio::time::sleep(std::time::Duration::from_millis(ms as u64)).await;
     Ok(Value::Int(ms))
 });
 
 // Register modules (namespaced functions/values)
-let mut math = Module::new("math");
-math.register_fn("add", |args| { ... });
-math.set("PI", Value::Float(std::f64::consts::PI));
+let mut math = Module::new(h!("math"));
+math.register_fn(h!("add"), |args| { ... });
+math.set(h!("PI"), Value::Float(std::f64::consts::PI));
 engine.register_module(math);              // scripts use math::add() or `use math::*;`
 
 // Modules can also expose native async host functions (feature: async-runtime).
-let mut sensor = Module::new("sensor");
-sensor.register_async_fn("call", |args| async move {
+let mut sensor = Module::new(h!("sensor"));
+sensor.register_async_fn(h!("call"), |args| async move {
     // async host I/O
     Ok(Value::Int(args.len() as i64))
 });
@@ -57,12 +65,72 @@ engine.register_module(sensor);            // scripts use sensor::call(...) unde
 
 // Register host types
 engine.register_type::<Player>();          // via #[derive(IonType)]
-engine.register_struct(def);               // manual HostStructDef
-engine.register_enum(def);                 // manual HostEnumDef
+engine.register_struct(def);               // manual HostStructDef (uses h!() for name + fields)
+engine.register_enum(def);                 // manual HostEnumDef    (uses h!() for name + variants)
 
 // Execution limits
 engine.set_limits(Limits { max_depth: 100, max_iterations: 10000 });
 ```
+
+## Hash-based registration: `h!()` and `qh!()`
+
+The `ion_core::h!("foo")` macro is `const`-evaluated FNV-1a 64-bit:
+the literal `"foo"` is consumed at compile time, leaving only the `u64`
+in the emitted binary. Pair it with `Module::new`, `register_fn`, etc.
+
+```rust
+use ion_core::h;
+use ion_core::host_types::{HostStructDef, HostEnumDef, HostVariantDef};
+
+engine.register_struct(HostStructDef {
+    name_hash: h!("Player"),
+    fields:    vec![h!("name"), h!("score")],
+});
+
+engine.register_enum(HostEnumDef {
+    name_hash: h!("Color"),
+    variants: vec![
+        HostVariantDef { name_hash: h!("Red"),    arity: 0 },
+        HostVariantDef { name_hash: h!("Custom"), arity: 3 },
+    ],
+});
+```
+
+`qh!("module", "fn")` exists for places that need the qualified hash
+without joining the strings: `mix(h("module"), h("fn"))` precomputed.
+
+In **debug builds** (`cfg(debug_assertions)`), each `h!()` site
+auto-registers `(hash, "literal")` with `ion_core::names` exactly once
+on first execution, via a per-site `Once`. Tests, dev binaries, and
+`cargo run` get readable diagnostics with no extra setup. In release,
+the registration block is `cfg`'d out entirely and neither the literal
+nor the registration call lands in `.rodata`.
+
+## Diagnostics: the `names` registry and sidecar workflow
+
+`ion_core::names` is an optional runtime hash → name mapping consulted
+by `Display`, `to_json`, and error rendering. Three ways to populate it:
+
+1. **Debug builds** — automatic via the `h!()`/`qh!()` macros above.
+2. **Release with hand-built table:**
+   ```rust
+   ion_core::names::register_many([
+       (h!("Player"), "Player"),
+       (h!("score"),  "score"),
+   ]);
+   ```
+3. **Release with sidecar JSON:**
+   ```rust
+   let json = std::fs::read_to_string("myapp.names")?;
+   ion_core::names::load_sidecar_json(&json)?;
+   ```
+   Generate the sidecar from a fully-populated debug build via
+   `names::dump_sidecar_json()` in a `build.rs` or one-off binary.
+
+Without any of these, `Display` of a `Value::HostEnum` renders as
+`<enum#hhhh>::<v#hhhh>`, and stdlib errors look like
+`runtime error at script.ion:5:3: takes 1 argument` — readable enough
+to find the source location, opaque about Ion-level names.
 
 ## Handling `io::print*` output
 

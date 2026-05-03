@@ -418,7 +418,6 @@ const KEYWORDS: &[&str] = &[
     "catch", "use",
 ];
 
-
 // ---- Documentation catalog ----
 
 #[derive(Debug, Clone)]
@@ -1929,8 +1928,7 @@ mod tests {
     #[test]
     fn v1_manifest_still_loads_under_v2_loader() {
         let mut catalog = DocCatalog::builtins();
-        parse_doc_manifest(&mut catalog, fixture_manifest())
-            .expect("v1 manifests remain accepted");
+        parse_doc_manifest(&mut catalog, fixture_manifest()).expect("v1 manifests remain accepted");
         assert!(catalog.module("sensor").is_some());
         assert!(catalog.module("sensor::session").is_some());
     }

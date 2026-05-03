@@ -39,7 +39,7 @@
 /// When the `obfuscate` feature is enabled, strings are encrypted at compile
 /// time and decrypted at runtime via `obfstr`. Without the feature, they
 /// pass through as regular `String`s.
-#[cfg(feature = "obfuscate")]
+#[cfg(all(feature = "obfuscate", debug_assertions))]
 macro_rules! ion_str {
     ($s:literal) => {{
         let _tmp: String = obfstr::obfstr!($s).to_string();
@@ -47,19 +47,34 @@ macro_rules! ion_str {
     }};
 }
 
-#[cfg(not(feature = "obfuscate"))]
+#[cfg(all(not(feature = "obfuscate"), debug_assertions))]
 macro_rules! ion_str {
     ($s:literal) => {
         String::from($s)
     };
 }
 
+#[cfg(not(debug_assertions))]
+macro_rules! ion_str {
+    ($s:literal) => {
+        String::from("runtime error")
+    };
+}
+
 /// Same as `ion_str!` but returns `&str` (non-obfuscated in obfuscate mode
 /// for contexts requiring `&'static str` like type_name()).
 /// These strings are short type names that are low-value for obfuscation.
+#[cfg(debug_assertions)]
 macro_rules! ion_static_str {
     ($s:literal) => {
         $s
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! ion_static_str {
+    ($s:literal) => {
+        "value"
     };
 }
 
@@ -81,9 +96,15 @@ macro_rules! global_builtin {
 }
 
 pub mod ast;
-#[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+#[cfg(all(
+    feature = "legacy-threaded-concurrency",
+    not(feature = "async-runtime")
+))]
 pub mod async_rt;
-#[cfg(all(feature = "legacy-threaded-concurrency", not(feature = "async-runtime")))]
+#[cfg(all(
+    feature = "legacy-threaded-concurrency",
+    not(feature = "async-runtime")
+))]
 pub mod async_rt_std;
 #[cfg(feature = "async-runtime")]
 pub mod async_runtime;
@@ -97,11 +118,11 @@ pub mod error;
 pub mod hash;
 pub mod host_types;
 pub mod intern;
-pub mod names;
 pub mod interpreter;
 pub mod lexer;
 pub mod log;
 pub mod module;
+pub mod names;
 pub mod parser;
 #[cfg(feature = "rewrite")]
 pub mod rewrite;
@@ -124,6 +145,7 @@ pub use ion_derive::IonType;
 /// Both the LSP (for hover/completion) and the docs site read from this
 /// single source — keeping editor tooltips and the published reference in
 /// sync without an extra build step.
+#[cfg(any(test, feature = "embedded-stdlib-docs"))]
 pub const STDLIB_DOCS_JSON: &str = include_str!("stdlib-docs.json");
 
 #[cfg(test)]
@@ -135,9 +157,7 @@ mod stdlib_docs_tests {
         let v: serde_json::Value =
             serde_json::from_str(STDLIB_DOCS_JSON).expect("stdlib-docs.json parses");
         assert_eq!(v["ionDocVersion"], 2, "must be ionDocVersion: 2");
-        let modules = v["modules"]
-            .as_array()
-            .expect("modules is an array");
+        let modules = v["modules"].as_array().expect("modules is an array");
         assert!(
             modules.iter().any(|m| m["name"] == "core"),
             "core (global builtins) module is required"

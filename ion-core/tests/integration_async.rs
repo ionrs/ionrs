@@ -94,10 +94,7 @@ fn test_async_fs_read_bytes() {
     let dir = fs_test_dir("bytes");
     let path = dir.join("blob.bin");
     std::fs::write(&path, [0xCA, 0xFE]).unwrap();
-    let v = eval(&format!(
-        r#"fs::read_bytes("{}")"#,
-        path.to_string_lossy()
-    ));
+    let v = eval(&format!(r#"fs::read_bytes("{}")"#, path.to_string_lossy()));
     assert_eq!(v, Value::Bytes(vec![0xCA, 0xFE]));
     let _ = std::fs::remove_dir_all(&dir);
 }

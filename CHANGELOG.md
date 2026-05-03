@@ -9,6 +9,194 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-03
+
+This release implements `HIDE_NAMES_PLAN.md`: every host-registered
+identifier (enum names, variant names, struct/field names, module names,
+function names, qualified `mod::fn` paths) is folded to a 64-bit FNV-1a
+hash at compile time and never appears in the release binary's `.rodata`.
+`strings target/release/host_bin` now reveals zero Ion-level identifiers
+from registered types or stdlib functions.
+
+This is a **major breaking-change release** for embedders. Any host that
+calls `Engine::register_fn`, `Engine::register_module`, `Module::new`,
+`Module::register_*`, `Module::set`, or constructs `HostStructDef` /
+`HostEnumDef` directly will need to migrate. Scripts themselves do not
+change. Test counts: 1100+ across default, async-runtime, and
+legacy-threaded-concurrency feature combinations.
+
+### Changed (breaking)
+
+- **Module / Engine registration APIs take `u64` name hashes** instead of
+  `&str`. Use the new `ion_core::h!("name")` macro (compile-time FNV-1a)
+  at the call site:
+  ```rust
+  // before
+  engine.register_fn("square", |args| { ... });
+  let mut math = Module::new("math");
+  math.register_fn("add", |args| { ... });
+  math.set("PI", Value::Float(std::f64::consts::PI));
+
+  // after
+  use ion_core::h;
+  engine.register_fn(h!("square"), |args| { ... });
+  let mut math = Module::new(h!("math"));
+  math.register_fn(h!("add"), |args| { ... });
+  math.set(h!("PI"), Value::Float(std::f64::consts::PI));
+  ```
+  The literal `"square"` / `"math"` / `"add"` / `"PI"` is consumed by
+  `h!()`'s const evaluation at compile time and folded to a `u64`. No
+  string survives in the release binary. (`Module::register_fn`,
+  `register_closure`, `register_async_fn`, `set`; `Engine::register_fn`,
+  `register_closure`, `register_async_fn`.)
+- **`Value::HostEnum`, `Value::HostStruct`, `Value::BuiltinFn`,
+  `Value::BuiltinClosure`, `Value::AsyncBuiltinClosure` reshaped** to
+  carry only u64 hashes — no name strings:
+  ```rust
+  // before
+  Value::HostEnum { enum_name: String, variant: String, data: Vec<Value> }
+  Value::HostStruct { type_name: String, fields: IndexMap<String, Value> }
+  Value::BuiltinFn(String, BuiltinFn)
+
+  // after
+  Value::HostEnum { enum_hash: u64, variant_hash: u64, data: Vec<Value> }
+  Value::HostStruct { type_hash: u64, fields: IndexMap<u64, Value> }
+  Value::BuiltinFn { qualified_hash: u64, func: BuiltinFn }
+  ```
+  `Value::BuiltinFn` shrinks from ~32 bytes to 16 bytes and saves a
+  `String::clone` per construction.
+- **`HostStructDef`, `HostEnumDef`, `HostVariantDef` carry hashes:**
+  `name: String` → `name_hash: u64`; `HostStructDef.fields:
+  Vec<String>` → `Vec<u64>`. Use `h!("Color")` etc. at construction.
+- **`Value::Module(Arc<ModuleTable>)` is a new variant** distinct from
+  `Value::Dict`. Modules registered through `Engine::register_module`
+  produce `Value::Module`; `Value::Dict` remains for script-side
+  user-built dicts. `mod::fn` and `use mod::*` now hit the typed module
+  path; the legacy `Value::Dict`-as-module behaviour still works for
+  back-compat with hosts that injected dicts directly.
+- **`Module::to_value` → `Module::into_value`**, returning
+  `Value::Module(Arc<ModuleTable>)` directly. `Module::name` field
+  removed; use `Module::name_hash()`.
+- **`#[derive(IonType)]` emits `u64` literals** instead of
+  `name.to_string()`. Field names, variant names, and the type name are
+  hashed at proc-macro expansion; the source identifier never reaches
+  the generated `TokenStream`. Generated `to_ion` and `ion_type_def`
+  also include a `cfg(debug_assertions)` block that registers the
+  hashes back to their source-form names with `ion_core::names`, so
+  Display and diagnostic output render readably in dev builds.
+- **`TypeRegistry::construct_struct` now takes `IndexMap<u64, Value>`**
+  (pre-hashed field names); callers (interpreter, VM, async runtime)
+  hash script-source identifiers at the boundary.
+- **JSON / MessagePack output of `Value::HostEnum` / `Value::HostStruct`
+  changes:** field/variant keys come from the optional `names` registry
+  when populated; otherwise hex-formatted hashes
+  (`"#0123456789abcdef"`) are emitted. Round-trips losslessly within
+  the same registry.
+
+### Added
+
+- **`ion_core::hash` module** with `const fn fnv1a64` (matches canonical
+  FNV-1a test vectors), `const fn h(&str) -> u64`, `const fn mix(u64,
+  u64) -> u64`, plus `h!()` and `qh!()` macros that fold their inputs
+  to compile-time `u64` constants.
+- **`ion_core::names` module** — optional runtime hash → name mapping
+  used by `Display`, `to_json`, and error rendering. Populated three
+  ways:
+  - Debug builds (`cfg(debug_assertions)`): every `h!()` and `qh!()`
+    site auto-registers its source literal exactly once on first
+    execution. Tests, dev binaries, and `cargo run` all see readable
+    names with no extra setup.
+  - Release builds: empty by default. Hosts can call
+    `names::register` / `register_many`, or load a sidecar JSON with
+    `names::load_sidecar_json`.
+  - Sidecar workflow: a build script can call `names::dump_sidecar_json`
+    on a fully-populated debug build to emit `myapp.names`, which the
+    release host loads at startup.
+- **`embedded-stdlib-docs` cargo feature on `ion-core`.** Gates the
+  `STDLIB_DOCS_JSON` constant (the `ionDocManifest` for stdlib hover /
+  completion / docs-site rendering). Off by default — release embedders
+  who don't ship a docs surface skip the JSON blob entirely. `ion-lsp`
+  enables it.
+- **`Module::new(u64)`, `register_fn(u64, fn)`, `register_closure(u64,
+  fn)`, `register_async_fn(u64, fn)`, `set(u64, value)`,
+  `register_submodule(Module)`, `into_value() -> Value`,
+  `name_hash() -> u64`, `name_hashes() -> Vec<u64>`** — the hash-only
+  builder API.
+- **`Env::define_h(u64, Value)`, `get_h(u64) -> Option<&Value>`,
+  `get_sym_or_global(Symbol) -> Option<&Value>`** for host-registered
+  globals that bypass the `StringPool`.
+- **Hash collision detection**: `Module::register_fn` and friends panic
+  on duplicate insertion at startup. `TypeRegistry::register_struct` /
+  `register_enum` panic on real shape mismatch (different fields or
+  variants under the same name hash) but are idempotent on identical
+  re-registrations.
+
+### Removed
+
+- **`Module::name: String` field** — replaced by `name_hash()`.
+- **`Module::names() -> Vec<String>`** — replaced by `name_hashes() ->
+  Vec<u64>`.
+- **String-taking `register_fn(&str, …)` / `set(&str, …)` overloads on
+  `Module` and `Engine`.** These would have leaked the literal into
+  `.rodata`; they are removed outright (no shim).
+
+### Additional hardening (release builds only)
+
+- **`ion_str!` / `ion_static_str!` macros are gated on
+  `cfg(debug_assertions)`.** Release builds replace every diagnostic
+  literal with the generic placeholder `"runtime error"` /
+  `"value"`. Combined with the `mod::fn` strip above, this means
+  `strings target/release/host_bin` shows none of the stdlib's
+  human-readable error text either — only the generic placeholders.
+- **Derive-emitted error messages are `cfg`-split.** Debug builds
+  format `"expected Player, got …"`; release builds format
+  `"expected host struct #abcd…, got …"`, dropping the literal
+  type name from `.rodata`.
+- **`Module::register_*` lazily registers the qualified name** in
+  `ion_core::names` when both the module and item names are
+  individually known, so debug builds get readable
+  `<builtin math::abs>` Display without an extra `qh!()` site.
+
+### Performance side-effects
+
+- `Value::BuiltinFn` shrunk from `(String, BuiltinFn)` ≈ 32 bytes to
+  `{ u64, BuiltinFn }` = 16 bytes; lists/dicts of builtins benefit.
+- Builtin registration cost dropped: no `format!("{}::{}", …)` and no
+  `String::clone` per fn — it's a `Vec::push` of an integer-keyed slot.
+- Stdlib error message strings stripped of `mod::fn` qualifiers; helper
+  functions (`semver_parse_arg`, `fs_arg_str`, `arg_str`, `io_err`)
+  refactored to drop `fn_name` parameters. Generic error strings dedup
+  across the whole stdlib.
+- The aggressive bytecode-level dispatch reshape from `HIDE_NAMES_PLAN`
+  §8 (u64 operands inline in bytecode, new `GetModuleSlot` op) is
+  **deferred** as a follow-up. `mod::fn` calls still hash the
+  script-source string at runtime in the VM. Hiding goal is unaffected.
+
+### Trade-offs
+
+- **Diagnostic context**: stdlib closures emit generic errors
+  (`"takes 1 argument"`, `"requires a number"`) — the `mod::fn` prefix
+  no longer appears in the error string. The script source span
+  (line:col) identifies the call site. The renderer can re-prepend the
+  resolved name from `names::lookup(qualified_hash)` if an embedder
+  wants it. Preserves runtime semantics of `try { … } catch e { e }`.
+- **Module reflection**: `use mod::*` now binds entries by hash on the
+  glob path. Scripts that introspect modules via dictionary iteration
+  break (DESIGN.md does not promise this surface).
+
+### Editor extensions
+
+- **`zed-ion`** bumped to `0.9.0` for parity with the language version.
+
+### Documentation
+
+- **`README.md`** code samples updated to the `h!()` form.
+- **`docs/embedding.md`** updated with the new registration APIs and
+  a section on the `names` sidecar workflow.
+- **`HIDE_NAMES_PLAN.md`** preserved at the repo root as the design
+  rationale and migration record, with §16 documenting deviations
+  between the original plan spec and what shipped.
+
 ## [0.8.0] — 2026-05-03
 
 ### Added
