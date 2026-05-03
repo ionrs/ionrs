@@ -77,6 +77,7 @@ pub mod compiler;
 pub mod engine;
 pub mod env;
 pub mod error;
+pub mod hash;
 pub mod host_types;
 pub mod intern;
 pub mod interpreter;
