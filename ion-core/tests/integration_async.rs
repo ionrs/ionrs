@@ -231,8 +231,10 @@ fn test_async_fs_metadata() {
 #[cfg(feature = "fs")]
 #[test]
 fn test_async_fs_read_missing_errors() {
+    // Phase 7 cleanup: error literals are generic; the path appears
+    // in the formatted io error since it's user data.
     let err = eval_err(r#"fs::read("/no/such/path/exists/zP9")"#);
-    assert!(err.contains("fs::read"));
+    assert!(err.contains("zP9"), "got: {}", err);
 }
 
 // --- io:: under async stays non-blocking ---

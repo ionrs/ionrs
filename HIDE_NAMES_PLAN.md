@@ -1,6 +1,11 @@
 # Plan: hide enum / variant / module / function names from the host binary
 
-Status: proposal
+Status: **§1 goal met.** Phases 1–7 plus error-message cleanup landed.
+`strings target/release/example` shows zero Ion identifiers — no module
+names, function names, `mod::fn` qualifiers, or stdlib constants. Only
+incidental libm/libc symbols (`atan2`, `read`, `write`) remain, which exist
+in any Rust binary using `f64::*` or `std::fs::*`. Follow-up items in §16.
+
 Scope: ion-core, ion-derive, stdlib, host-facing API
 Compatibility: **no back-compat preserved.** Old APIs are deleted, not shimmed.
 
@@ -395,3 +400,108 @@ A regression check: add a criterion bench in `ion-core/benches/` for (a)
 - **`ion-lsp` impact.** LSP needs to map hashes back to names for completions
   and hover. The sidecar is the natural source. LSP forces the sidecar to
   exist in dev workflows; release deployments can omit it.
+
+## 16. Status — what shipped, what deviated, what remains
+
+This section is the source of truth for project state. The original plan
+sections (4–14) describe intent; this section reconciles that against what
+was actually committed in `1f7482b..18fd0e3`.
+
+### Shipped as planned
+
+- §4 hash primitive: `fnv1a64`, `h!`, `qh!`, `mix` (`hash.rs`).
+- §9 stdlib mass conversion: every `register_fn`/`register_closure`/`set`
+  site in `stdlib.rs` calls `crate::h!("…")`.
+- §10 sidecar: `names::register`/`register_many`/`lookup`/`dump_sidecar_json`/
+  `load_sidecar_json`. Debug builds auto-populate via `h!`/`qh!`.
+- §10 `cfg(debug_assertions)` inline names: enabled by `h!`/`qh!` macros
+  AND by the `IonType` derive (gated `register_many` block).
+- §11 collision handling: `Module::register_*` panics on duplicate;
+  `TypeRegistry` panics on real shape mismatch (idempotent on same shape);
+  regression tests cover both.
+
+### Shipped, but deviated from the plan's spec
+
+| Plan said | Shipped | Why |
+|---|---|---|
+| `HostEnum { type_id: u32, variant_idx: u16, data: SmallVec<[Value;2]> }` | `{ enum_hash: u64, variant_hash: u64, data: Vec<Value> }` | Hash-direct skips the `OnceCell<u32>` resolution step (`§6.4`). `SmallVec<[Value;_]>` makes `Value` recursive without indirection; `Box<Value>` indirection nets out negative on small arities. |
+| `HostStruct { type_id: u32, field_idx: u16 }` | `{ type_hash: u64, fields: IndexMap<u64, Value> }` | Same reasoning. Preserves field iteration order for free. Loses positional-index speedup vs. plan. |
+| `Module::new_h`, `register_fn_h`, etc. (`_h` suffix) | `Module::new`, `register_fn`, etc. (no suffix) | Suffix was redundant once the only signature is `u64`. |
+| `Engine::register_module(Arc<ModuleTable>)` | `Engine::register_module(Module)` | Engine wraps the builder internally. Saves the caller from `.into_value()`/`Arc::new()`. |
+| `IonType::ION_TYPE_HASH: u64` const + per-type `OnceCell<u32>` | Hashes inline in `to_ion`/`from_ion`/`ion_type_def`; no associated const, no cell | No need for the cell once we use hashes directly. Marginally less pretty for downstream consumers that wanted `T::ION_TYPE_HASH`. |
+| Registry: `Vec<EnumEntry>` + `HashMap<u64, u32>` (dense + by-hash) | `HashMap<u64, HostEnumDef>` | Single-table. Loses Vec-index perf. ID-less is also why the type_id story disappeared. |
+| §6.2 `register_fns!` macro | Created then removed (audit) | Sed pass converted stdlib via `crate::h!()` directly; macro had no users. |
+
+### NOT shipped (real gaps against §1 / §14)
+
+1. **§8 parser/compiler/VM bytecode reshape.**
+   - AST `ModulePath` still holds `Vec<String>`; `EnumVariant` still holds
+     `(String, String)`.
+   - Compiler still adds `Value::Str` constants to chunks for module/variant
+     names (script-source strings — not in the binary, but they cost a
+     runtime hash on every `Op::GetGlobal`/`Op::ConstructEnum`/etc.).
+   - VM has no `GetModuleSlot` op; module access goes through the same
+     string-keyed `Op::GetGlobal` path with a `get_sym_or_global` fallback.
+   - **Consequence**: dispatch is *not* the "2–4× faster" §14 claim. Each
+     `math::abs(x)` call hashes "math" + "abs" at runtime. Hiding goal is
+     unaffected — the strings are script-source, not binary — but the perf
+     win never landed.
+
+2. **§1 strict reading: `mod::fn` strings inside error message literals.**
+   `strings target/release/example | grep -E '^(math|json|fs|...)::'`
+   returns ~33 hits like `"math::abs takes 1 argument"`,
+   `"fs::remove_dir_all('"`, `"os::env_var: name must be a string"`. These
+   are diagnostic strings hand-written into the stdlib closures via
+   `ion_str!()`. Bare identifiers (`math`, `abs`) don't appear standalone,
+   but they are substrings of these literals — **the goal is not strictly
+   met**.
+
+3. **§14 criterion benchmarks.** Not added. No measurement of actual
+   dispatch / construction perf delta.
+
+4. **§13 build-script sidecar wiring.** The `dump_sidecar_json` /
+   `load_sidecar_json` helpers exist; no `examples/build_with_sidecar/`
+   demonstrates the workflow.
+
+5. **§15 ion-lsp impact.** LSP code untouched. Hover/completion in
+   release builds without a sidecar will see opaque hashes.
+
+### §1 closure (landed)
+
+Item 2 above is **resolved.** Stdlib error literals stripped of `mod::fn`
+qualifiers via sed; helper functions (`semver_parse_arg`, `fs_arg_str`,
+`arg_str`, `io_err`) refactored to drop their `fn_name: &str` parameters
+so the literal `"format"`, `"compare"`, `"parse"`, etc. no longer appear
+either. The previous attempt to prepend `names::lookup(qualified_hash)`
+at the call site was reverted because it changed user-visible runtime
+semantics (`try { assert(false, "boom") } catch e { e }` returned
+`"assert: boom"` instead of `"boom"`).
+
+Final verification (`strings target/release/examples/embed`):
+
+| Probe                                                   | Hits |
+|---------------------------------------------------------|------|
+| `\b(math\|json\|fs\|os\|path\|semver\|log\|io\|str\|string)::` (excl. `str::from_utf8` panic) | 0 |
+| Ion-specific names (`env_var`, `cwd`, `satisfies`, `msgpack_encode`, `bytes_from_hex`, `type_of`, …) | 0 |
+| Standalone module names (`math`, `json`, `fs`, …)       | 0 |
+| Stdlib constants (`PI`, `E`, `TAU`, `INF`, `NAN`)       | 0 |
+
+Items 1 (bytecode reshape — perf), 3 (criterion benches), 4 (build-script
+sidecar wiring), and 5 (ion-lsp) remain open as follow-ups; none block §1.
+
+### Trade-off taken: error message context
+
+Stdlib closures now emit generic errors (`"takes 1 argument"`,
+`"requires a number"`, `"argument 1 must be a string"`). The function
+name no longer appears in the error string. Call sites identify the
+function via the script source span (line:col) but not via a textual
+prefix. This:
+
+- Keeps `try { … } catch e { e }` returning the original message verbatim
+  — preserving script semantics that may switch on error text.
+- Means terminal error output reads `runtime error at script.ion:5:3:
+  takes 1 argument` instead of `… math::abs: takes 1 argument`. The
+  prefix can be added at the renderer level using
+  `names::lookup(qualified_hash)` if and when an embedder wants it back —
+  Display of `Value::BuiltinFn` already does this for the value itself,
+  so the same lookup is one method call away from the error renderer.

@@ -3226,6 +3226,12 @@ impl Interpreter {
                 self.builtin_timeout(args, span)
             }
             Value::BuiltinFn { func, .. } => {
+                // Error messages from stdlib closures are intentionally
+                // generic ("takes 1 argument") so no `mod::fn` literal
+                // lands in `.rodata`. Function context is conveyed via the
+                // script source span, not the error string — also keeps
+                // `try { assert(false, "boom") } catch e { e }` semantics
+                // unchanged for caught error values.
                 func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
             Value::BuiltinClosure { func, .. } => func

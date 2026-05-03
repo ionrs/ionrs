@@ -1709,8 +1709,10 @@ fn test_json_roundtrip() {
 
 #[test]
 fn test_json_decode_invalid() {
+    // Phase 7 cleanup: error literals no longer include the `mod::fn`
+    // prefix; the runtime span carries the call-site identification.
     let err = eval_err(r#"json::decode("not json")"#);
-    assert!(err.contains("json::decode error"), "got: {}", err);
+    assert!(err.contains("error:"), "got: {}", err);
 }
 
 // ============================================================
@@ -4536,10 +4538,11 @@ fn test_stdlib_semver_parse() {
 #[cfg(feature = "semver")]
 #[test]
 fn test_stdlib_semver_parse_invalid() {
+    // Phase 7 cleanup: generic error message; underlying parse error
+    // text from the `semver` crate is preserved.
     let mut engine = Engine::new();
     let result = engine.eval(r#"semver::parse("not.a.version")"#);
     assert!(result.is_err());
-    assert!(result.unwrap_err().message.contains("semver::parse"));
 }
 
 #[cfg(feature = "semver")]
@@ -4641,10 +4644,11 @@ fn test_stdlib_semver_satisfies_tilde() {
 #[cfg(feature = "semver")]
 #[test]
 fn test_stdlib_semver_satisfies_invalid_req() {
+    // Phase 7 cleanup: generic error message; the offending requirement
+    // text is captured via the upstream semver crate's error.
     let mut engine = Engine::new();
     let result = engine.eval(r#"semver::satisfies("1.0.0", "garbage??")"#);
     assert!(result.is_err());
-    assert!(result.unwrap_err().message.contains("semver::satisfies"));
 }
 
 #[cfg(feature = "semver")]
@@ -4784,11 +4788,11 @@ fn test_stdlib_os_env_var_present() {
 #[cfg(feature = "os")]
 #[test]
 fn test_stdlib_os_env_var_missing() {
+    // Phase 7 cleanup: error literals are generic; the variable name
+    // appears in the formatted error since it's user data.
     let mut engine = Engine::new();
     let result = engine.eval(r#"os::env_var("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS")"#);
-    assert!(result.is_err());
     let msg = result.unwrap_err().message;
-    assert!(msg.contains("os::env_var"), "got: {}", msg);
     assert!(msg.contains("ION_DEFINITELY_UNSET_zP9_NEVER_EXISTS"), "got: {}", msg);
 }
 
@@ -5288,8 +5292,11 @@ fn test_stdlib_fs_canonicalize() {
 #[cfg(feature = "fs")]
 #[test]
 fn test_stdlib_fs_read_missing_file_errors() {
+    // Phase 7 cleanup: stdlib closures emit generic errors so no
+    // `mod::fn` literal lands in `.rodata`. The span carries call-site
+    // info; the path itself appears in the io error string.
     let mut engine = Engine::new();
     let result = engine.eval(r#"fs::read("/this/path/should/not/exist/anywhere/xK7")"#);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().message.contains("fs::read"));
+    let err = result.unwrap_err();
+    assert!(err.message.contains("xK7"), "got: {}", err.message);
 }
