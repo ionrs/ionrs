@@ -709,38 +709,63 @@ impl<'a> Lexer<'a> {
         while self.peek().is_ascii_alphanumeric() || self.peek() == b'_' {
             self.advance();
         }
-        let text = std::str::from_utf8(&self.source[start..self.pos]).unwrap();
-        let token = match text {
-            "let" => Token::Let,
-            "mut" => Token::Mut,
-            "fn" => Token::Fn,
-            "match" => Token::Match,
-            "if" => Token::If,
-            "else" => Token::Else,
-            "for" => Token::For,
-            "while" => Token::While,
-            "loop" => Token::Loop,
-            "break" => Token::Break,
-            "continue" => Token::Continue,
-            "return" => Token::Return,
-            "in" => Token::In,
-            "as" => Token::As,
-            "true" => Token::True,
-            "false" => Token::False,
-            "None" => Token::None,
-            "Some" => Token::Some,
-            "Ok" => Token::Ok,
-            "Err" => Token::Err,
-            "async" => Token::Async,
-            "spawn" => Token::Spawn,
-            "await" => Token::Await,
-            "select" => Token::Select,
-            "try" => Token::Try,
-            "catch" => Token::Catch,
-            "use" => Token::Use,
-            _ => Token::Ident(text.to_string()),
-        };
+        let bytes = &self.source[start..self.pos];
+        let text = std::str::from_utf8(bytes).unwrap();
+        let token = keyword_token(bytes).unwrap_or_else(|| Token::Ident(text.to_string()));
         Ok(self.spanned(token, line, col))
+    }
+}
+
+fn keyword_token(bytes: &[u8]) -> Option<Token> {
+    match bytes.len() {
+        2 => match (bytes[0], bytes[1]) {
+            (102, 110) => Some(Token::Fn),
+            (105, 102) => Some(Token::If),
+            (105, 110) => Some(Token::In),
+            (97, 115) => Some(Token::As),
+            (79, 107) => Some(Token::Ok),
+            _ => None,
+        },
+        3 => match (bytes[0], bytes[1], bytes[2]) {
+            (108, 101, 116) => Some(Token::Let),
+            (109, 117, 116) => Some(Token::Mut),
+            (102, 111, 114) => Some(Token::For),
+            (116, 114, 121) => Some(Token::Try),
+            (69, 114, 114) => Some(Token::Err),
+            (117, 115, 101) => Some(Token::Use),
+            _ => None,
+        },
+        4 => match (bytes[0], bytes[1], bytes[2], bytes[3]) {
+            (101, 108, 115, 101) => Some(Token::Else),
+            (108, 111, 111, 112) => Some(Token::Loop),
+            (116, 114, 117, 101) => Some(Token::True),
+            (78, 111, 110, 101) => Some(Token::None),
+            (83, 111, 109, 101) => Some(Token::Some),
+            _ => None,
+        },
+        5 => match (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]) {
+            (109, 97, 116, 99, 104) => Some(Token::Match),
+            (119, 104, 105, 108, 101) => Some(Token::While),
+            (98, 114, 101, 97, 107) => Some(Token::Break),
+            (102, 97, 108, 115, 101) => Some(Token::False),
+            (97, 115, 121, 110, 99) => Some(Token::Async),
+            (115, 112, 97, 119, 110) => Some(Token::Spawn),
+            (97, 119, 97, 105, 116) => Some(Token::Await),
+            (99, 97, 116, 99, 104) => Some(Token::Catch),
+            _ => None,
+        },
+        6 => match (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]) {
+            (114, 101, 116, 117, 114, 110) => Some(Token::Return),
+            (115, 101, 108, 101, 99, 116) => Some(Token::Select),
+            _ => None,
+        },
+        8 => match (
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ) {
+            (99, 111, 110, 116, 105, 110, 117, 101) => Some(Token::Continue),
+            _ => None,
+        },
+        _ => None,
     }
 }
 

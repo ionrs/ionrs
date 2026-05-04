@@ -54,10 +54,47 @@ macro_rules! ion_str {
     };
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(feature = "obfuscate", not(debug_assertions)))]
+macro_rules! ion_str {
+    ($s:literal) => {{
+        let _tmp: String = obfstr::obfstr!("runtime error").to_string();
+        _tmp
+    }};
+}
+
+#[cfg(all(not(feature = "obfuscate"), not(debug_assertions)))]
 macro_rules! ion_str {
     ($s:literal) => {
         String::from("runtime error")
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! ion_format {
+    ($($arg:tt)*) => {
+        format!($($arg)*)
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! ion_format {
+    ($($arg:tt)*) => {
+        ion_str!("runtime error")
+    };
+}
+
+#[cfg(feature = "obfuscate")]
+macro_rules! ion_obf_string {
+    ($s:literal) => {{
+        let _tmp: String = obfstr::obfstr!($s).to_string();
+        _tmp
+    }};
+}
+
+#[cfg(not(feature = "obfuscate"))]
+macro_rules! ion_obf_string {
+    ($s:literal) => {
+        String::from($s)
     };
 }
 

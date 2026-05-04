@@ -33,6 +33,38 @@ fn register_qualified_name(qualified_hash: u64, module_hash: u64, name_hash: u64
     crate::names::register(qualified_hash, joined);
 }
 
+fn assert_unique_item(prev: Option<Value>, module_hash: u64) {
+    if prev.is_some() {
+        panic_duplicate_item(module_hash);
+    }
+}
+
+fn assert_unique_submodule(prev: Option<Value>, module_hash: u64) {
+    if prev.is_some() {
+        panic_duplicate_submodule(module_hash);
+    }
+}
+
+#[cfg(debug_assertions)]
+fn panic_duplicate_item(module_hash: u64) -> ! {
+    panic!("duplicate or colliding name in module #{module_hash:016x}");
+}
+
+#[cfg(not(debug_assertions))]
+fn panic_duplicate_item(_module_hash: u64) -> ! {
+    panic!("{}", ion_str!("module collision"));
+}
+
+#[cfg(debug_assertions)]
+fn panic_duplicate_submodule(module_hash: u64) -> ! {
+    panic!("duplicate or colliding submodule in module #{module_hash:016x}");
+}
+
+#[cfg(not(debug_assertions))]
+fn panic_duplicate_submodule(_module_hash: u64) -> ! {
+    panic!("{}", ion_str!("module collision"));
+}
+
 /// Frozen, hash-keyed module table embedded in `Value::Module`.
 ///
 /// `items` holds functions, constants, and submodules indexed by their
@@ -82,11 +114,7 @@ impl Module {
                 func,
             },
         );
-        assert!(
-            prev.is_none(),
-            "duplicate or colliding name in module #{:016x}",
-            self.name_hash
-        );
+        assert_unique_item(prev, self.name_hash);
     }
 
     /// Register a closure-backed builtin (captures host-side state).
@@ -103,11 +131,7 @@ impl Module {
                 func: BuiltinClosureFn::new(func),
             },
         );
-        assert!(
-            prev.is_none(),
-            "duplicate or colliding name in module #{:016x}",
-            self.name_hash
-        );
+        assert_unique_item(prev, self.name_hash);
     }
 
     /// Register an async closure-backed builtin. Only callable under the
@@ -127,32 +151,20 @@ impl Module {
                 func: AsyncBuiltinClosureFn::new(func),
             },
         );
-        assert!(
-            prev.is_none(),
-            "duplicate or colliding name in module #{:016x}",
-            self.name_hash
-        );
+        assert_unique_item(prev, self.name_hash);
     }
 
     /// Register a constant value under `name_hash`.
     pub fn set(&mut self, name_hash: u64, value: Value) {
         let prev = self.items.insert(name_hash, value);
-        assert!(
-            prev.is_none(),
-            "duplicate or colliding name in module #{:016x}",
-            self.name_hash
-        );
+        assert_unique_item(prev, self.name_hash);
     }
 
     /// Register a submodule. Indexed by the submodule's own `name_hash`.
     pub fn register_submodule(&mut self, sub: Module) {
         let sub_hash = sub.name_hash;
         let prev = self.items.insert(sub_hash, sub.into_value());
-        assert!(
-            prev.is_none(),
-            "duplicate or colliding submodule in module #{:016x}",
-            self.name_hash
-        );
+        assert_unique_submodule(prev, self.name_hash);
     }
 
     /// Freeze the builder into a `Value::Module(Arc<ModuleTable>)`.

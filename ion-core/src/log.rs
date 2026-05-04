@@ -29,7 +29,8 @@ use crate::value::Value;
 /// Severity levels for [`LogHandler`]. Ordered so that lower-priority levels
 /// compare *greater* (e.g. `Trace > Debug > Info > Warn > Error > Off`),
 /// matching the sense of "level above the cap is dropped".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum LogLevel {
     Off = 0,
@@ -43,17 +44,61 @@ pub enum LogLevel {
 impl LogLevel {
     /// Parse a level name (case-insensitive). Returns `None` on unknown input.
     pub fn from_str_ci(s: &str) -> Option<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "off" | "none" => Some(Self::Off),
-            "error" | "err" => Some(Self::Error),
-            "warn" | "warning" => Some(Self::Warn),
-            "info" => Some(Self::Info),
-            "debug" => Some(Self::Debug),
-            "trace" => Some(Self::Trace),
+        fn lower(byte: u8) -> u8 {
+            if byte.is_ascii_uppercase() {
+                byte + 32
+            } else {
+                byte
+            }
+        }
+
+        let bytes = s.as_bytes();
+        match bytes.len() {
+            3 => match (lower(bytes[0]), lower(bytes[1]), lower(bytes[2])) {
+                (111, 102, 102) => Some(Self::Off),
+                (101, 114, 114) => Some(Self::Error),
+                _ => None,
+            },
+            4 => match (
+                lower(bytes[0]),
+                lower(bytes[1]),
+                lower(bytes[2]),
+                lower(bytes[3]),
+            ) {
+                (110, 111, 110, 101) => Some(Self::Off),
+                (119, 97, 114, 110) => Some(Self::Warn),
+                (105, 110, 102, 111) => Some(Self::Info),
+                _ => None,
+            },
+            5 => match (
+                lower(bytes[0]),
+                lower(bytes[1]),
+                lower(bytes[2]),
+                lower(bytes[3]),
+                lower(bytes[4]),
+            ) {
+                (101, 114, 114, 111, 114) => Some(Self::Error),
+                (100, 101, 98, 117, 103) => Some(Self::Debug),
+                (116, 114, 97, 99, 101) => Some(Self::Trace),
+                _ => None,
+            },
+            7 => match (
+                lower(bytes[0]),
+                lower(bytes[1]),
+                lower(bytes[2]),
+                lower(bytes[3]),
+                lower(bytes[4]),
+                lower(bytes[5]),
+                lower(bytes[6]),
+            ) {
+                (119, 97, 114, 110, 105, 110, 103) => Some(Self::Warn),
+                _ => None,
+            },
             _ => None,
         }
     }
 
+    #[cfg(debug_assertions)]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Off => "off",
@@ -65,10 +110,24 @@ impl LogLevel {
         }
     }
 
+    #[cfg(not(debug_assertions))]
+    pub const fn as_str(self) -> &'static str {
+        let _ = self;
+        ion_static_str!("level")
+    }
+
     /// True when emitting at `self` should be allowed under the threshold
     /// `cap` (i.e. `self <= cap`).
     pub const fn allowed_under(self, cap: LogLevel) -> bool {
         (self as u8) <= (cap as u8)
+    }
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let _ = self;
+        f.write_str(ion_static_str!("LogLevel"))
     }
 }
 
@@ -263,8 +322,10 @@ impl AtomicLogLevel {
         self.0.store(level as u8, Ordering::Relaxed);
     }
 
-    /// Default runtime threshold, taking `ION_LOG` into account when set.
+    /// Default runtime threshold. Debug builds honor `ION_LOG`; release builds
+    /// keep the environment variable name out of the binary.
     pub fn default_runtime() -> Arc<Self> {
+        #[cfg(debug_assertions)]
         let level = std::env::var("ION_LOG")
             .ok()
             .and_then(|s| LogLevel::from_str_ci(s.trim()))
@@ -275,6 +336,10 @@ impl AtomicLogLevel {
                     LogLevel::Info
                 }
             });
+
+        #[cfg(not(debug_assertions))]
+        let level = LogLevel::Info;
+
         Arc::new(Self::new(level))
     }
 }

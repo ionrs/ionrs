@@ -12,11 +12,26 @@ struct Local {
     depth: usize,
 }
 
-fn unmatched_label_msg(keyword: &str, label: Option<&str>) -> String {
+enum LoopSignalKeyword {
+    Break,
+    Continue,
+}
+
+#[cfg(debug_assertions)]
+fn unmatched_label_msg(keyword: LoopSignalKeyword, label: Option<&str>) -> String {
+    let keyword = match keyword {
+        LoopSignalKeyword::Break => "break",
+        LoopSignalKeyword::Continue => "continue",
+    };
     match label {
         Some(name) => format!("{keyword} with unknown label '{name}"),
         None => format!("{keyword} outside of loop"),
     }
+}
+
+#[cfg(not(debug_assertions))]
+fn unmatched_label_msg(_keyword: LoopSignalKeyword, _label: Option<&str>) -> String {
+    ion_str!("invalid control flow")
 }
 
 /// One enclosing loop's compile-time bookkeeping. The compiler maintains a
@@ -86,6 +101,12 @@ impl Compiler {
                 .iter()
                 .rposition(|f| f.label.as_deref() == Some(want)),
         }
+    }
+
+    fn pop_loop_frame(&mut self) -> LoopFrame {
+        self.loop_stack
+            .pop()
+            .unwrap_or_else(|| panic!("{}", ion_obf_string!("loop frame")))
     }
 
     /// Check if a list of statements contains any closures (lambdas or inner fn decls).
@@ -477,7 +498,7 @@ impl Compiler {
                     Some(idx) => idx,
                     None => {
                         return Err(IonError::runtime(
-                            unmatched_label_msg("break", label.as_deref()),
+                            unmatched_label_msg(LoopSignalKeyword::Break, label.as_deref()),
                             line,
                             0,
                         ));
@@ -507,7 +528,7 @@ impl Compiler {
                     Some(idx) => idx,
                     None => {
                         return Err(IonError::runtime(
-                            unmatched_label_msg("continue", label.as_deref()),
+                            unmatched_label_msg(LoopSignalKeyword::Continue, label.as_deref()),
                             line,
                             0,
                         ));
@@ -593,7 +614,7 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // pop false
                 self.chunk.emit_op(Op::Pop, line); // pop the duped value
 
-                let frame = self.loop_stack.pop().expect("loop frame");
+                let frame = self.pop_loop_frame();
                 for jump in &frame.break_jumps {
                     self.chunk.patch_jump(*jump);
                 }
@@ -952,7 +973,7 @@ impl Compiler {
                 self.fn_chunks.extend(fn_compiler.fn_chunks);
 
                 let fn_value = Value::Fn(crate::value::IonFn::new(
-                    "<lambda>".to_string(),
+                    ion_str!("<lambda>"),
                     params
                         .iter()
                         .map(|n| crate::ast::Param {
@@ -1403,7 +1424,7 @@ impl Compiler {
         col: usize,
     ) -> Result<(), IonError> {
         let Some(root) = segments.first() else {
-            return Err(IonError::runtime("empty module path", line, col));
+            return Err(IonError::runtime(ion_str!("empty module path"), line, col));
         };
         let root_idx = self.chunk.add_constant(Value::Str(root.clone()));
         self.chunk.emit_op_u16(Op::GetGlobal, root_idx, line);
@@ -1474,22 +1495,44 @@ impl Compiler {
         Ok(())
     }
 
+    #[cfg(debug_assertions)]
     fn type_ann_to_string(ann: &TypeAnn) -> String {
         match ann {
             TypeAnn::Simple(name) => name.clone(),
-            TypeAnn::Option(inner) => format!("Option<{}>", Self::type_ann_to_string(inner)),
-            TypeAnn::Result(ok, err) => format!(
-                "Result<{}, {}>",
-                Self::type_ann_to_string(ok),
-                Self::type_ann_to_string(err)
+            TypeAnn::Option(inner) => format!(
+                "{}{}{}",
+                ion_obf_string!("Option<"),
+                Self::type_ann_to_string(inner),
+                ion_obf_string!(">")
             ),
-            TypeAnn::List(inner) => format!("list<{}>", Self::type_ann_to_string(inner)),
+            TypeAnn::Result(ok, err) => format!(
+                "{}{}{}{}{}",
+                ion_obf_string!("Result<"),
+                Self::type_ann_to_string(ok),
+                ion_obf_string!(", "),
+                Self::type_ann_to_string(err),
+                ion_obf_string!(">")
+            ),
+            TypeAnn::List(inner) => format!(
+                "{}{}{}",
+                ion_obf_string!("list<"),
+                Self::type_ann_to_string(inner),
+                ion_obf_string!(">")
+            ),
             TypeAnn::Dict(k, v) => format!(
-                "dict<{}, {}>",
+                "{}{}{}{}{}",
+                ion_obf_string!("dict<"),
                 Self::type_ann_to_string(k),
-                Self::type_ann_to_string(v)
+                ion_obf_string!(", "),
+                Self::type_ann_to_string(v),
+                ion_obf_string!(">")
             ),
         }
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn type_ann_to_string(_ann: &TypeAnn) -> String {
+        ion_str!("value")
     }
 
     fn compile_let_pattern(
@@ -1731,7 +1774,7 @@ impl Compiler {
         // Pop the iterator placeholder
         self.chunk.emit_op(Op::Pop, line);
 
-        let frame = self.loop_stack.pop().expect("loop frame");
+        let frame = self.pop_loop_frame();
         for jump in &frame.break_jumps {
             self.chunk.patch_jump(*jump);
         }
@@ -1773,7 +1816,7 @@ impl Compiler {
         self.chunk.patch_jump(exit_jump);
         self.chunk.emit_op(Op::Pop, line); // pop condition
 
-        let frame = self.loop_stack.pop().expect("loop frame");
+        let frame = self.pop_loop_frame();
         for jump in &frame.break_jumps {
             self.chunk.patch_jump(*jump);
         }
@@ -1807,7 +1850,7 @@ impl Compiler {
         let offset = self.chunk.len() - loop_start + 3;
         self.chunk.emit_op_u16(Op::Loop, offset as u16, line);
 
-        let frame = self.loop_stack.pop().expect("loop frame");
+        let frame = self.pop_loop_frame();
         for jump in &frame.break_jumps {
             self.chunk.patch_jump(*jump);
         }
@@ -1852,7 +1895,7 @@ impl Compiler {
                             ion_str!("index assignment only supported on variables").to_string(),
                             line,
                             0,
-                        ))
+                        ));
                     }
                 };
 
@@ -1894,7 +1937,7 @@ impl Compiler {
                             ion_str!("field assignment only supported on variables").to_string(),
                             line,
                             0,
-                        ))
+                        ));
                     }
                 };
 
@@ -1967,8 +2010,8 @@ impl Compiler {
         self.begin_scope(line);
         self.in_tail_position = false;
         self.compile_expr(subject)?;
-        let tmp_name = "__match_subject__";
-        self.emit_define_local(tmp_name, false, line);
+        self.add_local(String::new(), false);
+        self.chunk.emit_op_u8(Op::DefineLocalSlot, 0, line);
         let subject_slot = self.locals.len() - 1;
 
         let mut end_jumps = Vec::new();
@@ -2488,7 +2531,9 @@ impl Compiler {
 /// `enabled` check instead.
 fn recognize_log_call(func: &Expr) -> Option<crate::log::LogLevel> {
     match &func.kind {
-        ExprKind::ModulePath(segments) if segments.len() == 2 && segments[0] == "log" => {
+        ExprKind::ModulePath(segments)
+            if segments.len() == 2 && crate::hash::is_log_name(&segments[0]) =>
+        {
             crate::log::LogLevel::from_str_ci(&segments[1]).filter(|l| {
                 matches!(
                     l,

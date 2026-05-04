@@ -164,7 +164,7 @@ pub struct BuiltinClosureFn(pub Arc<BuiltinClosure>);
 
 impl fmt::Debug for BuiltinClosureFn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<closure>")
+        f.write_str(ion_obf_string!("<closure>").as_str())
     }
 }
 
@@ -190,7 +190,7 @@ pub struct AsyncBuiltinClosureFn(pub Arc<AsyncBuiltinClosure>);
 #[cfg(feature = "async-runtime")]
 impl fmt::Debug for AsyncBuiltinClosureFn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<async closure>")
+        f.write_str(ion_obf_string!("<async closure>").as_str())
     }
 }
 
@@ -312,6 +312,10 @@ impl Value {
     }
 }
 
+fn fmt_opaque_value(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(ion_obf_string!("<value>").as_str())
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -374,7 +378,7 @@ impl fmt::Display for Value {
                 write!(f, ")")
             }
             Value::Set(items) => {
-                write!(f, "set{{")?;
+                write!(f, "{}{{", ion_obf_string!("set"))?;
                 for (i, item) in items.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -384,103 +388,217 @@ impl fmt::Display for Value {
                 write!(f, "}}")
             }
             Value::Option(opt) => match opt {
-                Some(v) => write!(f, "Some({})", v),
-                None => write!(f, "None"),
+                Some(v) => write!(f, "{}{})", ion_obf_string!("Some("), v),
+                None => f.write_str(ion_obf_string!("None").as_str()),
             },
             Value::Result(res) => match res {
-                Ok(v) => write!(f, "Ok({})", v),
-                Err(e) => write!(f, "Err({})", e),
+                Ok(v) => write!(f, "{}{})", ion_obf_string!("Ok("), v),
+                Err(e) => write!(f, "{}{})", ion_obf_string!("Err("), e),
             },
-            Value::Fn(func) => write!(f, "<fn {}>", func.name),
+            Value::Fn(func) => {
+                #[cfg(debug_assertions)]
+                {
+                    write!(f, "<fn {}>", func.name)
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = func;
+                    fmt_opaque_value(f)
+                }
+            }
             Value::BuiltinFn { qualified_hash, .. } => {
-                match crate::names::lookup(*qualified_hash) {
-                    Some(name) => write!(f, "<builtin {}>", name),
-                    None => write!(f, "<builtin #{:016x}>", qualified_hash),
+                #[cfg(debug_assertions)]
+                {
+                    match crate::names::lookup(*qualified_hash) {
+                        Some(name) => write!(f, "<builtin {}>", name),
+                        None => write!(f, "<builtin #{:016x}>", qualified_hash),
+                    }
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = qualified_hash;
+                    fmt_opaque_value(f)
                 }
             }
             Value::BuiltinClosure { qualified_hash, .. } => {
-                match crate::names::lookup(*qualified_hash) {
-                    Some(name) => write!(f, "<builtin {}>", name),
-                    None => write!(f, "<builtin #{:016x}>", qualified_hash),
+                #[cfg(debug_assertions)]
+                {
+                    match crate::names::lookup(*qualified_hash) {
+                        Some(name) => write!(f, "<builtin {}>", name),
+                        None => write!(f, "<builtin #{:016x}>", qualified_hash),
+                    }
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = qualified_hash;
+                    fmt_opaque_value(f)
                 }
             }
             #[cfg(feature = "async-runtime")]
             Value::AsyncBuiltinClosure { qualified_hash, .. } => {
-                match crate::names::lookup(*qualified_hash) {
-                    Some(name) => write!(f, "<async builtin {}>", name),
-                    None => write!(f, "<async builtin #{:016x}>", qualified_hash),
+                #[cfg(debug_assertions)]
+                {
+                    match crate::names::lookup(*qualified_hash) {
+                        Some(name) => write!(f, "<async builtin {}>", name),
+                        None => write!(f, "<async builtin #{:016x}>", qualified_hash),
+                    }
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = qualified_hash;
+                    fmt_opaque_value(f)
                 }
             }
-            Value::Module(table) => match crate::names::lookup(table.name_hash) {
-                Some(name) => write!(f, "<module {}>", name),
-                None => write!(f, "<module #{:016x}>", table.name_hash),
-            },
+            Value::Module(table) => {
+                #[cfg(debug_assertions)]
+                {
+                    match crate::names::lookup(table.name_hash) {
+                        Some(name) => write!(f, "<module {}>", name),
+                        None => write!(f, "<module #{:016x}>", table.name_hash),
+                    }
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = table;
+                    fmt_opaque_value(f)
+                }
+            }
             #[cfg(feature = "async-runtime")]
-            Value::AsyncTask(_) => write!(f, "<AsyncTask>"),
+            Value::AsyncTask(_) => {
+                #[cfg(debug_assertions)]
+                {
+                    write!(f, "<AsyncTask>")
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    fmt_opaque_value(f)
+                }
+            }
             #[cfg(feature = "async-runtime")]
-            Value::AsyncChannelSender(_) => write!(f, "<AsyncChannelTx>"),
+            Value::AsyncChannelSender(_) => {
+                #[cfg(debug_assertions)]
+                {
+                    write!(f, "<AsyncChannelTx>")
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    fmt_opaque_value(f)
+                }
+            }
             #[cfg(feature = "async-runtime")]
-            Value::AsyncChannelReceiver(_) => write!(f, "<AsyncChannelRx>"),
+            Value::AsyncChannelReceiver(_) => {
+                #[cfg(debug_assertions)]
+                {
+                    write!(f, "<AsyncChannelRx>")
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    fmt_opaque_value(f)
+                }
+            }
             #[cfg(all(
                 feature = "legacy-threaded-concurrency",
                 not(feature = "async-runtime")
             ))]
-            Value::Task(_) => write!(f, "<Task>"),
+            Value::Task(_) => {
+                #[cfg(debug_assertions)]
+                {
+                    write!(f, "<Task>")
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    fmt_opaque_value(f)
+                }
+            }
             #[cfg(all(
                 feature = "legacy-threaded-concurrency",
                 not(feature = "async-runtime")
             ))]
-            Value::Channel(ch) => match ch {
-                crate::async_rt::ChannelEnd::Sender(_) => write!(f, "<ChannelTx>"),
-                crate::async_rt::ChannelEnd::Receiver(_) => write!(f, "<ChannelRx>"),
-            },
+            Value::Channel(ch) => {
+                #[cfg(debug_assertions)]
+                {
+                    match ch {
+                        crate::async_rt::ChannelEnd::Sender(_) => write!(f, "<ChannelTx>"),
+                        crate::async_rt::ChannelEnd::Receiver(_) => write!(f, "<ChannelRx>"),
+                    }
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = ch;
+                    fmt_opaque_value(f)
+                }
+            }
             Value::HostStruct { type_hash, fields } => {
-                // Names live only in the optional `names` registry; debug
-                // builds auto-populate it from h!() sites, release builds
-                // can load a sidecar — see docs/hide-names.md.
-                match crate::names::lookup(*type_hash) {
-                    Some(name) => write!(f, "{} {{ ", name)?,
-                    None => write!(f, "<struct#{:016x}> {{ ", type_hash)?,
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = (type_hash, fields);
+                    fmt_opaque_value(f)
                 }
-                for (i, (k, v)) in fields.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
+                #[cfg(debug_assertions)]
+                {
+                    // Names live only in the optional `names` registry; debug
+                    // builds auto-populate it from h!() sites, release builds
+                    // can load a sidecar — see docs/hide-names.md.
+                    match crate::names::lookup(*type_hash) {
+                        Some(name) => write!(f, "{} {{ ", name)?,
+                        None => write!(f, "<struct#{:016x}> {{ ", type_hash)?,
                     }
-                    match crate::names::lookup(*k) {
-                        Some(name) => write!(f, "{}: {}", name, v)?,
-                        None => write!(f, "#{:016x}: {}", k, v)?,
+                    for (i, (k, v)) in fields.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        match crate::names::lookup(*k) {
+                            Some(name) => write!(f, "{}: {}", name, v)?,
+                            None => write!(f, "#{:016x}: {}", k, v)?,
+                        }
                     }
+                    write!(f, " }}")
                 }
-                write!(f, " }}")
             }
             Value::HostEnum {
                 enum_hash,
                 variant_hash,
                 data,
             } => {
-                match crate::names::lookup(*enum_hash) {
-                    Some(name) => write!(f, "{}::", name)?,
-                    None => write!(f, "<enum#{:016x}>::", enum_hash)?,
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = (enum_hash, variant_hash, data);
+                    fmt_opaque_value(f)
                 }
-                match crate::names::lookup(*variant_hash) {
-                    Some(name) => write!(f, "{}", name)?,
-                    None => write!(f, "<v#{:016x}>", variant_hash)?,
-                }
-                if !data.is_empty() {
-                    write!(f, "(")?;
-                    for (i, v) in data.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "{}", v)?;
+                #[cfg(debug_assertions)]
+                {
+                    match crate::names::lookup(*enum_hash) {
+                        Some(name) => write!(f, "{}::", name)?,
+                        None => write!(f, "<enum#{:016x}>::", enum_hash)?,
                     }
-                    write!(f, ")")?;
+                    match crate::names::lookup(*variant_hash) {
+                        Some(name) => write!(f, "{}", name)?,
+                        None => write!(f, "<v#{:016x}>", variant_hash)?,
+                    }
+                    if !data.is_empty() {
+                        write!(f, "(")?;
+                        for (i, v) in data.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{}", v)?;
+                        }
+                        write!(f, ")")?;
+                    }
+                    Ok(())
                 }
-                Ok(())
             }
             Value::Cell(cell) => {
-                let inner = cell.lock().unwrap();
-                write!(f, "cell({})", *inner)
+                #[cfg(debug_assertions)]
+                {
+                    let inner = cell.lock().unwrap();
+                    write!(f, "cell({})", *inner)
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    let _ = cell;
+                    fmt_opaque_value(f)
+                }
             }
             Value::Range {
                 start,

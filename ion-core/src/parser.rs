@@ -14,6 +14,30 @@ pub struct Parser {
     errors: Vec<IonError>,
 }
 
+enum TypeAnnKeyword {
+    Option,
+    Result,
+    List,
+    Dict,
+}
+
+fn type_ann_keyword(name: &str) -> Option<TypeAnnKeyword> {
+    let bytes = name.as_bytes();
+    match bytes.len() {
+        4 => match (bytes[0], bytes[1], bytes[2], bytes[3]) {
+            (108, 105, 115, 116) => Some(TypeAnnKeyword::List),
+            (100, 105, 99, 116) => Some(TypeAnnKeyword::Dict),
+            _ => None,
+        },
+        6 => match (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]) {
+            (79, 112, 116, 105, 111, 110) => Some(TypeAnnKeyword::Option),
+            (82, 101, 115, 117, 108, 116) => Some(TypeAnnKeyword::Result),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 impl Parser {
     pub fn new(tokens: Vec<SpannedToken>) -> Self {
         Self {
@@ -283,17 +307,17 @@ impl Parser {
         // `fn` is a keyword token, so eat it specially
         if self.check(&Token::Fn) {
             self.advance();
-            return Ok(TypeAnn::Simple("fn".to_string()));
+            return Ok(TypeAnn::Simple(ion_obf_string!("fn")));
         }
         let name = self.eat_ident()?;
-        match name.as_str() {
-            "Option" => {
+        match type_ann_keyword(&name) {
+            Some(TypeAnnKeyword::Option) => {
                 self.eat(&Token::Lt)?;
                 let inner = self.parse_type_ann()?;
                 self.eat(&Token::Gt)?;
                 Ok(TypeAnn::Option(Box::new(inner)))
             }
-            "Result" => {
+            Some(TypeAnnKeyword::Result) => {
                 self.eat(&Token::Lt)?;
                 let ok = self.parse_type_ann()?;
                 self.eat(&Token::Comma)?;
@@ -301,7 +325,7 @@ impl Parser {
                 self.eat(&Token::Gt)?;
                 Ok(TypeAnn::Result(Box::new(ok), Box::new(err)))
             }
-            "list" => {
+            Some(TypeAnnKeyword::List) => {
                 if self.check(&Token::Lt) {
                     self.advance();
                     let inner = self.parse_type_ann()?;
@@ -311,7 +335,7 @@ impl Parser {
                     Ok(TypeAnn::Simple(name))
                 }
             }
-            "dict" => {
+            Some(TypeAnnKeyword::Dict) => {
                 if self.check(&Token::Lt) {
                     self.advance();
                     let key = self.parse_type_ann()?;

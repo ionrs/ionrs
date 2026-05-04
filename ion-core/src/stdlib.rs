@@ -544,8 +544,8 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
             let text = format_output_args(&args);
             tokio::task::spawn_blocking(move || stdout.write(OutputStream::Stdout, &text))
                 .await
-                .map_err(|e| IonError::runtime(format!("join error: {}", e), 0, 0))?
-                .map_err(|e| IonError::runtime(format!("{}", e), 0, 0))?;
+                .map_err(|e| IonError::runtime(ion_format!("join error: {}", e), 0, 0))?
+                .map_err(|e| IonError::runtime(ion_format!("{}", e), 0, 0))?;
             Ok(Value::Unit)
         }
     });
@@ -558,8 +558,8 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
             text.push('\n');
             tokio::task::spawn_blocking(move || stdout.write(OutputStream::Stdout, &text))
                 .await
-                .map_err(|e| IonError::runtime(format!("join error: {}", e), 0, 0))?
-                .map_err(|e| IonError::runtime(format!("{}", e), 0, 0))?;
+                .map_err(|e| IonError::runtime(ion_format!("join error: {}", e), 0, 0))?
+                .map_err(|e| IonError::runtime(ion_format!("{}", e), 0, 0))?;
             Ok(Value::Unit)
         }
     });
@@ -572,8 +572,8 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
             text.push('\n');
             tokio::task::spawn_blocking(move || stderr.write(OutputStream::Stderr, &text))
                 .await
-                .map_err(|e| IonError::runtime(format!("join error: {}", e), 0, 0))?
-                .map_err(|e| IonError::runtime(format!("{}", e), 0, 0))?;
+                .map_err(|e| IonError::runtime(ion_format!("join error: {}", e), 0, 0))?
+                .map_err(|e| IonError::runtime(ion_format!("{}", e), 0, 0))?;
             Ok(Value::Unit)
         }
     });
@@ -847,26 +847,11 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
     let mut m = Module::new(crate::h!("os"));
 
     // Detection constants
-    m.set(
-        crate::h!("name"),
-        Value::Str(std::env::consts::OS.to_string()),
-    );
-    m.set(
-        crate::h!("arch"),
-        Value::Str(std::env::consts::ARCH.to_string()),
-    );
-    m.set(
-        crate::h!("family"),
-        Value::Str(std::env::consts::FAMILY.to_string()),
-    );
-    m.set(
-        crate::h!("dll_extension"),
-        Value::Str(std::env::consts::DLL_EXTENSION.to_string()),
-    );
-    m.set(
-        crate::h!("exe_extension"),
-        Value::Str(std::env::consts::EXE_EXTENSION.to_string()),
-    );
+    m.set(crate::h!("name"), Value::Str(os_name()));
+    m.set(crate::h!("arch"), Value::Str(os_arch()));
+    m.set(crate::h!("family"), Value::Str(os_family()));
+    m.set(crate::h!("dll_extension"), Value::Str(os_dll_extension()));
+    m.set(crate::h!("exe_extension"), Value::Str(os_exe_extension()));
     m.set(
         crate::h!("pointer_width"),
         Value::Int((std::mem::size_of::<usize>() * 8) as i64),
@@ -945,6 +930,56 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
     m
 }
 
+#[cfg(all(feature = "os", target_os = "windows"))]
+fn os_name() -> String {
+    ion_obf_string!("windows")
+}
+
+#[cfg(all(feature = "os", not(target_os = "windows")))]
+fn os_name() -> String {
+    std::env::consts::OS.to_string()
+}
+
+#[cfg(all(feature = "os", target_arch = "x86_64"))]
+fn os_arch() -> String {
+    ion_obf_string!("x86_64")
+}
+
+#[cfg(all(feature = "os", not(target_arch = "x86_64")))]
+fn os_arch() -> String {
+    std::env::consts::ARCH.to_string()
+}
+
+#[cfg(all(feature = "os", target_family = "windows"))]
+fn os_family() -> String {
+    ion_obf_string!("windows")
+}
+
+#[cfg(all(feature = "os", not(target_family = "windows")))]
+fn os_family() -> String {
+    std::env::consts::FAMILY.to_string()
+}
+
+#[cfg(all(feature = "os", target_os = "windows"))]
+fn os_dll_extension() -> String {
+    ion_obf_string!("dll")
+}
+
+#[cfg(all(feature = "os", not(target_os = "windows")))]
+fn os_dll_extension() -> String {
+    std::env::consts::DLL_EXTENSION.to_string()
+}
+
+#[cfg(all(feature = "os", target_os = "windows"))]
+fn os_exe_extension() -> String {
+    ion_obf_string!("exe")
+}
+
+#[cfg(all(feature = "os", not(target_os = "windows")))]
+fn os_exe_extension() -> String {
+    std::env::consts::EXE_EXTENSION.to_string()
+}
+
 /// Build the `os::` stdlib module with no script args. Use
 /// `Engine::set_args` afterwards to inject argv reachable as `os::args()`.
 #[cfg(feature = "os")]
@@ -974,7 +1009,7 @@ pub fn path_module() -> Module {
         for (i, arg) in args.iter().enumerate() {
             let s = arg
                 .as_str()
-                .ok_or_else(|| format!("argument {} must be a string", i + 1))?;
+                .ok_or_else(|| ion_format!("argument {} must be a string", i + 1))?;
             buf.push(s);
         }
         Ok(Value::Str(buf.to_string_lossy().into_owned()))
@@ -1149,11 +1184,11 @@ pub fn path_module() -> Module {
 #[cfg(feature = "fs")]
 fn fs_metadata_to_dict(md: &std::fs::Metadata) -> Value {
     let mut d = indexmap::IndexMap::new();
-    d.insert("size".to_string(), Value::Int(md.len() as i64));
-    d.insert("is_file".to_string(), Value::Bool(md.is_file()));
-    d.insert("is_dir".to_string(), Value::Bool(md.is_dir()));
+    d.insert(ion_obf_string!("size"), Value::Int(md.len() as i64));
+    d.insert(ion_obf_string!("is_file"), Value::Bool(md.is_file()));
+    d.insert(ion_obf_string!("is_dir"), Value::Bool(md.is_dir()));
     d.insert(
-        "readonly".to_string(),
+        ion_obf_string!("readonly"),
         Value::Bool(md.permissions().readonly()),
     );
     let modified = md
@@ -1162,7 +1197,7 @@ fn fs_metadata_to_dict(md: &std::fs::Metadata) -> Value {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| Value::Int(d.as_secs() as i64))
         .unwrap_or(Value::Unit);
-    d.insert("modified".to_string(), modified);
+    d.insert(ion_obf_string!("modified"), modified);
     Value::Dict(d)
 }
 
@@ -1191,7 +1226,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::read_to_string(path)
             .map(Value::Str)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("read_bytes"), |args: &[Value]| {
@@ -1201,7 +1236,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::read(path)
             .map(Value::Bytes)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("write"), |args: &[Value]| {
@@ -1222,7 +1257,7 @@ pub fn fs_module() -> Module {
         };
         result
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("append"), |args: &[Value]| {
@@ -1235,7 +1270,7 @@ pub fn fs_module() -> Module {
             .create(true)
             .append(true)
             .open(path)
-            .map_err(|e| format!("('{}'): {}", path, e))?;
+            .map_err(|e| ion_format!("('{}'): {}", path, e))?;
         let bytes: &[u8] = match &args[1] {
             Value::Str(s) => s.as_bytes(),
             Value::Bytes(b) => b,
@@ -1249,7 +1284,7 @@ pub fn fs_module() -> Module {
         };
         f.write_all(bytes)
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("exists"), |args: &[Value]| {
@@ -1281,10 +1316,10 @@ pub fn fs_module() -> Module {
             return Err(ion_str!("takes 1 argument"));
         }
         let path = fs_arg_str(args, 0)?;
-        let entries = std::fs::read_dir(path).map_err(|e| format!("('{}'): {}", path, e))?;
+        let entries = std::fs::read_dir(path).map_err(|e| ion_format!("('{}'): {}", path, e))?;
         let mut names = Vec::new();
         for entry in entries {
-            let entry = entry.map_err(|e| format!("('{}'): {}", path, e))?;
+            let entry = entry.map_err(|e| ion_format!("('{}'): {}", path, e))?;
             names.push(Value::Str(entry.file_name().to_string_lossy().into_owned()));
         }
         Ok(Value::List(names))
@@ -1297,7 +1332,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::create_dir(path)
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("create_dir_all"), |args: &[Value]| {
@@ -1307,7 +1342,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::create_dir_all(path)
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("remove_file"), |args: &[Value]| {
@@ -1317,7 +1352,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::remove_file(path)
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("remove_dir"), |args: &[Value]| {
@@ -1327,7 +1362,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::remove_dir(path)
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("remove_dir_all"), |args: &[Value]| {
@@ -1337,7 +1372,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::remove_dir_all(path)
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m.register_fn(crate::h!("rename"), |args: &[Value]| {
@@ -1348,7 +1383,7 @@ pub fn fs_module() -> Module {
         let to = fs_arg_str(args, 1)?;
         std::fs::rename(from, to)
             .map(|_| Value::Unit)
-            .map_err(|e| format!("('{}' -> '{}'): {}", from, to, e))
+            .map_err(|e| ion_format!("('{}' -> '{}'): {}", from, to, e))
     });
 
     m.register_fn(crate::h!("copy"), |args: &[Value]| {
@@ -1359,7 +1394,7 @@ pub fn fs_module() -> Module {
         let to = fs_arg_str(args, 1)?;
         std::fs::copy(from, to)
             .map(|n| Value::Int(n as i64))
-            .map_err(|e| format!("('{}' -> '{}'): {}", from, to, e))
+            .map_err(|e| ion_format!("('{}' -> '{}'): {}", from, to, e))
     });
 
     m.register_fn(crate::h!("metadata"), |args: &[Value]| {
@@ -1367,7 +1402,7 @@ pub fn fs_module() -> Module {
             return Err(ion_str!("takes 1 argument"));
         }
         let path = fs_arg_str(args, 0)?;
-        let md = std::fs::metadata(path).map_err(|e| format!("('{}'): {}", path, e))?;
+        let md = std::fs::metadata(path).map_err(|e| ion_format!("('{}'): {}", path, e))?;
         Ok(fs_metadata_to_dict(&md))
     });
 
@@ -1378,7 +1413,7 @@ pub fn fs_module() -> Module {
         let path = fs_arg_str(args, 0)?;
         std::fs::canonicalize(path)
             .map(|p| Value::Str(p.to_string_lossy().into_owned()))
-            .map_err(|e| format!("('{}'): {}", path, e))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
     m
@@ -1410,14 +1445,14 @@ pub fn fs_module() -> Module {
     }
 
     fn io_err(target: &str, e: std::io::Error) -> IonError {
-        IonError::runtime(format!("'{}': {}", target, e), 0, 0)
+        IonError::runtime(ion_format!("'{}': {}", target, e), 0, 0)
     }
 
     let mut m = Module::new(crate::h!("fs"));
 
     m.register_async_fn(crate::h!("read"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::read_to_string(&path)
@@ -1428,7 +1463,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("read_bytes"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::read(&path)
@@ -1439,7 +1474,11 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("write"), |args| async move {
         if args.len() != 2 {
-            return Err(IonError::runtime("takes 2 arguments: path, contents", 0, 0));
+            return Err(IonError::runtime(
+                ion_str!("takes 2 arguments: path, contents"),
+                0,
+                0,
+            ));
         }
         let path = arg_str(&args, 0)?;
         let bytes: Vec<u8> = match &args[1] {
@@ -1462,7 +1501,11 @@ pub fn fs_module() -> Module {
     m.register_async_fn(crate::h!("append"), |args| async move {
         use tokio::io::AsyncWriteExt;
         if args.len() != 2 {
-            return Err(IonError::runtime("takes 2 arguments: path, contents", 0, 0));
+            return Err(IonError::runtime(
+                ion_str!("takes 2 arguments: path, contents"),
+                0,
+                0,
+            ));
         }
         let path = arg_str(&args, 0)?;
         let bytes: Vec<u8> = match &args[1] {
@@ -1490,7 +1533,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("exists"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         // `tokio::fs::try_exists` on stable. Fall back to a metadata check so
@@ -1504,7 +1547,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("is_file"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         match tokio::fs::metadata(&path).await {
@@ -1516,7 +1559,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("is_dir"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         match tokio::fs::metadata(&path).await {
@@ -1528,7 +1571,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("list_dir"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         let mut rd = tokio::fs::read_dir(&path)
@@ -1549,7 +1592,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("create_dir"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::create_dir(&path)
@@ -1560,7 +1603,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("create_dir_all"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::create_dir_all(&path)
@@ -1571,7 +1614,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("remove_file"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::remove_file(&path)
@@ -1582,7 +1625,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("remove_dir"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::remove_dir(&path)
@@ -1593,7 +1636,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("remove_dir_all"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::remove_dir_all(&path)
@@ -1604,31 +1647,39 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("rename"), |args| async move {
         if args.len() != 2 {
-            return Err(IonError::runtime("takes 2 arguments: from, to", 0, 0));
+            return Err(IonError::runtime(
+                ion_str!("takes 2 arguments: from, to"),
+                0,
+                0,
+            ));
         }
         let from = arg_str(&args, 0)?;
         let to = arg_str(&args, 1)?;
         tokio::fs::rename(&from, &to)
             .await
             .map(|_| Value::Unit)
-            .map_err(|e| IonError::runtime(format!("('{}' -> '{}'): {}", from, to, e), 0, 0))
+            .map_err(|e| IonError::runtime(ion_format!("('{}' -> '{}'): {}", from, to, e), 0, 0))
     });
 
     m.register_async_fn(crate::h!("copy"), |args| async move {
         if args.len() != 2 {
-            return Err(IonError::runtime("takes 2 arguments: from, to", 0, 0));
+            return Err(IonError::runtime(
+                ion_str!("takes 2 arguments: from, to"),
+                0,
+                0,
+            ));
         }
         let from = arg_str(&args, 0)?;
         let to = arg_str(&args, 1)?;
         tokio::fs::copy(&from, &to)
             .await
             .map(|n| Value::Int(n as i64))
-            .map_err(|e| IonError::runtime(format!("('{}' -> '{}'): {}", from, to, e), 0, 0))
+            .map_err(|e| IonError::runtime(ion_format!("('{}' -> '{}'): {}", from, to, e), 0, 0))
     });
 
     m.register_async_fn(crate::h!("metadata"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         let md = tokio::fs::metadata(&path)
@@ -1639,7 +1690,7 @@ pub fn fs_module() -> Module {
 
     m.register_async_fn(crate::h!("canonicalize"), |args| async move {
         if args.len() != 1 {
-            return Err(IonError::runtime("takes 1 argument", 0, 0));
+            return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
         }
         let path = arg_str(&args, 0)?;
         tokio::fs::canonicalize(&path)

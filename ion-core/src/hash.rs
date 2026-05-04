@@ -46,6 +46,64 @@ pub const fn mix(a: u64, b: u64) -> u64 {
     h
 }
 
+pub(crate) fn is_to_string_name(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() == 9
+        && matches!(
+            (
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                bytes[8],
+            ),
+            (116, 111, 95, 115, 116, 114, 105, 110, 103)
+        )
+}
+
+pub(crate) fn is_len_name(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() == 3 && matches!((bytes[0], bytes[1], bytes[2]), (108, 101, 110))
+}
+
+pub(crate) fn is_log_name(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() == 3 && matches!((bytes[0], bytes[1], bytes[2]), (108, 111, 103))
+}
+
+pub(crate) fn starts_with_option_type(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() >= 6
+        && matches!(
+            (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]),
+            (79, 112, 116, 105, 111, 110)
+        )
+}
+
+pub(crate) fn starts_with_result_type(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() >= 6
+        && matches!(
+            (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]),
+            (82, 101, 115, 117, 108, 116)
+        )
+}
+
+pub(crate) fn starts_with_list_generic_type(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() >= 5
+        && matches!(
+            (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]),
+            (108, 105, 115, 116, 60)
+        )
+}
+
+pub(crate) fn starts_with_dict_generic_type(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() >= 5
+        && matches!(
+            (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]),
+            (100, 105, 99, 116, 60)
+        )
+}
+
 /// Hash a string literal at compile time. Expands to a `u64` expression
 /// whose value is the FNV-1a hash of `$s` — the literal is folded by the
 /// compiler and does not survive in the **release** binary.

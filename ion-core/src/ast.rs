@@ -385,13 +385,22 @@ pub enum BinOp {
 /// Optional type annotation for `let` bindings.
 /// Inner/generic types are parsed but only the outer type is checked at runtime
 /// (e.g. `list<int>` checks that the value is a list, not that elements are ints).
-#[derive(Debug, Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone)]
 pub enum TypeAnn {
     Simple(String),                     // int, float, bool, string, list, dict, set, etc.
     Option(Box<TypeAnn>),               // Option<T>
     Result(Box<TypeAnn>, Box<TypeAnn>), // Result<T, E>
     List(Box<TypeAnn>),                 // list<T>
     Dict(Box<TypeAnn>, Box<TypeAnn>),   // dict<K, V>
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for TypeAnn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let _ = self;
+        f.write_str(ion_static_str!("TypeAnn"))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

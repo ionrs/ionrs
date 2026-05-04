@@ -65,6 +65,30 @@ fn shape_matches(a: &[HostVariantDef], b: &[HostVariantDef]) -> bool {
         .all(|(x, y)| x.name_hash == y.name_hash && x.arity == y.arity)
 }
 
+#[cfg(debug_assertions)]
+fn panic_struct_collision(name_hash: u64) -> ! {
+    panic!(
+        "internal: struct hash collision at #{name_hash:016x}: registered shape differs from incoming definition"
+    );
+}
+
+#[cfg(not(debug_assertions))]
+fn panic_struct_collision(_name_hash: u64) -> ! {
+    panic!("{}", ion_str!("type collision"));
+}
+
+#[cfg(debug_assertions)]
+fn panic_enum_collision(name_hash: u64) -> ! {
+    panic!(
+        "internal: enum hash collision at #{name_hash:016x}: registered variants differ from incoming definition"
+    );
+}
+
+#[cfg(not(debug_assertions))]
+fn panic_enum_collision(_name_hash: u64) -> ! {
+    panic!("{}", ion_str!("type collision"));
+}
+
 /// Registry of host-provided types available to scripts. Lookup by hash;
 /// no string keys live in the registry at runtime.
 #[derive(Debug, Clone, Default)]
@@ -84,12 +108,9 @@ impl TypeRegistry {
     /// when an embedder calls `Engine::register_type::<T>()` more than once.
     pub fn register_struct(&mut self, def: HostStructDef) {
         if let Some(existing) = self.structs.get(&def.name_hash) {
-            assert!(
-                existing.fields == def.fields,
-                "internal: struct hash collision at #{:016x}: \
-                 registered shape differs from incoming definition",
-                def.name_hash
-            );
+            if existing.fields != def.fields {
+                panic_struct_collision(def.name_hash);
+            }
         }
         self.structs.insert(def.name_hash, def);
     }
@@ -98,12 +119,9 @@ impl TypeRegistry {
     /// already-registered enum that has a different variant set.
     pub fn register_enum(&mut self, def: HostEnumDef) {
         if let Some(existing) = self.enums.get(&def.name_hash) {
-            assert!(
-                shape_matches(&existing.variants, &def.variants),
-                "internal: enum hash collision at #{:016x}: \
-                 registered variants differ from incoming definition",
-                def.name_hash
-            );
+            if !shape_matches(&existing.variants, &def.variants) {
+                panic_enum_collision(def.name_hash);
+            }
         }
         self.enums.insert(def.name_hash, def);
     }
@@ -122,16 +140,16 @@ impl TypeRegistry {
         let def = self
             .structs
             .get(&type_hash)
-            .ok_or_else(|| format!("unknown type '{}'", name))?;
+            .ok_or_else(|| ion_format!("unknown type '{}'", name))?;
 
         for fhash in fields.keys() {
             if !def.fields.contains(fhash) {
-                return Err(format!("unknown field in {}", name));
+                return Err(ion_format!("unknown field in {}", name));
             }
         }
         for expected in &def.fields {
             if !fields.contains_key(expected) {
-                return Err(format!("missing field in {}", name));
+                return Err(ion_format!("missing field in {}", name));
             }
         }
         Ok(Value::HostStruct { type_hash, fields })
@@ -150,14 +168,14 @@ impl TypeRegistry {
         let def = self
             .enums
             .get(&enum_hash)
-            .ok_or_else(|| format!("unknown enum '{}'", enum_name))?;
+            .ok_or_else(|| ion_format!("unknown enum '{}'", enum_name))?;
         let variant_def = def
             .variants
             .iter()
             .find(|v| v.name_hash == variant_hash)
-            .ok_or_else(|| format!("unknown variant '{}' in {}", variant, enum_name))?;
+            .ok_or_else(|| ion_format!("unknown variant '{}' in {}", variant, enum_name))?;
         if data.len() != variant_def.arity {
-            return Err(format!(
+            return Err(ion_format!(
                 "{}::{} expects {} arguments, got {}",
                 enum_name,
                 variant,
@@ -198,7 +216,7 @@ impl TypeRegistry {
                 return Ok(fields.get(&field_hash).cloned());
             }
         }
-        Err(format!(
+        Err(ion_format!(
             "cannot access field '{}' on {}",
             field,
             val.type_name()
