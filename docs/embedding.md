@@ -213,13 +213,13 @@ For native async I/O, enable `async-runtime` and await `Engine::eval_async`.
 Ion parks on Tokio futures instead of blocking an OS thread:
 
 ```rust,no_run
-use ion_core::{Engine, Value};
+use ion_core::{Engine, Value, h};
 use ion_core::error::IonError;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), IonError> {
     let mut engine = Engine::new();
-    engine.register_async_fn("fetch", |args| async move {
+    engine.register_async_fn(h!("fetch"), |args| async move {
         let path = args[0].as_str().unwrap_or("").to_string();
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         Ok(Value::Str(path))
@@ -245,9 +245,9 @@ appropriate for purely synchronous hosts.
 ## Cargo.toml for Embedding
 ```toml
 [dependencies]
-ion-core = "0.3"  # includes derive + optimized vm by default
+ion-core = "0.9.2"  # includes derive + optimized vm by default
 # optional:
-# ion-core = { version = "0.3", features = ["async-runtime", "msgpack", "rewrite"] }
+# ion-core = { version = "0.9.2", features = ["async-runtime", "msgpack", "rewrite"] }
 ```
 
 ## Examples

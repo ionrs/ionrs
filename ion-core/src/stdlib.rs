@@ -14,6 +14,8 @@ use crate::value::Value;
 use semver::{BuildMetadata, Prerelease, Version, VersionReq};
 
 const MAX_BYTES_LEN: usize = 10_000_000;
+#[cfg(feature = "fs")]
+const FS_RANDOM_CHUNK_LEN: usize = 8 * 1024 * 1024;
 const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 #[derive(Debug, Clone, Copy)]
@@ -876,6 +878,308 @@ pub(crate) fn bytes_method_value(
     Ok(Some(value))
 }
 
+struct RandomSource {
+    state: u64,
+    #[cfg(unix)]
+    file: Option<std::fs::File>,
+}
+
+impl RandomSource {
+    fn new() -> Self {
+        Self {
+            state: fallback_random_seed(),
+            #[cfg(unix)]
+            file: std::fs::File::open("/dev/urandom").ok(),
+        }
+    }
+
+    fn fill_bytes(&mut self, bytes: &mut [u8]) {
+        #[cfg(unix)]
+        {
+            use std::io::Read;
+
+            if let Some(file) = self.file.as_mut() {
+                if file.read_exact(bytes).is_ok() {
+                    return;
+                }
+            }
+            self.file = None;
+        }
+
+        for chunk in bytes.chunks_mut(8) {
+            let random = splitmix64_next(&mut self.state).to_le_bytes();
+            chunk.copy_from_slice(&random[..chunk.len()]);
+        }
+    }
+
+    fn u64(&mut self) -> u64 {
+        let mut bytes = [0u8; 8];
+        self.fill_bytes(&mut bytes);
+        u64::from_le_bytes(bytes)
+    }
+
+    fn below(&mut self, upper: u64) -> Result<u64, String> {
+        if upper == 0 {
+            return Err(ion_str!("upper bound must be positive"));
+        }
+        if upper == 1 {
+            return Ok(0);
+        }
+        let zone = u64::MAX - (u64::MAX % upper);
+        loop {
+            let value = self.u64();
+            if value < zone {
+                return Ok(value % upper);
+            }
+        }
+    }
+
+    fn unit_float(&mut self) -> f64 {
+        const SCALE: f64 = 1.0 / ((1u64 << 53) as f64);
+        ((self.u64() >> 11) as f64) * SCALE
+    }
+}
+
+fn fallback_random_seed() -> u64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let marker = 0u8;
+    let addr = (&marker as *const u8 as usize) as u64;
+    let seed = (now as u64)
+        ^ ((now >> 64) as u64)
+        ^ addr.rotate_left(17)
+        ^ (std::process::id() as u64).rotate_left(31);
+    if seed == 0 {
+        0x9e37_79b9_7f4a_7c15
+    } else {
+        seed
+    }
+}
+
+fn splitmix64_next(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    let mut value = *state;
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
+
+fn rand_int_range(rng: &mut RandomSource, min: i64, max: i64) -> Result<i64, String> {
+    if min >= max {
+        return Err(ion_str!("rand::int requires min < max"));
+    }
+    let span = (max as i128 - min as i128) as u128;
+    let offset = rng.below(span as u64)? as i128;
+    Ok((min as i128 + offset) as i64)
+}
+
+fn rand_int(args: &[Value]) -> Result<Value, String> {
+    let mut rng = RandomSource::new();
+    match args.len() {
+        0 => Ok(Value::Int(rng.u64() as i64)),
+        1 => {
+            let max = required_int_arg(args, 0, "rand::int")?;
+            if max <= 0 {
+                return Err(ion_str!("rand::int max must be positive"));
+            }
+            rand_int_range(&mut rng, 0, max).map(Value::Int)
+        }
+        2 => {
+            let min = required_int_arg(args, 0, "rand::int")?;
+            let max = required_int_arg(args, 1, "rand::int")?;
+            rand_int_range(&mut rng, min, max).map(Value::Int)
+        }
+        _ => Err(ion_str!("rand::int takes 0, 1, or 2 arguments")),
+    }
+}
+
+fn rand_float(args: &[Value]) -> Result<Value, String> {
+    let mut rng = RandomSource::new();
+    let unit = rng.unit_float();
+    match args.len() {
+        0 => Ok(Value::Float(unit)),
+        1 => {
+            let max = args[0]
+                .as_float()
+                .ok_or_else(|| ion_str!("rand::float requires numeric arguments"))?;
+            if !max.is_finite() || max <= 0.0 {
+                return Err(ion_str!("rand::float max must be finite and positive"));
+            }
+            Ok(Value::Float(unit * max))
+        }
+        2 => {
+            let min = args[0]
+                .as_float()
+                .ok_or_else(|| ion_str!("rand::float requires numeric arguments"))?;
+            let max = args[1]
+                .as_float()
+                .ok_or_else(|| ion_str!("rand::float requires numeric arguments"))?;
+            if !min.is_finite() || !max.is_finite() || min >= max {
+                return Err(ion_str!("rand::float requires finite min < max"));
+            }
+            Ok(Value::Float(min + unit * (max - min)))
+        }
+        _ => Err(ion_str!("rand::float takes 0, 1, or 2 arguments")),
+    }
+}
+
+fn rand_bool(args: &[Value]) -> Result<Value, String> {
+    let mut rng = RandomSource::new();
+    match args.len() {
+        0 => Ok(Value::Bool((rng.u64() & 1) == 1)),
+        1 => {
+            let probability = args[0]
+                .as_float()
+                .ok_or_else(|| ion_str!("rand::bool requires numeric probability"))?;
+            if !probability.is_finite() || !(0.0..=1.0).contains(&probability) {
+                return Err(ion_str!("rand::bool probability must be in 0.0..=1.0"));
+            }
+            Ok(Value::Bool(rng.unit_float() < probability))
+        }
+        _ => Err(ion_str!("rand::bool takes 0 or 1 arguments")),
+    }
+}
+
+fn rand_bytes(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(ion_str!("rand::bytes takes 1 argument"));
+    }
+    let len = required_int_arg(args, 0, "rand::bytes")?;
+    if len < 0 {
+        return Err(ion_str!("rand::bytes length must be non-negative"));
+    }
+    let len = len as usize;
+    check_bytes_len(len, "rand::bytes")?;
+    let mut bytes = vec![0u8; len];
+    RandomSource::new().fill_bytes(&mut bytes);
+    Ok(Value::Bytes(bytes))
+}
+
+fn rand_choice(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(ion_str!("rand::choice takes 1 argument"));
+    }
+    let mut rng = RandomSource::new();
+    match &args[0] {
+        Value::List(items) => {
+            if items.is_empty() {
+                Ok(Value::Option(None))
+            } else {
+                let index = rng.below(items.len() as u64)? as usize;
+                Ok(Value::Option(Some(Box::new(items[index].clone()))))
+            }
+        }
+        Value::Str(value) => {
+            let chars: Vec<char> = value.chars().collect();
+            if chars.is_empty() {
+                Ok(Value::Option(None))
+            } else {
+                let index = rng.below(chars.len() as u64)? as usize;
+                Ok(Value::Option(Some(Box::new(Value::Str(
+                    chars[index].to_string(),
+                )))))
+            }
+        }
+        Value::Bytes(bytes) => {
+            if bytes.is_empty() {
+                Ok(Value::Option(None))
+            } else {
+                let index = rng.below(bytes.len() as u64)? as usize;
+                Ok(Value::Option(Some(Box::new(Value::Int(
+                    bytes[index] as i64,
+                )))))
+            }
+        }
+        other => Err(format!(
+            "{}{}",
+            ion_str!("rand::choice not supported for "),
+            other.type_name()
+        )),
+    }
+}
+
+fn shuffle_slice<T>(rng: &mut RandomSource, items: &mut [T]) -> Result<(), String> {
+    for index in (1..items.len()).rev() {
+        let other = rng.below((index + 1) as u64)? as usize;
+        items.swap(index, other);
+    }
+    Ok(())
+}
+
+fn rand_shuffle(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(ion_str!("rand::shuffle takes 1 argument"));
+    }
+    let mut rng = RandomSource::new();
+    match &args[0] {
+        Value::List(items) => {
+            let mut shuffled = items.clone();
+            shuffle_slice(&mut rng, &mut shuffled)?;
+            Ok(Value::List(shuffled))
+        }
+        Value::Bytes(bytes) => {
+            let mut shuffled = bytes.clone();
+            shuffle_slice(&mut rng, &mut shuffled)?;
+            Ok(Value::Bytes(shuffled))
+        }
+        other => Err(format!(
+            "{}{}",
+            ion_str!("rand::shuffle not supported for "),
+            other.type_name()
+        )),
+    }
+}
+
+fn sample_len(args: &[Value], len: usize) -> Result<usize, String> {
+    let n = required_int_arg(args, 1, "rand::sample")?;
+    if n < 0 {
+        return Err(ion_str!("rand::sample count must be non-negative"));
+    }
+    let n = n as usize;
+    if n > len {
+        return Err(ion_str!("rand::sample count exceeds population length"));
+    }
+    Ok(n)
+}
+
+fn sample_slice<T>(rng: &mut RandomSource, items: &mut [T], n: usize) -> Result<(), String> {
+    for index in 0..n {
+        let other = index + rng.below((items.len() - index) as u64)? as usize;
+        items.swap(index, other);
+    }
+    Ok(())
+}
+
+fn rand_sample(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(ion_str!("rand::sample takes 2 arguments"));
+    }
+    let mut rng = RandomSource::new();
+    match &args[0] {
+        Value::List(items) => {
+            let n = sample_len(args, items.len())?;
+            let mut sampled = items.clone();
+            sample_slice(&mut rng, &mut sampled, n)?;
+            sampled.truncate(n);
+            Ok(Value::List(sampled))
+        }
+        Value::Bytes(bytes) => {
+            let n = sample_len(args, bytes.len())?;
+            let mut sampled = bytes.clone();
+            sample_slice(&mut rng, &mut sampled, n)?;
+            sampled.truncate(n);
+            Ok(Value::Bytes(sampled))
+        }
+        other => Err(format!(
+            "{}{}",
+            ion_str!("rand::sample not supported for "),
+            other.type_name()
+        )),
+    }
+}
+
 /// Build the `math` stdlib module.
 ///
 /// Functions: abs, min, max, floor, ceil, round, sqrt, pow, clamp, log, log2, log10, sin, cos, tan, atan2
@@ -1363,6 +1667,23 @@ pub fn bytes_module() -> Module {
     m.register_fn(crate::h!("i64_be"), |args| {
         pack_signed(args, 8, ByteOrder::Big, "bytes::i64_be")
     });
+
+    m
+}
+
+/// Build the `rand` stdlib module.
+///
+/// Functions: int, float, bool, bytes, choice, shuffle, sample
+pub fn rand_module() -> Module {
+    let mut m = Module::new(crate::h!("rand"));
+
+    m.register_fn(crate::h!("int"), rand_int);
+    m.register_fn(crate::h!("float"), rand_float);
+    m.register_fn(crate::h!("bool"), rand_bool);
+    m.register_fn(crate::h!("bytes"), rand_bytes);
+    m.register_fn(crate::h!("choice"), rand_choice);
+    m.register_fn(crate::h!("shuffle"), rand_shuffle);
+    m.register_fn(crate::h!("sample"), rand_sample);
 
     m
 }
@@ -2200,7 +2521,8 @@ pub fn path_module() -> Module {
 // an async build they're registered via `register_async_fn` and call
 // `tokio::fs`, so they cooperate with the executor instead of blocking it.
 //
-// `read_bytes` returns `bytes`; everything else returns strings or unit.
+// `read_bytes` returns `bytes`; `copy` and random helpers return byte counts;
+// everything else returns strings or unit.
 
 #[cfg(feature = "fs")]
 fn fs_metadata_to_dict(md: &std::fs::Metadata) -> Value {
@@ -2220,6 +2542,108 @@ fn fs_metadata_to_dict(md: &std::fs::Metadata) -> Value {
         .unwrap_or(Value::Unit);
     d.insert(ion_obf_string!("modified"), modified);
     Value::Dict(d)
+}
+
+#[cfg(feature = "fs")]
+fn fs_nonnegative_int_arg(args: &[Value], index: usize, context: &str) -> Result<u64, String> {
+    let value = required_int_arg(args, index, context)?;
+    if value < 0 {
+        return Err(format!("{}{}", context, ion_str!(" must be non-negative")));
+    }
+    Ok(value as u64)
+}
+
+#[cfg(all(feature = "fs", not(feature = "async-runtime")))]
+fn write_random_chunks<W: std::io::Write>(writer: &mut W, count: u64) -> std::io::Result<()> {
+    let mut remaining = count;
+    if remaining == 0 {
+        return Ok(());
+    }
+
+    let mut rng = RandomSource::new();
+    let mut buffer = vec![0u8; remaining.min(FS_RANDOM_CHUNK_LEN as u64) as usize];
+    while remaining > 0 {
+        let len = remaining.min(buffer.len() as u64) as usize;
+        rng.fill_bytes(&mut buffer[..len]);
+        std::io::Write::write_all(writer, &buffer[..len])?;
+        remaining -= len as u64;
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "fs", feature = "async-runtime"))]
+async fn write_random_chunks_async<W>(writer: &mut W, count: u64) -> std::io::Result<()>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+
+    let mut remaining = count;
+    if remaining == 0 {
+        return Ok(());
+    }
+
+    let mut rng = RandomSource::new();
+    let mut buffer = vec![0u8; remaining.min(FS_RANDOM_CHUNK_LEN as u64) as usize];
+    while remaining > 0 {
+        let len = remaining.min(buffer.len() as u64) as usize;
+        rng.fill_bytes(&mut buffer[..len]);
+        writer.write_all(&buffer[..len]).await?;
+        remaining -= len as u64;
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "fs", not(feature = "async-runtime")))]
+fn fs_append_random_sync(path: &str, count: u64) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    write_random_chunks(&mut file, count)
+}
+
+#[cfg(all(feature = "fs", not(feature = "async-runtime")))]
+fn fs_pad_random_sync(path: &str, target_size: u64) -> std::io::Result<u64> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    let current_size = file.metadata()?.len();
+    if target_size <= current_size {
+        return Ok(0);
+    }
+
+    let count = target_size - current_size;
+    write_random_chunks(&mut file, count)?;
+    Ok(count)
+}
+
+#[cfg(all(feature = "fs", feature = "async-runtime"))]
+async fn fs_append_random_async(path: &str, count: u64) -> std::io::Result<()> {
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await?;
+    write_random_chunks_async(&mut file, count).await
+}
+
+#[cfg(all(feature = "fs", feature = "async-runtime"))]
+async fn fs_pad_random_async(path: &str, target_size: u64) -> std::io::Result<u64> {
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await?;
+    let current_size = file.metadata().await?.len();
+    if target_size <= current_size {
+        return Ok(0);
+    }
+
+    let count = target_size - current_size;
+    write_random_chunks_async(&mut file, count).await?;
+    Ok(count)
 }
 
 #[cfg(all(feature = "fs", not(feature = "async-runtime")))]
@@ -2305,6 +2729,28 @@ pub fn fs_module() -> Module {
         };
         f.write_all(bytes)
             .map(|_| Value::Unit)
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
+    });
+
+    m.register_fn(crate::h!("append_random"), |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("takes 2 arguments: path, count"));
+        }
+        let path = fs_arg_str(args, 0)?;
+        let count = fs_nonnegative_int_arg(args, 1, "fs::append_random count")?;
+        fs_append_random_sync(path, count)
+            .map(|_| Value::Int(count as i64))
+            .map_err(|e| ion_format!("('{}'): {}", path, e))
+    });
+
+    m.register_fn(crate::h!("pad_random"), |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("takes 2 arguments: path, target_size"));
+        }
+        let path = fs_arg_str(args, 0)?;
+        let target_size = fs_nonnegative_int_arg(args, 1, "fs::pad_random target_size")?;
+        fs_pad_random_sync(path, target_size)
+            .map(|count| Value::Int(count as i64))
             .map_err(|e| ion_format!("('{}'): {}", path, e))
     });
 
@@ -2552,6 +2998,40 @@ pub fn fs_module() -> Module {
             .map_err(|e| io_err(&path, e))
     });
 
+    m.register_async_fn(crate::h!("append_random"), |args| async move {
+        if args.len() != 2 {
+            return Err(IonError::runtime(
+                ion_str!("takes 2 arguments: path, count"),
+                0,
+                0,
+            ));
+        }
+        let path = arg_str(&args, 0)?;
+        let count = fs_nonnegative_int_arg(&args, 1, "fs::append_random count")
+            .map_err(|e| IonError::runtime(e, 0, 0))?;
+        fs_append_random_async(&path, count)
+            .await
+            .map(|_| Value::Int(count as i64))
+            .map_err(|e| io_err(&path, e))
+    });
+
+    m.register_async_fn(crate::h!("pad_random"), |args| async move {
+        if args.len() != 2 {
+            return Err(IonError::runtime(
+                ion_str!("takes 2 arguments: path, target_size"),
+                0,
+                0,
+            ));
+        }
+        let path = arg_str(&args, 0)?;
+        let target_size = fs_nonnegative_int_arg(&args, 1, "fs::pad_random target_size")
+            .map_err(|e| IonError::runtime(e, 0, 0))?;
+        fs_pad_random_async(&path, target_size)
+            .await
+            .map(|count| Value::Int(count as i64))
+            .map_err(|e| io_err(&path, e))
+    });
+
     m.register_async_fn(crate::h!("exists"), |args| async move {
         if args.len() != 1 {
             return Err(IonError::runtime(ion_str!("takes 1 argument"), 0, 0));
@@ -2754,6 +3234,7 @@ pub fn register_stdlib_with_handlers(
     install(env, math_module());
     install(env, json_module());
     install(env, bytes_module());
+    install(env, rand_module());
     install(env, io_module_with_output(output));
     install(env, string_module());
     install(env, log_module_with_handler(log_handler, level));

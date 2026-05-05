@@ -70,6 +70,15 @@ fn test_async_bytes_module_works() {
     );
 }
 
+#[test]
+fn test_async_rand_module_works() {
+    assert_eq!(
+        eval("let x = rand::int(10); x >= 0 && x < 10"),
+        Value::Bool(true)
+    );
+    assert_eq!(eval("rand::choice([42]).unwrap()"), Value::Int(42));
+}
+
 // --- fs:: under tokio ---
 
 #[cfg(feature = "fs")]
@@ -138,6 +147,38 @@ fn test_async_fs_append() {
             .unwrap();
         assert_eq!(v, Value::Str("123".to_string()));
     });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_async_fs_random_padding() {
+    let dir = fs_test_dir("random_padding");
+    let path = dir.join("blob.bin");
+    let path_s = path.to_string_lossy().to_string();
+    let value = eval(&format!(
+        r#"
+        fs::write("{}", b"ab");
+        let appended = fs::append_random("{}", 5);
+        let padded = fs::pad_random("{}", 10);
+        let noop = fs::pad_random("{}", 8);
+        [appended, padded, noop, fs::metadata("{}").size]
+        "#,
+        path_s, path_s, path_s, path_s, path_s
+    ));
+    assert_eq!(
+        value,
+        Value::List(vec![
+            Value::Int(5),
+            Value::Int(3),
+            Value::Int(0),
+            Value::Int(10),
+        ])
+    );
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(bytes.len(), 10);
+    assert_eq!(&bytes[..2], b"ab");
+    assert!(eval_err(&format!(r#"fs::pad_random("{}", -1)"#, path_s)).contains("non-negative"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

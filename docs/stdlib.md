@@ -65,3 +65,11 @@ abs, min, max, floor, ceil, round, sqrt, pow, clamp
 new, zeroed, repeat, from_list, from_str, from_hex, from_base64, concat, join,
 u16_le, u16_be, u32_le, u32_be, u64_le, u64_be,
 i16_le, i16_be, i32_le, i32_be, i64_le, i64_be
+
+## Rand Module (7)
+int, float, bool, bytes, choice, shuffle, sample
+
+## Fs Module (19)
+read, read_bytes, write, append, append_random, pad_random,
+exists, is_file, is_dir, list_dir, create_dir, create_dir_all,
+remove_file, remove_dir, remove_dir_all, rename, copy, metadata, canonicalize

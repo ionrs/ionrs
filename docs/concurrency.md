@@ -34,14 +34,14 @@ request.
 ## Rust Host API
 
 ```rust,no_run
-use ion_core::{Engine, Value};
+use ion_core::{Engine, Value, h};
 use ion_core::error::IonError;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), IonError> {
     let mut engine = Engine::new();
 
-    engine.register_async_fn("http_get", |args| async move {
+    engine.register_async_fn(h!("http_get"), |args| async move {
         let url = args[0].as_str().unwrap_or("").to_string();
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         Ok(Value::Str(format!("GET {url} -> 200 OK")))
@@ -163,11 +163,11 @@ Hosts can call back into Ion from async host code without re-entering the VM
 directly:
 
 ```rust,no_run
-# use ion_core::{Engine, Value};
+# use ion_core::{Engine, Value, h};
 # use ion_core::error::IonError;
 # fn install(engine: &mut Engine) {
 let handle = engine.handle();
-engine.register_async_fn("wait_for_event", move |_args| {
+engine.register_async_fn(h!("wait_for_event"), move |_args| {
     let handle = handle.clone();
     async move {
         let event = Value::Str("ready".into());

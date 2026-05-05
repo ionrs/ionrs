@@ -1032,6 +1032,27 @@ The following modules are available by default in every Engine:
 | `json::decode(string)` | JSON string to value |
 | `json::pretty(value)` | Pretty-printed JSON string |
 
+#### `rand`
+
+Random values, ranges, and collection sampling. Integer ranges are half-open:
+`rand::int(10)` returns a value in `0..10`, and `rand::int(5, 10)` returns a
+value in `5..10`.
+
+| Name | Description |
+|------|-------------|
+| `rand::int()` | Random signed integer |
+| `rand::int(max)` | Random integer in `0..max` |
+| `rand::int(min, max)` | Random integer in `min..max` |
+| `rand::float()` | Random float in `0.0..1.0` |
+| `rand::float(max)` | Random float in `0.0..max` |
+| `rand::float(min, max)` | Random float in `min..max` |
+| `rand::bool()` | Random boolean |
+| `rand::bool(probability)` | True with probability `0.0..=1.0` |
+| `rand::bytes(n)` | Random bytes of length `n` |
+| `rand::choice(list|string|bytes)` | Random element as `Option` |
+| `rand::shuffle(list|bytes)` | Shuffled copy |
+| `rand::sample(list|bytes, n)` | Random sample without replacement |
+
 #### `io`
 
 | Name | Description |
@@ -1179,6 +1200,8 @@ one when you build `ion-core`. The same script runs unchanged in either.
 | `fs::read_bytes(path)` | Read the file as raw `bytes`. |
 | `fs::write(path, contents)` | Write `contents` (string or bytes) to `path`, replacing the existing file. |
 | `fs::append(path, contents)` | Append to (or create) `path`. |
+| `fs::append_random(path, count)` | Append `count` random bytes; returns bytes appended. |
+| `fs::pad_random(path, target_size)` | Grow a file to `target_size` with random bytes; returns bytes appended. |
 | `fs::exists(path)` | `true` if `path` exists. |
 | `fs::is_file(path)` | `true` if `path` is an existing regular file. |
 | `fs::is_dir(path)` | `true` if `path` is an existing directory. |

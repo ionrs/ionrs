@@ -9,6 +9,41 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-05-05
+
+This release expands the standard library around binary data, randomness, and
+file-padding workflows, and publishes the public crates in lockstep:
+`ion-derive`, `ion-core`, `ionrs-cli`, and `ion-lsp`.
+
+### Added
+
+- **`bytes::` stdlib module** with constructors and helpers for binary data:
+  `new`, `zeroed`, `repeat`, `from_list`, `from_str`, `from_hex`,
+  `from_base64`, `concat`, and `join`.
+- **Endian byte helpers** on both bytes values and the `bytes::` module:
+  `read_u16_le` / `read_u16_be`, `read_u32_le` / `read_u32_be`,
+  `read_u64_le` / `read_u64_be`, signed `read_i*` variants, and packing
+  helpers `bytes::u16_*`, `bytes::u32_*`, `bytes::u64_*`, `bytes::i16_*`,
+  `bytes::i32_*`, and `bytes::i64_*`.
+- **`rand::` stdlib module** with `int`, `float`, `bool`, `bytes`, `choice`,
+  `shuffle`, and `sample`. Bounded numeric helpers use half-open ranges;
+  `choice` returns `None` for empty inputs; `sample` samples without
+  replacement.
+- **Random file helpers in `fs::`**:
+  `fs::append_random(path, count) -> int` and
+  `fs::pad_random(path, target_size) -> int`. Both stream random bytes in
+  bounded chunks and are available in sync and `async-runtime` builds.
+
+### Changed
+
+- The embedded stdlib documentation manifest now includes the `bytes::`,
+  `rand::`, and new `fs::` helper entries for editor completion and hover
+  surfaces.
+- Language and stdlib reference docs now cover the new binary, random, and
+  file-padding APIs.
+- Test documentation was refreshed to match current default and async-runtime
+  suite sizes.
+
 ## [0.9.0] — 2026-05-03
 
 This release implements host-name hiding: every host-registered identifier

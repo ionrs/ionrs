@@ -197,14 +197,14 @@ parks the Ion continuation on the host future and resumes when Tokio wakes it.
 No OS thread is spawned just to wait for network I/O.
 
 ```rust
-use ion_core::{Engine, Value};
+use ion_core::{Engine, Value, h};
 use ion_core::error::IonError;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), IonError> {
     let mut engine = Engine::new();
 
-    engine.register_async_fn("http_get", |args| async move {
+    engine.register_async_fn(h!("http_get"), |args| async move {
         let url = args[0].as_str().unwrap_or("").to_string();
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         Ok(Value::Str(format!("GET {url} -> 200 OK")))
@@ -261,9 +261,14 @@ editors/      Editor syntax highlighting
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
 | `async-runtime` | No | Tokio-native async host functions, `eval_async`, `spawn` / `.await` / `select`, timers, channels |
 | `legacy-threaded-concurrency` | No | Legacy sync-eval backend using OS threads and crossbeam channels |
+| `semver` | Yes | `semver::` stdlib module |
+| `os` | Yes | `os::` stdlib module for process and environment helpers |
+| `fs` | Yes | `fs::` stdlib module for filesystem I/O and random file padding |
 | `obfuscate` | No | String obfuscation via obfstr |
 | `msgpack` | No | `Value::to_msgpack()` via rmpv |
 | `rewrite` | No | Source rewriter — `rewrite::replace_global(src, name, new_value)` |
+| `embedded-stdlib-docs` | No | Embed the stdlib docs manifest for editor/tooling surfaces |
+| `tracing` | No | Forward `log::` stdlib calls to the `tracing` crate |
 
 ## Building
 

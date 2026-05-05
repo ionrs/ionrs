@@ -286,6 +286,19 @@
       ]
     },
     {
+      "name": "rand",
+      "summary": "Random values, ranges, and collection sampling.",
+      "members": [
+        { "kind": "function", "name": "int", "signature": "rand::int() / rand::int(max) / rand::int(min, max) -> int", "doc": "Random integer. Bounded forms use half-open ranges." },
+        { "kind": "function", "name": "float", "signature": "rand::float() / rand::float(max) / rand::float(min, max) -> float", "doc": "Random float in a half-open range." },
+        { "kind": "function", "name": "bool", "signature": "rand::bool(probability?) -> bool", "doc": "Random boolean, optionally true with probability 0.0..=1.0." },
+        { "kind": "function", "name": "bytes", "signature": "rand::bytes(n) -> bytes", "doc": "Random bytes of length n." },
+        { "kind": "function", "name": "choice", "signature": "rand::choice(list|string|bytes) -> Option", "doc": "Random element, or None for an empty input." },
+        { "kind": "function", "name": "shuffle", "signature": "rand::shuffle(list|bytes) -> list|bytes", "doc": "Shuffled copy." },
+        { "kind": "function", "name": "sample", "signature": "rand::sample(list|bytes, n) -> list|bytes", "doc": "Random sample without replacement." }
+      ]
+    },
+    {
       "name": "io",
       "summary": "Standard input/output.",
       "members": [
@@ -378,6 +391,8 @@
         { "kind": "function", "name": "read_bytes", "signature": "fs::read_bytes(path) -> bytes", "doc": "Read the file at `path` as raw bytes." },
         { "kind": "function", "name": "write", "signature": "fs::write(path, contents)", "doc": "Write `contents` (string or bytes) to `path`, replacing the existing file." },
         { "kind": "function", "name": "append", "signature": "fs::append(path, contents)", "doc": "Append `contents` (string or bytes) to `path`. Creates the file if missing." },
+        { "kind": "function", "name": "append_random", "signature": "fs::append_random(path, count) -> int", "doc": "Append count random bytes to `path`; returns bytes appended. Creates the file if missing." },
+        { "kind": "function", "name": "pad_random", "signature": "fs::pad_random(path, target_size) -> int", "doc": "Grow `path` to target_size with random bytes; returns bytes appended." },
         { "kind": "function", "name": "exists", "signature": "fs::exists(path) -> bool", "doc": "True if `path` exists." },
         { "kind": "function", "name": "is_file", "signature": "fs::is_file(path) -> bool", "doc": "True if `path` is an existing regular file." },
         { "kind": "function", "name": "is_dir", "signature": "fs::is_dir(path) -> bool", "doc": "True if `path` is an existing directory." },

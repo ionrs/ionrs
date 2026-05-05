@@ -2777,6 +2777,53 @@ fn test_bytes_endian_helpers() {
 }
 
 #[test]
+fn test_stdlib_rand_scalars() {
+    assert_eq!(eval("type_of(rand::int())"), Value::Str("int".to_string()));
+    assert_eq!(
+        eval("let x = rand::int(10); x >= 0 && x < 10"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval("let x = rand::int(-5, 5); x >= -5 && x < 5"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval("let x = rand::float(); x >= 0.0 && x < 1.0"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval("let x = rand::float(1.5, 2.5); x >= 1.5 && x < 2.5"),
+        Value::Bool(true)
+    );
+    assert_eq!(eval("rand::bool(0.0)"), Value::Bool(false));
+    assert_eq!(eval("rand::bool(1.0)"), Value::Bool(true));
+    assert_eq!(eval("rand::bytes(8).len()"), Value::Int(8));
+}
+
+#[test]
+fn test_stdlib_rand_collections() {
+    assert_eq!(eval("rand::choice([42]).unwrap()"), Value::Int(42));
+    assert_eq!(
+        eval(r#"rand::choice("x").unwrap()"#),
+        Value::Str("x".into())
+    );
+    assert_eq!(eval(r#"rand::choice(b"x").unwrap()"#), Value::Int(120));
+    assert_eq!(eval("rand::choice([]).is_none()"), Value::Bool(true));
+    assert_eq!(eval("rand::shuffle([1]).len()"), Value::Int(1));
+    assert_eq!(eval(r#"rand::shuffle(b"x")"#), Value::Bytes(b"x".to_vec()));
+    assert_eq!(eval("rand::sample([1, 2, 3], 2).len()"), Value::Int(2));
+    assert_eq!(eval(r#"rand::sample(b"abc", 2).len()"#), Value::Int(2));
+}
+
+#[test]
+fn test_stdlib_rand_errors() {
+    assert!(eval_err("rand::int(0)").contains("max must be positive"));
+    assert!(eval_err("rand::int(5, 5)").contains("min < max"));
+    assert!(eval_err("rand::bool(1.5)").contains("probability"));
+    assert!(eval_err("rand::sample([1], 2)").contains("exceeds"));
+}
+
+#[test]
 fn test_bytes_len_builtin() {
     assert_eq!(eval(r#"len(b"hello")"#), Value::Int(5));
 }
@@ -5275,6 +5322,45 @@ fn test_stdlib_fs_append() {
         engine.eval(&format!(r#"fs::read("{}")"#, path_s)).unwrap(),
         Value::Str("abc".to_string())
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "fs")]
+#[test]
+fn test_stdlib_fs_random_padding() {
+    let dir = fs_test_dir("random_padding");
+    let path = dir.join("blob.bin");
+    let path_s = path.to_string_lossy().to_string();
+    let mut engine = Engine::new();
+    let value = engine
+        .eval(&format!(
+            r#"
+            fs::write("{}", b"ab");
+            let appended = fs::append_random("{}", 5);
+            let padded = fs::pad_random("{}", 10);
+            let noop = fs::pad_random("{}", 8);
+            [appended, padded, noop, fs::metadata("{}").size]
+            "#,
+            path_s, path_s, path_s, path_s, path_s
+        ))
+        .unwrap();
+    assert_eq!(
+        value,
+        Value::List(vec![
+            Value::Int(5),
+            Value::Int(3),
+            Value::Int(0),
+            Value::Int(10),
+        ])
+    );
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(bytes.len(), 10);
+    assert_eq!(&bytes[..2], b"ab");
+    assert!(engine
+        .eval(&format!(r#"fs::append_random("{}", -1)"#, path_s))
+        .unwrap_err()
+        .message
+        .contains("non-negative"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

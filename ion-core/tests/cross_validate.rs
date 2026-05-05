@@ -909,6 +909,21 @@ fn cross_bytes_basic() {
 }
 
 #[test]
+fn cross_rand_module() {
+    assert_both_eq("type_of(rand::int())", Value::Str("int".to_string()));
+    assert_both_eq("let x = rand::int(4); x >= 0 && x < 4", Value::Bool(true));
+    assert_both_eq(
+        "let x = rand::float(2.0, 3.0); x >= 2.0 && x < 3.0",
+        Value::Bool(true),
+    );
+    assert_both_eq("rand::bool(0.0)", Value::Bool(false));
+    assert_both_eq("rand::bool(1.0)", Value::Bool(true));
+    assert_both_eq("rand::bytes(4).len()", Value::Int(4));
+    assert_both_eq("rand::choice([42]).unwrap()", Value::Int(42));
+    assert_both_eq("rand::sample([1], 1)", Value::List(vec![Value::Int(1)]));
+}
+
+#[test]
 fn cross_dict_map() {
     // Just check both engines agree (dict equality via assert_both)
     assert_both(r#"#{a: 1, b: 2}.map(|k, v| v * 10)"#);
