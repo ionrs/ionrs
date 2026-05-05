@@ -591,6 +591,25 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `bytes(n)` | Zero-filled bytes of length n |
 | `bytes_from_hex(string)` | Bytes from hex string |
 
+### Bytes Module
+| Function | Description |
+|----------|-------------|
+| `bytes::new()` | Empty bytes |
+| `bytes::zeroed(n)` | Zero-filled bytes of length n |
+| `bytes::repeat(byte, n)` | Bytes filled with a repeated byte |
+| `bytes::from_list(list)` | Bytes from list of ints (0-255) |
+| `bytes::from_str(string)` | Bytes from UTF-8 string |
+| `bytes::from_hex(string)` | Result containing bytes decoded from hex |
+| `bytes::from_base64(string)` | Result containing bytes decoded from Base64 |
+| `bytes::concat(list)` | Concatenate a list of bytes |
+| `bytes::join(list, sep?)` | Join a list of bytes with an optional bytes separator |
+| `bytes::u16_le(n)` / `bytes::u16_be(n)` | Pack unsigned 16-bit integer |
+| `bytes::u32_le(n)` / `bytes::u32_be(n)` | Pack unsigned 32-bit integer |
+| `bytes::u64_le(n)` / `bytes::u64_be(n)` | Pack unsigned 64-bit integer that fits in `int` |
+| `bytes::i16_le(n)` / `bytes::i16_be(n)` | Pack signed 16-bit integer |
+| `bytes::i32_le(n)` / `bytes::i32_be(n)` | Pack signed 32-bit integer |
+| `bytes::i64_le(n)` / `bytes::i64_be(n)` | Pack signed 64-bit integer |
+
 ---
 
 ## Methods
@@ -722,14 +741,31 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 |--------|---------|-------------|
 | `.len()` | Int | Number of bytes |
 | `.is_empty()` | Bool | True if empty |
-| `.contains(byte)` | Bool | Contains byte value |
-| `.find(byte)` | Option(Int) | Index of first occurrence |
+| `.bytes()` | Bytes | Identity byte representation |
+| `.contains(byte_or_bytes)` | Bool | Contains byte value or bytes sequence |
+| `.find(byte_or_bytes)` | Option(Int) | Index of first occurrence |
+| `.count(byte_or_bytes)` | Int | Number of non-overlapping occurrences |
+| `.starts_with(prefix)` | Bool | Starts with byte value or bytes prefix |
+| `.ends_with(suffix)` | Bool | Ends with byte value or bytes suffix |
 | `.slice(start, end)` | Bytes | Sub-slice |
+| `.split(sep)` | List | Split by byte value or bytes separator |
+| `.replace(from, to)` | Bytes | Replace byte value or bytes sequence |
 | `.reverse()` | Bytes | Reversed copy |
+| `.repeat(n)` | Bytes | Repeat n times |
 | `.push(byte)` | Bytes | New bytes with byte appended |
+| `.extend(other)` | Bytes | New bytes with other bytes appended |
+| `.set(index, byte)` | Bytes | New bytes with byte replaced at index |
+| `.pop()` | (Bytes, Option(Int)) | New bytes and removed last byte |
 | `.to_list()` | List | List of int values |
 | `.to_str()` | Result | Decode as UTF-8 |
 | `.to_hex()` | String | Hex-encoded string |
+| `.to_base64()` | String | Base64-encoded string |
+| `.read_u16_le(offset)` / `.read_u16_be(offset)` | Result | Read unsigned 16-bit integer |
+| `.read_u32_le(offset)` / `.read_u32_be(offset)` | Result | Read unsigned 32-bit integer |
+| `.read_u64_le(offset)` / `.read_u64_be(offset)` | Result | Read unsigned 64-bit integer if it fits in `int` |
+| `.read_i16_le(offset)` / `.read_i16_be(offset)` | Result | Read signed 16-bit integer |
+| `.read_i32_le(offset)` / `.read_i32_be(offset)` | Result | Read signed 32-bit integer |
+| `.read_i64_le(offset)` / `.read_i64_be(offset)` | Result | Read signed 64-bit integer |
 
 ### Cell Methods
 
@@ -761,12 +797,16 @@ let data = b"hello";           // bytes literal
 let hex = b"\x48\x49";         // hex escape
 let empty = bytes();           // empty bytes
 let from_list = bytes([72, 73]); // from ints
+let decoded = bytes::from_hex("deadbeef").unwrap();
+let word = bytes::from_base64("aGVsbG8=").unwrap();
+let packed = bytes::u32_be(305419896);
 
 data[0]                        // 72 (int)
 data[0..3]                     // b"hel" (slicing)
 data.len()                     // 5
 data.to_hex()                  // "68656c6c6f"
 data.to_str()                  // Ok("hello")
+packed.read_u16_be(0)          // Ok(4660)
 ```
 
 ---

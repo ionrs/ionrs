@@ -2926,65 +2926,9 @@ impl Vm {
         line: usize,
         col: usize,
     ) -> Result<Value, IonError> {
-        match crate::hash::h(method) {
-            h if h == crate::h!("len") => Ok(Value::Int(bytes.len() as i64)),
-            h if h == crate::h!("is_empty") => Ok(Value::Bool(bytes.is_empty())),
-            h if h == crate::h!("contains") => {
-                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
-                    IonError::type_err(ion_str!("bytes.contains() requires an int"), line, col)
-                })?;
-                Ok(Value::Bool(bytes.contains(&(byte as u8))))
-            }
-            h if h == crate::h!("slice") => {
-                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args
-                    .get(1)
-                    .and_then(|a| a.as_int())
-                    .map(|n| n as usize)
-                    .unwrap_or(bytes.len());
-                let start = start.min(bytes.len());
-                let end = end.min(bytes.len());
-                Ok(Value::Bytes(bytes[start..end].to_vec()))
-            }
-            h if h == crate::h!("to_list") => Ok(Value::List(
-                bytes.iter().map(|&b| Value::Int(b as i64)).collect(),
-            )),
-            h if h == crate::h!("to_str") => match std::str::from_utf8(bytes) {
-                std::result::Result::Ok(s) => {
-                    Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string())))))
-                }
-                std::result::Result::Err(e) => {
-                    Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e))))))
-                }
-            },
-            h if h == crate::h!("to_hex") => {
-                let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                Ok(Value::Str(hex))
-            }
-            h if h == crate::h!("find") => {
-                let needle = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
-                    IonError::type_err(ion_str!("bytes.find() requires an int"), line, col)
-                })?;
-                let pos = bytes.iter().position(|&b| b == needle as u8);
-                Ok(match pos {
-                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
-                    None => Value::Option(None),
-                })
-            }
-            h if h == crate::h!("reverse") => {
-                let mut rev = bytes.to_vec();
-                rev.reverse();
-                Ok(Value::Bytes(rev))
-            }
-            h if h == crate::h!("push") => {
-                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
-                    IonError::type_err(ion_str!("bytes.push() requires an int"), line, col)
-                })?;
-                let mut new = bytes.to_vec();
-                new.push(byte as u8);
-                Ok(Value::Bytes(new))
-            }
-            _ => Err(IonError::type_err(
+        match crate::stdlib::bytes_method_value(bytes, crate::hash::h(method), args) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => Err(IonError::type_err(
                 format!(
                     "{}{}{}",
                     ion_str!("bytes has no method '"),
@@ -2994,6 +2938,7 @@ impl Vm {
                 line,
                 col,
             )),
+            Err(message) => Err(IonError::type_err(message, line, col)),
         }
     }
 
@@ -3375,6 +3320,18 @@ impl Vm {
                     self.stack.push(result);
                     return Ok(());
                 }
+                Value::Module(ref table) => {
+                    let Some(result) = crate::stdlib::call_stdlib_module(table, &args) else {
+                        return Err(IonError::type_err(
+                            format!("{}{}", ion_str!("cannot call "), func.type_name()),
+                            line,
+                            col,
+                        ));
+                    };
+                    self.stack
+                        .push(result.map_err(|e| IonError::runtime(e, line, col))?);
+                    return Ok(());
+                }
                 #[cfg(feature = "async-runtime")]
                 Value::AsyncBuiltinClosure { .. } => {
                     return Err(IonError::runtime(
@@ -3576,6 +3533,18 @@ impl Vm {
                     .call(&raw_args)
                     .map_err(|e| IonError::runtime(e, line, col))?;
                 self.stack.push(result);
+                Ok(())
+            }
+            Value::Module(table) => {
+                let Some(result) = crate::stdlib::call_stdlib_module(table, &raw_args) else {
+                    return Err(IonError::type_err(
+                        format!("cannot call {}", func.type_name()),
+                        line,
+                        col,
+                    ));
+                };
+                self.stack
+                    .push(result.map_err(|e| IonError::runtime(e, line, col))?);
                 Ok(())
             }
             #[cfg(feature = "async-runtime")]

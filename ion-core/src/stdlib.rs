@@ -13,6 +13,15 @@ use crate::value::Value;
 #[cfg(feature = "semver")]
 use semver::{BuildMetadata, Prerelease, Version, VersionReq};
 
+const MAX_BYTES_LEN: usize = 10_000_000;
+const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ByteOrder {
+    Little,
+    Big,
+}
+
 /// Output stream requested by Ion's `io` stdlib module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputStream {
@@ -62,6 +71,809 @@ impl OutputHandler for MissingOutputHandler {
 
 pub(crate) fn missing_output_handler() -> Arc<dyn OutputHandler> {
     Arc::new(MissingOutputHandler)
+}
+
+fn ok_value(value: Value) -> Value {
+    Value::Result(Ok(Box::new(value)))
+}
+
+fn err_value(message: String) -> Value {
+    Value::Result(Err(Box::new(Value::Str(message))))
+}
+
+fn result_bytes(result: Result<Vec<u8>, String>) -> Value {
+    match result {
+        Ok(bytes) => ok_value(Value::Bytes(bytes)),
+        Err(message) => err_value(message),
+    }
+}
+
+fn result_int(result: Result<i64, String>) -> Value {
+    match result {
+        Ok(value) => ok_value(Value::Int(value)),
+        Err(message) => err_value(message),
+    }
+}
+
+fn check_bytes_len(len: usize, context: &str) -> Result<(), String> {
+    if len > MAX_BYTES_LEN {
+        return Err(format!(
+            "{}{}{}{}",
+            context,
+            ion_str!(" would create "),
+            len,
+            ion_str!(" bytes")
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn byte_from_int(value: i64, context: &str) -> Result<u8, String> {
+    if !(0..=255).contains(&value) {
+        return Err(format!(
+            "{}{}{}",
+            context,
+            ion_str!(" byte value out of range: "),
+            value
+        ));
+    }
+    Ok(value as u8)
+}
+
+fn byte_from_value(value: &Value, context: &str) -> Result<u8, String> {
+    let Some(value) = value.as_int() else {
+        return Err(format!("{}{}", context, ion_str!(" requires an int byte")));
+    };
+    byte_from_int(value, context)
+}
+
+fn bytes_from_list(items: &[Value], context: &str) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::with_capacity(items.len());
+    for item in items {
+        bytes.push(byte_from_value(item, context)?);
+    }
+    Ok(bytes)
+}
+
+fn required_int_arg(args: &[Value], index: usize, context: &str) -> Result<i64, String> {
+    args.get(index)
+        .and_then(Value::as_int)
+        .ok_or_else(|| format!("{}{}", context, ion_str!(" requires an int argument")))
+}
+
+fn optional_int_arg(
+    args: &[Value],
+    index: usize,
+    default: i64,
+    context: &str,
+) -> Result<i64, String> {
+    match args.get(index) {
+        Some(value) => value
+            .as_int()
+            .ok_or_else(|| format!("{}{}", context, ion_str!(" requires an int argument"))),
+        None => Ok(default),
+    }
+}
+
+fn required_bytes_arg<'a>(
+    args: &'a [Value],
+    index: usize,
+    context: &str,
+) -> Result<&'a [u8], String> {
+    match args.get(index) {
+        Some(Value::Bytes(bytes)) => Ok(bytes),
+        Some(other) => Err(format!(
+            "{}{}{}",
+            context,
+            ion_str!(" requires bytes, got "),
+            other.type_name()
+        )),
+        None => Err(format!("{}{}", context, ion_str!(" requires bytes"))),
+    }
+}
+
+fn byte_pattern(value: &Value, context: &str) -> Result<Vec<u8>, String> {
+    match value {
+        Value::Int(value) => byte_from_int(*value, context).map(|byte| vec![byte]),
+        Value::Bytes(bytes) => Ok(bytes.clone()),
+        other => Err(format!(
+            "{}{}{}",
+            context,
+            ion_str!(" requires int or bytes, got "),
+            other.type_name()
+        )),
+    }
+}
+
+fn bytes_constructor(args: &[Value], context: &str) -> Result<Value, String> {
+    match args.len() {
+        0 => Ok(Value::Bytes(Vec::new())),
+        1 => match &args[0] {
+            Value::List(items) => bytes_from_list(items, context).map(Value::Bytes),
+            Value::Str(value) => Ok(Value::Bytes(value.as_bytes().to_vec())),
+            Value::Int(value) if *value >= 0 => {
+                let len = *value as usize;
+                if len > MAX_BYTES_LEN {
+                    return Err(format!("{}{}", ion_str!("invalid byte count: "), value));
+                }
+                check_bytes_len(len, context)?;
+                Ok(Value::Bytes(vec![0u8; len]))
+            }
+            Value::Int(value) => Err(format!("{}{}", ion_str!("invalid byte count: "), value)),
+            other => Err(format!(
+                "{}{}",
+                ion_str!("bytes() not supported for "),
+                other.type_name()
+            )),
+        },
+        _ => Err(format!("{}{}", context, ion_str!(" takes 0 or 1 argument"))),
+    }
+}
+
+pub(crate) fn bytes_builtin(args: &[Value]) -> Result<Value, String> {
+    bytes_constructor(args, "bytes")
+}
+
+pub(crate) fn call_stdlib_module(
+    table: &crate::module::ModuleTable,
+    args: &[Value],
+) -> Option<Result<Value, String>> {
+    if table.name_hash == crate::h!("bytes") {
+        Some(bytes_builtin(args))
+    } else {
+        None
+    }
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+pub(crate) fn bytes_from_hex_string(value: &str) -> Result<Vec<u8>, String> {
+    if !value.is_ascii() {
+        return Err(ion_str!("hex string must be ASCII"));
+    }
+    let raw = value.as_bytes();
+    if raw.len() % 2 != 0 {
+        return Err(ion_str!("hex string must have even length"));
+    }
+    let mut bytes = Vec::with_capacity(raw.len() / 2);
+    for chunk in raw.chunks_exact(2) {
+        let hi = hex_nibble(chunk[0]).ok_or_else(|| {
+            format!(
+                "{}{}{}",
+                ion_str!("invalid hex byte: "),
+                chunk[0] as char,
+                chunk[1] as char
+            )
+        })?;
+        let lo = hex_nibble(chunk[1]).ok_or_else(|| {
+            format!(
+                "{}{}{}",
+                ion_str!("invalid hex byte: "),
+                chunk[0] as char,
+                chunk[1] as char
+            )
+        })?;
+        bytes.push((hi << 4) | lo);
+    }
+    Ok(bytes)
+}
+
+pub(crate) fn bytes_from_hex_builtin(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(ion_str!("bytes_from_hex takes 1 argument"));
+    }
+    let value = args[0]
+        .as_str()
+        .ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
+    bytes_from_hex_string(value).map(Value::Bytes)
+}
+
+pub(crate) fn bytes_to_base64(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | b2 as u32;
+        out.push(BASE64_TABLE[((triple >> 18) & 0x3f) as usize] as char);
+        out.push(BASE64_TABLE[((triple >> 12) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(BASE64_TABLE[((triple >> 6) & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(BASE64_TABLE[(triple & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+fn base64_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+pub(crate) fn bytes_from_base64_string(value: &str) -> Result<Vec<u8>, String> {
+    if !value.is_ascii() {
+        return Err(ion_str!("base64 string must be ASCII"));
+    }
+    let input: Vec<u8> = value
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    if input.len() % 4 == 1 {
+        return Err(ion_str!("invalid base64 length"));
+    }
+
+    let mut out = Vec::with_capacity((input.len() / 4) * 3);
+    let mut index = 0;
+    while index < input.len() {
+        let remaining = input.len() - index;
+        let take = remaining.min(4);
+        let chunk = &input[index..index + take];
+        let final_chunk = index + take == input.len();
+        let mut values = [0u8; 4];
+        let mut padding = 0usize;
+
+        for pos in 0..take {
+            match chunk[pos] {
+                b'=' => {
+                    if !final_chunk || take != 4 || pos < 2 {
+                        return Err(ion_str!("invalid base64 padding"));
+                    }
+                    padding += 1;
+                    values[pos] = 0;
+                }
+                byte => {
+                    if padding > 0 {
+                        return Err(ion_str!("invalid base64 padding"));
+                    }
+                    values[pos] = base64_value(byte).ok_or_else(|| {
+                        format!("{}{}", ion_str!("invalid base64 character: "), byte as char)
+                    })?;
+                }
+            }
+        }
+
+        if padding > 0 {
+            if padding > 2 || (padding == 2 && chunk[2] != b'=') {
+                return Err(ion_str!("invalid base64 padding"));
+            }
+        } else if take < 4 && !final_chunk {
+            return Err(ion_str!("invalid base64 length"));
+        }
+
+        let triple = ((values[0] as u32) << 18)
+            | ((values[1] as u32) << 12)
+            | ((values[2] as u32) << 6)
+            | values[3] as u32;
+        out.push(((triple >> 16) & 0xff) as u8);
+        if take > 2 && padding < 2 {
+            out.push(((triple >> 8) & 0xff) as u8);
+        }
+        if take > 3 && padding < 1 {
+            out.push((triple & 0xff) as u8);
+        }
+
+        index += take;
+    }
+
+    Ok(out)
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if needle.len() > haystack.len() {
+        return None;
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
+    if needle.is_empty() {
+        return haystack.len() + 1;
+    }
+    let mut count = 0;
+    let mut index = 0;
+    while index <= haystack.len() {
+        let Some(pos) = find_subslice(&haystack[index..], needle) else {
+            break;
+        };
+        count += 1;
+        index += pos + needle.len();
+    }
+    count
+}
+
+fn split_subslice(haystack: &[u8], sep: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    if sep.is_empty() {
+        return Err(ion_str!("bytes.split() separator must not be empty"));
+    }
+    let mut parts = Vec::new();
+    let mut index = 0;
+    while index <= haystack.len() {
+        let Some(pos) = find_subslice(&haystack[index..], sep) else {
+            parts.push(haystack[index..].to_vec());
+            break;
+        };
+        parts.push(haystack[index..index + pos].to_vec());
+        index += pos + sep.len();
+    }
+    Ok(parts)
+}
+
+fn replace_subslice(haystack: &[u8], from: &[u8], to: &[u8]) -> Result<Vec<u8>, String> {
+    if from.is_empty() {
+        return Err(ion_str!("bytes.replace() needle must not be empty"));
+    }
+    let mut out = Vec::with_capacity(haystack.len());
+    let mut index = 0;
+    while index <= haystack.len() {
+        let Some(pos) = find_subslice(&haystack[index..], from) else {
+            let new_len = out.len() + haystack.len() - index;
+            check_bytes_len(new_len, "bytes.replace()")?;
+            out.extend_from_slice(&haystack[index..]);
+            break;
+        };
+        let new_len = out.len() + pos + to.len();
+        check_bytes_len(new_len, "bytes.replace()")?;
+        out.extend_from_slice(&haystack[index..index + pos]);
+        out.extend_from_slice(to);
+        index += pos + from.len();
+    }
+    Ok(out)
+}
+
+fn normalize_index(index: i64, len: usize) -> Option<usize> {
+    let index = if index < 0 { len as i64 + index } else { index };
+    if index < 0 || index >= len as i64 {
+        None
+    } else {
+        Some(index as usize)
+    }
+}
+
+fn normalize_slice_bound(index: i64, len: usize) -> usize {
+    let index = if index < 0 { len as i64 + index } else { index };
+    index.max(0).min(len as i64) as usize
+}
+
+fn read_offset(args: &[Value], context: &str) -> Result<usize, String> {
+    let offset = required_int_arg(args, 0, context)?;
+    if offset < 0 {
+        return Err(format!(
+            "{}{}",
+            context,
+            ion_str!(" offset must be non-negative")
+        ));
+    }
+    Ok(offset as usize)
+}
+
+fn read_bytes_window<'a>(
+    bytes: &'a [u8],
+    args: &[Value],
+    width: usize,
+    context: &str,
+) -> Result<&'a [u8], String> {
+    let offset = read_offset(args, context)?;
+    let end = offset
+        .checked_add(width)
+        .ok_or_else(|| format!("{}{}", context, ion_str!(" offset overflow")))?;
+    if end > bytes.len() {
+        return Err(format!(
+            "{}{}",
+            context,
+            ion_str!(" read past end of bytes")
+        ));
+    }
+    Ok(&bytes[offset..end])
+}
+
+pub(crate) fn read_unsigned(
+    bytes: &[u8],
+    args: &[Value],
+    width: usize,
+    order: ByteOrder,
+    context: &str,
+) -> Result<i64, String> {
+    let window = read_bytes_window(bytes, args, width, context)?;
+    match (width, order) {
+        (2, ByteOrder::Little) => Ok(u16::from_le_bytes([window[0], window[1]]) as i64),
+        (2, ByteOrder::Big) => Ok(u16::from_be_bytes([window[0], window[1]]) as i64),
+        (4, ByteOrder::Little) => {
+            Ok(u32::from_le_bytes([window[0], window[1], window[2], window[3]]) as i64)
+        }
+        (4, ByteOrder::Big) => {
+            Ok(u32::from_be_bytes([window[0], window[1], window[2], window[3]]) as i64)
+        }
+        (8, ByteOrder::Little) => {
+            let value = u64::from_le_bytes([
+                window[0], window[1], window[2], window[3], window[4], window[5], window[6],
+                window[7],
+            ]);
+            if value > i64::MAX as u64 {
+                Err(format!(
+                    "{}{}",
+                    context,
+                    ion_str!(" u64 value does not fit in int")
+                ))
+            } else {
+                Ok(value as i64)
+            }
+        }
+        (8, ByteOrder::Big) => {
+            let value = u64::from_be_bytes([
+                window[0], window[1], window[2], window[3], window[4], window[5], window[6],
+                window[7],
+            ]);
+            if value > i64::MAX as u64 {
+                Err(format!(
+                    "{}{}",
+                    context,
+                    ion_str!(" u64 value does not fit in int")
+                ))
+            } else {
+                Ok(value as i64)
+            }
+        }
+        _ => Err(ion_str!("unsupported integer width")),
+    }
+}
+
+pub(crate) fn read_signed(
+    bytes: &[u8],
+    args: &[Value],
+    width: usize,
+    order: ByteOrder,
+    context: &str,
+) -> Result<i64, String> {
+    let window = read_bytes_window(bytes, args, width, context)?;
+    match (width, order) {
+        (2, ByteOrder::Little) => Ok(i16::from_le_bytes([window[0], window[1]]) as i64),
+        (2, ByteOrder::Big) => Ok(i16::from_be_bytes([window[0], window[1]]) as i64),
+        (4, ByteOrder::Little) => {
+            Ok(i32::from_le_bytes([window[0], window[1], window[2], window[3]]) as i64)
+        }
+        (4, ByteOrder::Big) => {
+            Ok(i32::from_be_bytes([window[0], window[1], window[2], window[3]]) as i64)
+        }
+        (8, ByteOrder::Little) => Ok(i64::from_le_bytes([
+            window[0], window[1], window[2], window[3], window[4], window[5], window[6], window[7],
+        ])),
+        (8, ByteOrder::Big) => Ok(i64::from_be_bytes([
+            window[0], window[1], window[2], window[3], window[4], window[5], window[6], window[7],
+        ])),
+        _ => Err(ion_str!("unsupported integer width")),
+    }
+}
+
+fn unsigned_bounds(width: usize) -> (i64, i64) {
+    match width {
+        2 => (0, u16::MAX as i64),
+        4 => (0, u32::MAX as i64),
+        8 => (0, i64::MAX),
+        _ => (0, 0),
+    }
+}
+
+fn signed_bounds(width: usize) -> (i64, i64) {
+    match width {
+        2 => (i16::MIN as i64, i16::MAX as i64),
+        4 => (i32::MIN as i64, i32::MAX as i64),
+        8 => (i64::MIN, i64::MAX),
+        _ => (0, 0),
+    }
+}
+
+fn pack_unsigned(
+    args: &[Value],
+    width: usize,
+    order: ByteOrder,
+    context: &str,
+) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("{}{}", context, ion_str!(" takes 1 argument")));
+    }
+    let value = required_int_arg(args, 0, context)?;
+    let (min, max) = unsigned_bounds(width);
+    if value < min || value > max {
+        return Err(format!(
+            "{}{}{}{}{}",
+            context,
+            ion_str!(" requires value in "),
+            min,
+            ion_str!("..="),
+            max
+        ));
+    }
+    let bytes = match (width, order) {
+        (2, ByteOrder::Little) => (value as u16).to_le_bytes().to_vec(),
+        (2, ByteOrder::Big) => (value as u16).to_be_bytes().to_vec(),
+        (4, ByteOrder::Little) => (value as u32).to_le_bytes().to_vec(),
+        (4, ByteOrder::Big) => (value as u32).to_be_bytes().to_vec(),
+        (8, ByteOrder::Little) => (value as u64).to_le_bytes().to_vec(),
+        (8, ByteOrder::Big) => (value as u64).to_be_bytes().to_vec(),
+        _ => return Err(ion_str!("unsupported integer width")),
+    };
+    Ok(Value::Bytes(bytes))
+}
+
+fn pack_signed(
+    args: &[Value],
+    width: usize,
+    order: ByteOrder,
+    context: &str,
+) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("{}{}", context, ion_str!(" takes 1 argument")));
+    }
+    let value = required_int_arg(args, 0, context)?;
+    let (min, max) = signed_bounds(width);
+    if value < min || value > max {
+        return Err(format!(
+            "{}{}{}{}{}",
+            context,
+            ion_str!(" requires value in "),
+            min,
+            ion_str!("..="),
+            max
+        ));
+    }
+    let bytes = match (width, order) {
+        (2, ByteOrder::Little) => (value as i16).to_le_bytes().to_vec(),
+        (2, ByteOrder::Big) => (value as i16).to_be_bytes().to_vec(),
+        (4, ByteOrder::Little) => (value as i32).to_le_bytes().to_vec(),
+        (4, ByteOrder::Big) => (value as i32).to_be_bytes().to_vec(),
+        (8, ByteOrder::Little) => value.to_le_bytes().to_vec(),
+        (8, ByteOrder::Big) => value.to_be_bytes().to_vec(),
+        _ => return Err(ion_str!("unsupported integer width")),
+    };
+    Ok(Value::Bytes(bytes))
+}
+
+pub(crate) fn bytes_method_value(
+    bytes: &[u8],
+    method_hash: u64,
+    args: &[Value],
+) -> Result<Option<Value>, String> {
+    let value = match method_hash {
+        h if h == crate::h!("len") => Value::Int(bytes.len() as i64),
+        h if h == crate::h!("is_empty") => Value::Bool(bytes.is_empty()),
+        h if h == crate::h!("bytes") => Value::Bytes(bytes.to_vec()),
+        h if h == crate::h!("contains") => {
+            let needle = args
+                .first()
+                .ok_or_else(|| ion_str!("bytes.contains() requires an argument"))
+                .and_then(|value| byte_pattern(value, "bytes.contains()"))?;
+            Value::Bool(if needle.is_empty() {
+                true
+            } else {
+                find_subslice(bytes, &needle).is_some()
+            })
+        }
+        h if h == crate::h!("find") => {
+            let needle = args
+                .first()
+                .ok_or_else(|| ion_str!("bytes.find() requires an argument"))
+                .and_then(|value| byte_pattern(value, "bytes.find()"))?;
+            match find_subslice(bytes, &needle) {
+                Some(index) => Value::Option(Some(Box::new(Value::Int(index as i64)))),
+                None => Value::Option(None),
+            }
+        }
+        h if h == crate::h!("count") => {
+            let needle = args
+                .first()
+                .ok_or_else(|| ion_str!("bytes.count() requires an argument"))
+                .and_then(|value| byte_pattern(value, "bytes.count()"))?;
+            Value::Int(count_subslice(bytes, &needle) as i64)
+        }
+        h if h == crate::h!("starts_with") => {
+            let needle = args
+                .first()
+                .ok_or_else(|| ion_str!("bytes.starts_with() requires an argument"))
+                .and_then(|value| byte_pattern(value, "bytes.starts_with()"))?;
+            Value::Bool(bytes.starts_with(&needle))
+        }
+        h if h == crate::h!("ends_with") => {
+            let needle = args
+                .first()
+                .ok_or_else(|| ion_str!("bytes.ends_with() requires an argument"))
+                .and_then(|value| byte_pattern(value, "bytes.ends_with()"))?;
+            Value::Bool(bytes.ends_with(&needle))
+        }
+        h if h == crate::h!("slice") => {
+            let start = optional_int_arg(args, 0, 0, "bytes.slice()")?;
+            let end = optional_int_arg(args, 1, bytes.len() as i64, "bytes.slice()")?;
+            let start = normalize_slice_bound(start, bytes.len());
+            let end = normalize_slice_bound(end, bytes.len());
+            if start > end {
+                Value::Bytes(Vec::new())
+            } else {
+                Value::Bytes(bytes[start..end].to_vec())
+            }
+        }
+        h if h == crate::h!("split") => {
+            let sep = args
+                .first()
+                .ok_or_else(|| ion_str!("bytes.split() requires an argument"))
+                .and_then(|value| byte_pattern(value, "bytes.split()"))?;
+            Value::List(
+                split_subslice(bytes, &sep)?
+                    .into_iter()
+                    .map(Value::Bytes)
+                    .collect(),
+            )
+        }
+        h if h == crate::h!("replace") => {
+            if args.len() < 2 {
+                return Err(ion_str!("bytes.replace() requires from and to"));
+            }
+            let from = byte_pattern(&args[0], "bytes.replace()")?;
+            let to = byte_pattern(&args[1], "bytes.replace()")?;
+            Value::Bytes(replace_subslice(bytes, &from, &to)?)
+        }
+        h if h == crate::h!("reverse") => {
+            let mut reversed = bytes.to_vec();
+            reversed.reverse();
+            Value::Bytes(reversed)
+        }
+        h if h == crate::h!("repeat") => {
+            let n = required_int_arg(args, 0, "bytes.repeat()")?;
+            if n < 0 {
+                return Err(ion_str!("bytes.repeat() count must be non-negative"));
+            }
+            let len = bytes
+                .len()
+                .checked_mul(n as usize)
+                .ok_or_else(|| ion_str!("bytes.repeat() length overflow"))?;
+            check_bytes_len(len, "bytes.repeat()")?;
+            Value::Bytes(bytes.repeat(n as usize))
+        }
+        h if h == crate::h!("push") => {
+            let byte = args
+                .first()
+                .ok_or_else(|| ion_str!("bytes.push() requires a byte"))
+                .and_then(|value| byte_from_value(value, "bytes.push()"))?;
+            let new_len = bytes.len() + 1;
+            check_bytes_len(new_len, "bytes.push()")?;
+            let mut out = bytes.to_vec();
+            out.push(byte);
+            Value::Bytes(out)
+        }
+        h if h == crate::h!("extend") => {
+            let other = required_bytes_arg(args, 0, "bytes.extend()")?;
+            let new_len = bytes.len() + other.len();
+            check_bytes_len(new_len, "bytes.extend()")?;
+            let mut out = Vec::with_capacity(new_len);
+            out.extend_from_slice(bytes);
+            out.extend_from_slice(other);
+            Value::Bytes(out)
+        }
+        h if h == crate::h!("set") => {
+            if args.len() < 2 {
+                return Err(ion_str!("bytes.set() requires index and byte"));
+            }
+            let index = required_int_arg(args, 0, "bytes.set()")?;
+            let byte = byte_from_value(&args[1], "bytes.set()")?;
+            let Some(index) = normalize_index(index, bytes.len()) else {
+                return Err(ion_str!("bytes.set() index out of bounds"));
+            };
+            let mut out = bytes.to_vec();
+            out[index] = byte;
+            Value::Bytes(out)
+        }
+        h if h == crate::h!("pop") => {
+            if bytes.is_empty() {
+                Value::Tuple(vec![Value::Bytes(Vec::new()), Value::Option(None)])
+            } else {
+                let mut out = bytes.to_vec();
+                let byte = out.pop().unwrap();
+                Value::Tuple(vec![
+                    Value::Bytes(out),
+                    Value::Option(Some(Box::new(Value::Int(byte as i64)))),
+                ])
+            }
+        }
+        h if h == crate::h!("to_list") => Value::List(
+            bytes
+                .iter()
+                .copied()
+                .map(|byte| Value::Int(byte as i64))
+                .collect(),
+        ),
+        h if h == crate::h!("to_str") => match std::str::from_utf8(bytes) {
+            Ok(value) => ok_value(Value::Str(value.to_string())),
+            Err(err) => err_value(err.to_string()),
+        },
+        h if h == crate::h!("to_hex") => {
+            Value::Str(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+        }
+        h if h == crate::h!("to_base64") => Value::Str(bytes_to_base64(bytes)),
+        h if h == crate::h!("read_u16_le") => result_int(read_unsigned(
+            bytes,
+            args,
+            2,
+            ByteOrder::Little,
+            "read_u16_le",
+        )),
+        h if h == crate::h!("read_u16_be") => {
+            result_int(read_unsigned(bytes, args, 2, ByteOrder::Big, "read_u16_be"))
+        }
+        h if h == crate::h!("read_u32_le") => result_int(read_unsigned(
+            bytes,
+            args,
+            4,
+            ByteOrder::Little,
+            "read_u32_le",
+        )),
+        h if h == crate::h!("read_u32_be") => {
+            result_int(read_unsigned(bytes, args, 4, ByteOrder::Big, "read_u32_be"))
+        }
+        h if h == crate::h!("read_u64_le") => result_int(read_unsigned(
+            bytes,
+            args,
+            8,
+            ByteOrder::Little,
+            "read_u64_le",
+        )),
+        h if h == crate::h!("read_u64_be") => {
+            result_int(read_unsigned(bytes, args, 8, ByteOrder::Big, "read_u64_be"))
+        }
+        h if h == crate::h!("read_i16_le") => result_int(read_signed(
+            bytes,
+            args,
+            2,
+            ByteOrder::Little,
+            "read_i16_le",
+        )),
+        h if h == crate::h!("read_i16_be") => {
+            result_int(read_signed(bytes, args, 2, ByteOrder::Big, "read_i16_be"))
+        }
+        h if h == crate::h!("read_i32_le") => result_int(read_signed(
+            bytes,
+            args,
+            4,
+            ByteOrder::Little,
+            "read_i32_le",
+        )),
+        h if h == crate::h!("read_i32_be") => {
+            result_int(read_signed(bytes, args, 4, ByteOrder::Big, "read_i32_be"))
+        }
+        h if h == crate::h!("read_i64_le") => result_int(read_signed(
+            bytes,
+            args,
+            8,
+            ByteOrder::Little,
+            "read_i64_le",
+        )),
+        h if h == crate::h!("read_i64_be") => {
+            result_int(read_signed(bytes, args, 8, ByteOrder::Big, "read_i64_be"))
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
 }
 
 /// Build the `math` stdlib module.
@@ -341,6 +1153,215 @@ pub fn json_module() -> Module {
             _ => return Err(ion_str!("requires bytes")),
         };
         Value::from_msgpack(data)
+    });
+
+    m
+}
+
+/// Build the `bytes` stdlib module.
+///
+/// The module is callable by the runtimes, so legacy `bytes(...)` constructor
+/// calls keep working after this module is registered as `bytes`.
+pub fn bytes_module() -> Module {
+    let mut m = Module::new(crate::h!("bytes"));
+
+    m.register_fn(crate::h!("new"), |args: &[Value]| {
+        if !args.is_empty() {
+            return Err(ion_str!("takes no arguments"));
+        }
+        Ok(Value::Bytes(Vec::new()))
+    });
+
+    m.register_fn(crate::h!("zeroed"), |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("takes 1 argument"));
+        }
+        let len = required_int_arg(args, 0, "bytes::zeroed")?;
+        if len < 0 {
+            return Err(ion_str!("byte count must be non-negative"));
+        }
+        let len = len as usize;
+        check_bytes_len(len, "bytes::zeroed")?;
+        Ok(Value::Bytes(vec![0u8; len]))
+    });
+
+    m.register_fn(crate::h!("repeat"), |args: &[Value]| {
+        if args.len() != 2 {
+            return Err(ion_str!("takes 2 arguments: byte, count"));
+        }
+        let byte = byte_from_value(&args[0], "bytes::repeat")?;
+        let count = required_int_arg(args, 1, "bytes::repeat")?;
+        if count < 0 {
+            return Err(ion_str!("repeat count must be non-negative"));
+        }
+        let len = count as usize;
+        check_bytes_len(len, "bytes::repeat")?;
+        Ok(Value::Bytes(vec![byte; len]))
+    });
+
+    m.register_fn(crate::h!("from_list"), |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("takes 1 argument"));
+        }
+        match &args[0] {
+            Value::List(items) => bytes_from_list(items, "bytes::from_list").map(Value::Bytes),
+            other => Err(format!(
+                "{}{}",
+                ion_str!("requires list, got "),
+                other.type_name()
+            )),
+        }
+    });
+
+    m.register_fn(crate::h!("from_str"), |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("takes 1 argument"));
+        }
+        let value = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("requires a string"))?;
+        Ok(Value::Bytes(value.as_bytes().to_vec()))
+    });
+
+    m.register_fn(crate::h!("from_hex"), |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("takes 1 argument"));
+        }
+        let value = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("requires a string"))?;
+        Ok(result_bytes(bytes_from_hex_string(value)))
+    });
+
+    m.register_fn(crate::h!("from_base64"), |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("takes 1 argument"));
+        }
+        let value = args[0]
+            .as_str()
+            .ok_or_else(|| ion_str!("requires a string"))?;
+        Ok(result_bytes(bytes_from_base64_string(value)))
+    });
+
+    m.register_fn(crate::h!("concat"), |args: &[Value]| {
+        if args.len() != 1 {
+            return Err(ion_str!("takes 1 argument"));
+        }
+        let parts = match &args[0] {
+            Value::List(parts) => parts,
+            other => {
+                return Err(format!(
+                    "{}{}",
+                    ion_str!("requires list, got "),
+                    other.type_name()
+                ));
+            }
+        };
+        let len = parts.iter().try_fold(0usize, |len, part| match part {
+            Value::Bytes(bytes) => len
+                .checked_add(bytes.len())
+                .ok_or_else(|| ion_str!("bytes::concat length overflow")),
+            other => Err(format!(
+                "{}{}",
+                ion_str!("requires list of bytes, got "),
+                other.type_name()
+            )),
+        })?;
+        check_bytes_len(len, "bytes::concat")?;
+        let mut out = Vec::with_capacity(len);
+        for part in parts {
+            if let Value::Bytes(bytes) = part {
+                out.extend_from_slice(bytes);
+            }
+        }
+        Ok(Value::Bytes(out))
+    });
+
+    m.register_fn(crate::h!("join"), |args: &[Value]| {
+        if args.is_empty() || args.len() > 2 {
+            return Err(ion_str!("takes 1 or 2 arguments: parts, separator"));
+        }
+        let parts = match &args[0] {
+            Value::List(parts) => parts,
+            other => {
+                return Err(format!(
+                    "{}{}",
+                    ion_str!("requires list, got "),
+                    other.type_name()
+                ));
+            }
+        };
+        let sep = if args.len() == 2 {
+            required_bytes_arg(args, 1, "bytes::join")?
+        } else {
+            &[]
+        };
+        let parts_len = parts.iter().try_fold(0usize, |len, part| match part {
+            Value::Bytes(bytes) => len
+                .checked_add(bytes.len())
+                .ok_or_else(|| ion_str!("bytes::join length overflow")),
+            other => Err(format!(
+                "{}{}",
+                ion_str!("requires list of bytes, got "),
+                other.type_name()
+            )),
+        })?;
+        let seps_len = sep
+            .len()
+            .checked_mul(parts.len().saturating_sub(1))
+            .ok_or_else(|| ion_str!("bytes::join length overflow"))?;
+        let len = parts_len
+            .checked_add(seps_len)
+            .ok_or_else(|| ion_str!("bytes::join length overflow"))?;
+        check_bytes_len(len, "bytes::join")?;
+
+        let mut out = Vec::with_capacity(len);
+        for (index, part) in parts.iter().enumerate() {
+            if index > 0 {
+                out.extend_from_slice(sep);
+            }
+            if let Value::Bytes(bytes) = part {
+                out.extend_from_slice(bytes);
+            }
+        }
+        Ok(Value::Bytes(out))
+    });
+
+    m.register_fn(crate::h!("u16_le"), |args| {
+        pack_unsigned(args, 2, ByteOrder::Little, "bytes::u16_le")
+    });
+    m.register_fn(crate::h!("u16_be"), |args| {
+        pack_unsigned(args, 2, ByteOrder::Big, "bytes::u16_be")
+    });
+    m.register_fn(crate::h!("u32_le"), |args| {
+        pack_unsigned(args, 4, ByteOrder::Little, "bytes::u32_le")
+    });
+    m.register_fn(crate::h!("u32_be"), |args| {
+        pack_unsigned(args, 4, ByteOrder::Big, "bytes::u32_be")
+    });
+    m.register_fn(crate::h!("u64_le"), |args| {
+        pack_unsigned(args, 8, ByteOrder::Little, "bytes::u64_le")
+    });
+    m.register_fn(crate::h!("u64_be"), |args| {
+        pack_unsigned(args, 8, ByteOrder::Big, "bytes::u64_be")
+    });
+    m.register_fn(crate::h!("i16_le"), |args| {
+        pack_signed(args, 2, ByteOrder::Little, "bytes::i16_le")
+    });
+    m.register_fn(crate::h!("i16_be"), |args| {
+        pack_signed(args, 2, ByteOrder::Big, "bytes::i16_be")
+    });
+    m.register_fn(crate::h!("i32_le"), |args| {
+        pack_signed(args, 4, ByteOrder::Little, "bytes::i32_le")
+    });
+    m.register_fn(crate::h!("i32_be"), |args| {
+        pack_signed(args, 4, ByteOrder::Big, "bytes::i32_be")
+    });
+    m.register_fn(crate::h!("i64_le"), |args| {
+        pack_signed(args, 8, ByteOrder::Little, "bytes::i64_le")
+    });
+    m.register_fn(crate::h!("i64_be"), |args| {
+        pack_signed(args, 8, ByteOrder::Big, "bytes::i64_be")
     });
 
     m
@@ -1732,6 +2753,7 @@ pub fn register_stdlib_with_handlers(
 
     install(env, math_module());
     install(env, json_module());
+    install(env, bytes_module());
     install(env, io_module_with_output(output));
     install(env, string_module());
     install(env, log_module_with_handler(log_handler, level));

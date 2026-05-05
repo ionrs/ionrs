@@ -2672,6 +2672,111 @@ fn test_bytes_from_hex() {
 }
 
 #[test]
+fn test_bytes_module_constructors() {
+    assert_eq!(eval(r#"bytes::new()"#), Value::Bytes(Vec::new()));
+    assert_eq!(eval(r#"bytes::zeroed(3)"#), Value::Bytes(vec![0, 0, 0]));
+    assert_eq!(
+        eval(r#"bytes::repeat(65, 3)"#),
+        Value::Bytes(b"AAA".to_vec())
+    );
+    assert_eq!(
+        eval(r#"bytes::from_list([65, 66, 67])"#),
+        Value::Bytes(b"ABC".to_vec())
+    );
+    assert_eq!(
+        eval(r#"bytes::from_str("hello")"#),
+        Value::Bytes(b"hello".to_vec())
+    );
+    assert_eq!(
+        eval(r#"bytes::from_hex("deadbeef").unwrap()"#),
+        Value::Bytes(vec![0xde, 0xad, 0xbe, 0xef])
+    );
+    assert_eq!(
+        eval(r#"bytes::from_base64("aGVsbG8=").unwrap()"#),
+        Value::Bytes(b"hello".to_vec())
+    );
+    assert_eq!(
+        eval(r#"bytes::concat([b"ab", b"cd", b"ef"])"#),
+        Value::Bytes(b"abcdef".to_vec())
+    );
+    assert_eq!(
+        eval(r#"bytes::join([b"ab", b"cd", b"ef"], b",")"#),
+        Value::Bytes(b"ab,cd,ef".to_vec())
+    );
+}
+
+#[test]
+fn test_bytes_sequence_methods() {
+    assert_eq!(eval(r#"b"abcabc".contains(b"bc")"#), Value::Bool(true));
+    assert_eq!(
+        eval(r#"b"abcabc".find(b"ca")"#),
+        Value::Option(Some(Box::new(Value::Int(2))))
+    );
+    assert_eq!(eval(r#"b"abcabc".count(b"ab")"#), Value::Int(2));
+    assert_eq!(eval(r#"b"abc".starts_with(b"ab")"#), Value::Bool(true));
+    assert_eq!(eval(r#"b"abc".ends_with(99)"#), Value::Bool(true));
+    assert_eq!(
+        eval(r#"b"a,b,c".split(b",")"#),
+        Value::List(vec![
+            Value::Bytes(b"a".to_vec()),
+            Value::Bytes(b"b".to_vec()),
+            Value::Bytes(b"c".to_vec()),
+        ])
+    );
+    assert_eq!(
+        eval(r#"b"abcabc".replace(b"ab", b"z")"#),
+        Value::Bytes(b"zczc".to_vec())
+    );
+    assert_eq!(eval(r#"b"ab".repeat(3)"#), Value::Bytes(b"ababab".to_vec()));
+    assert_eq!(
+        eval(r#"b"ab".extend(b"cd")"#),
+        Value::Bytes(b"abcd".to_vec())
+    );
+    assert_eq!(
+        eval(r#"b"abc".set(-1, 100)"#),
+        Value::Bytes(b"abd".to_vec())
+    );
+    assert_eq!(
+        eval(r#"b"abc".pop()"#),
+        Value::Tuple(vec![
+            Value::Bytes(b"ab".to_vec()),
+            Value::Option(Some(Box::new(Value::Int(99)))),
+        ])
+    );
+    assert_eq!(
+        eval(r#"b"hello".to_base64()"#),
+        Value::Str("aGVsbG8=".into())
+    );
+    assert_eq!(eval(r#"b"abc".bytes()"#), Value::Bytes(b"abc".to_vec()));
+}
+
+#[test]
+fn test_bytes_endian_helpers() {
+    assert_eq!(eval("bytes::u16_le(4660)"), Value::Bytes(vec![0x34, 0x12]));
+    assert_eq!(
+        eval("bytes::u32_be(305419896)"),
+        Value::Bytes(vec![0x12, 0x34, 0x56, 0x78])
+    );
+    assert_eq!(eval("bytes::i16_le(-2)"), Value::Bytes(vec![0xfe, 0xff]));
+    assert_eq!(
+        eval("bytes::u32_le(305419896).read_u32_le(0).unwrap()"),
+        Value::Int(305419896)
+    );
+    assert_eq!(
+        eval("bytes::u32_be(305419896).read_u16_be(0).unwrap()"),
+        Value::Int(4660)
+    );
+    assert_eq!(
+        eval(r#"b"\xff\xff".read_i16_be(0).unwrap()"#),
+        Value::Int(-1)
+    );
+    assert_eq!(
+        eval(r#"b"\x01".read_u16_be(0).is_err()"#),
+        Value::Bool(true)
+    );
+}
+
+#[test]
 fn test_bytes_len_builtin() {
     assert_eq!(eval(r#"len(b"hello")"#), Value::Int(5));
 }

@@ -2811,77 +2811,9 @@ impl Interpreter {
     }
 
     fn bytes_method(&self, bytes: &[u8], method: &str, args: &[Value], span: Span) -> SignalResult {
-        match crate::hash::h(method) {
-            h if h == crate::h!("len") => Ok(Value::Int(bytes.len() as i64)),
-            h if h == crate::h!("is_empty") => Ok(Value::Bool(bytes.is_empty())),
-            h if h == crate::h!("contains") => {
-                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
-                    IonError::type_err(
-                        ion_str!("bytes.contains() requires an int argument").to_string(),
-                        span.line,
-                        span.col,
-                    )
-                })?;
-                Ok(Value::Bool(bytes.contains(&(byte as u8))))
-            }
-            h if h == crate::h!("slice") => {
-                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args
-                    .get(1)
-                    .and_then(|a| a.as_int())
-                    .map(|n| n as usize)
-                    .unwrap_or(bytes.len());
-                let start = start.min(bytes.len());
-                let end = end.min(bytes.len());
-                Ok(Value::Bytes(bytes[start..end].to_vec()))
-            }
-            h if h == crate::h!("to_list") => Ok(Value::List(
-                bytes.iter().map(|&b| Value::Int(b as i64)).collect(),
-            )),
-            h if h == crate::h!("to_str") => match std::str::from_utf8(bytes) {
-                std::result::Result::Ok(s) => {
-                    Ok(Value::Result(Ok(Box::new(Value::Str(s.to_string())))))
-                }
-                std::result::Result::Err(e) => {
-                    Ok(Value::Result(Err(Box::new(Value::Str(format!("{}", e))))))
-                }
-            },
-            h if h == crate::h!("to_hex") => {
-                let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                Ok(Value::Str(hex))
-            }
-            h if h == crate::h!("find") => {
-                let needle = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
-                    IonError::type_err(
-                        ion_str!("bytes.find() requires an int argument").to_string(),
-                        span.line,
-                        span.col,
-                    )
-                })?;
-                let pos = bytes.iter().position(|&b| b == needle as u8);
-                Ok(match pos {
-                    Some(i) => Value::Option(Some(Box::new(Value::Int(i as i64)))),
-                    None => Value::Option(None),
-                })
-            }
-            h if h == crate::h!("reverse") => {
-                let mut rev = bytes.to_vec();
-                rev.reverse();
-                Ok(Value::Bytes(rev))
-            }
-            h if h == crate::h!("push") => {
-                let byte = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
-                    IonError::type_err(
-                        ion_str!("bytes.push() requires an int argument").to_string(),
-                        span.line,
-                        span.col,
-                    )
-                })?;
-                let mut new = bytes.to_vec();
-                new.push(byte as u8);
-                Ok(Value::Bytes(new))
-            }
-            _ => Err(IonError::type_err(
+        match crate::stdlib::bytes_method_value(bytes, crate::hash::h(method), args) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => Err(IonError::type_err(
                 format!(
                     "{}{}{}{}",
                     ion_str!("no method '"),
@@ -2893,6 +2825,7 @@ impl Interpreter {
                 span.col,
             )
             .into()),
+            Err(message) => Err(IonError::type_err(message, span.line, span.col).into()),
         }
     }
 
@@ -3319,6 +3252,17 @@ impl Interpreter {
             Value::BuiltinClosure { func, .. } => func
                 .call(args)
                 .map_err(|msg| IonError::runtime(msg, span.line, span.col).into()),
+            Value::Module(table) => match crate::stdlib::call_stdlib_module(table, args) {
+                Some(result) => {
+                    result.map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+                }
+                None => Err(IonError::type_err(
+                    format!("{}{}", ion_str!("not callable: "), func.type_name()),
+                    span.line,
+                    span.col,
+                )
+                .into()),
+            },
             #[cfg(feature = "async-runtime")]
             Value::AsyncBuiltinClosure { .. } => Err(IonError::runtime(
                 ion_str!(
@@ -4221,53 +4165,8 @@ pub fn register_builtins_with_handlers(
         }
     });
 
-    global_builtin!(env, "bytes", |args| match args.first() {
-        Some(Value::List(items)) => {
-            let mut bytes = Vec::with_capacity(items.len());
-            for item in items {
-                let n = item
-                    .as_int()
-                    .ok_or_else(|| ion_str!("bytes() list items must be ints"))?;
-                if !(0..=255).contains(&n) {
-                    return Err(format!("{}{}", ion_str!("byte value out of range: "), n));
-                }
-                bytes.push(n as u8);
-            }
-            Ok(Value::Bytes(bytes))
-        }
-        Some(Value::Str(s)) => Ok(Value::Bytes(s.as_bytes().to_vec())),
-        Some(Value::Int(n)) if *n >= 0 && *n <= 10_000_000 => {
-            Ok(Value::Bytes(vec![0u8; *n as usize]))
-        }
-        Some(Value::Int(n)) => Err(format!("{}{}", ion_str!("invalid byte count: "), n)),
-        None => Ok(Value::Bytes(Vec::new())),
-        _ => Err(format!(
-            "{}{}",
-            ion_str!("bytes() not supported for "),
-            args[0].type_name()
-        )),
-    });
-    global_builtin!(env, "bytes_from_hex", |args| {
-        if args.len() != 1 {
-            return Err(ion_str!("bytes_from_hex takes 1 argument"));
-        }
-        let s = args[0]
-            .as_str()
-            .ok_or_else(|| ion_str!("bytes_from_hex requires a string"))?;
-        if !s.is_ascii() {
-            return Err(ion_str!("bytes_from_hex requires an ASCII hex string"));
-        }
-        if s.len() % 2 != 0 {
-            return Err(ion_str!("hex string must have even length").to_string());
-        }
-        let mut bytes = Vec::with_capacity(s.len() / 2);
-        for i in (0..s.len()).step_by(2) {
-            let byte = u8::from_str_radix(&s[i..i + 2], 16)
-                .map_err(|_| format!("{}{}", ion_str!("invalid hex: "), &s[i..i + 2]))?;
-            bytes.push(byte);
-        }
-        Ok(Value::Bytes(bytes))
-    });
+    global_builtin!(env, "bytes", crate::stdlib::bytes_builtin);
+    global_builtin!(env, "bytes_from_hex", crate::stdlib::bytes_from_hex_builtin);
 
     global_builtin!(env, "assert", |args| {
         if args.is_empty() {

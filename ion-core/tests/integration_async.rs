@@ -61,6 +61,15 @@ fn test_async_path_module_works() {
     );
 }
 
+#[test]
+fn test_async_bytes_module_works() {
+    assert_eq!(eval("bytes(2)"), Value::Bytes(vec![0, 0]));
+    assert_eq!(
+        eval("bytes::u16_be(4660).read_u16_be(0).unwrap()"),
+        Value::Int(4660)
+    );
+}
+
 // --- fs:: under tokio ---
 
 #[cfg(feature = "fs")]

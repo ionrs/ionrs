@@ -28,8 +28,12 @@ and_then, or_else
 ## Tuple Methods (3)
 len, contains, to_list
 
-## Bytes Methods (6)
-len, to_list, to_str, to_hex, slice, is_empty
+## Bytes Methods (33)
+len, is_empty, bytes, contains, find, count, starts_with, ends_with,
+slice, split, replace, reverse, repeat, push, extend, set, pop,
+to_list, to_str, to_hex, to_base64,
+read_u16_le, read_u16_be, read_u32_le, read_u32_be, read_u64_le, read_u64_be,
+read_i16_le, read_i16_be, read_i32_le, read_i32_be, read_i64_le, read_i64_be
 
 ## Cell Methods (3)
 get, set, update
@@ -56,3 +60,8 @@ print, println, len, range, enumerate, join, type_of, str, int, float,
 json_encode, json_decode, json_encode_pretty, bytes, bytes_from_hex,
 assert, assert_eq, sort_by, channel, cell, sleep, timeout,
 abs, min, max, floor, ceil, round, sqrt, pow, clamp
+
+## Bytes Module (21)
+new, zeroed, repeat, from_list, from_str, from_hex, from_base64, concat, join,
+u16_le, u16_be, u32_le, u32_be, u64_le, u64_be,
+i16_le, i16_be, i32_le, i32_be, i64_le, i64_be

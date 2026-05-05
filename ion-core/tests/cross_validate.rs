@@ -879,6 +879,33 @@ fn cross_bytes_basic() {
     assert_both_eq(r#"b"hello"[0]"#, Value::Int(104));
     assert_both_eq(r#"b"hello"[-1]"#, Value::Int(111));
     assert_both_eq(r#"b"hello".to_hex()"#, Value::Str("68656c6c6f".to_string()));
+    assert_both_eq("bytes(2)", Value::Bytes(vec![0, 0]));
+    assert_both_eq(
+        r#"bytes::from_hex("dead").unwrap()"#,
+        Value::Bytes(vec![0xde, 0xad]),
+    );
+    assert_both_eq(
+        r#"bytes::from_base64("SGk=").unwrap()"#,
+        Value::Bytes(b"Hi".to_vec()),
+    );
+    assert_both_eq(
+        r#"bytes::join([b"a", b"b"], b",")"#,
+        Value::Bytes(b"a,b".to_vec()),
+    );
+    assert_both_eq(
+        r#"b"abcabc".find(b"ca")"#,
+        Value::Option(Some(Box::new(Value::Int(2)))),
+    );
+    assert_both_eq(r#"b"a,b,c".split(b",").len()"#, Value::Int(3));
+    assert_both_eq(
+        r#"b"abcabc".replace(b"ab", b"z")"#,
+        Value::Bytes(b"zczc".to_vec()),
+    );
+    assert_both_eq("bytes::u16_le(4660)", Value::Bytes(vec![0x34, 0x12]));
+    assert_both_eq(
+        "bytes::u32_be(305419896).read_u16_be(0).unwrap()",
+        Value::Int(4660),
+    );
 }
 
 #[test]

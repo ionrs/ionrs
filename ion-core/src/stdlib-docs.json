@@ -73,11 +73,39 @@
         {
           "kind": "type", "name": "bytes", "signature": "bytes", "doc": "Byte string type",
           "methods": [
+            { "kind": "method", "receiver": "bytes", "name": "len", "signature": "len()", "doc": "Number of bytes" },
+            { "kind": "method", "receiver": "bytes", "name": "is_empty", "signature": "is_empty()", "doc": "True if empty" },
+            { "kind": "method", "receiver": "bytes", "name": "bytes", "signature": "bytes()", "doc": "Identity byte representation" },
+            { "kind": "method", "receiver": "bytes", "name": "contains", "signature": "contains(byte_or_bytes)", "doc": "Contains byte value or sequence" },
+            { "kind": "method", "receiver": "bytes", "name": "find", "signature": "find(byte_or_bytes)", "doc": "Index of first occurrence" },
+            { "kind": "method", "receiver": "bytes", "name": "count", "signature": "count(byte_or_bytes)", "doc": "Count non-overlapping occurrences" },
+            { "kind": "method", "receiver": "bytes", "name": "starts_with", "signature": "starts_with(prefix)", "doc": "Starts with prefix" },
+            { "kind": "method", "receiver": "bytes", "name": "ends_with", "signature": "ends_with(suffix)", "doc": "Ends with suffix" },
+            { "kind": "method", "receiver": "bytes", "name": "slice", "signature": "slice(start, end?)", "doc": "Sub-slice" },
+            { "kind": "method", "receiver": "bytes", "name": "split", "signature": "split(sep)", "doc": "Split by byte value or bytes separator" },
+            { "kind": "method", "receiver": "bytes", "name": "replace", "signature": "replace(from, to)", "doc": "Replace byte value or bytes sequence" },
+            { "kind": "method", "receiver": "bytes", "name": "reverse", "signature": "reverse()", "doc": "Reversed copy" },
+            { "kind": "method", "receiver": "bytes", "name": "repeat", "signature": "repeat(n)", "doc": "Repeat n times" },
+            { "kind": "method", "receiver": "bytes", "name": "push", "signature": "push(byte)", "doc": "Append byte, returning new bytes" },
+            { "kind": "method", "receiver": "bytes", "name": "extend", "signature": "extend(other)", "doc": "Append bytes, returning new bytes" },
+            { "kind": "method", "receiver": "bytes", "name": "set", "signature": "set(index, byte)", "doc": "Replace byte at index, returning new bytes" },
+            { "kind": "method", "receiver": "bytes", "name": "pop", "signature": "pop()", "doc": "Return (bytes_without_last, Option<byte>)" },
             { "kind": "method", "receiver": "bytes", "name": "to_list", "signature": "to_list()", "doc": "Convert to list" },
             { "kind": "method", "receiver": "bytes", "name": "to_str", "signature": "to_str()", "doc": "Decode as UTF-8" },
             { "kind": "method", "receiver": "bytes", "name": "to_hex", "signature": "to_hex()", "doc": "Hex-encoded string" },
-            { "kind": "method", "receiver": "bytes", "name": "slice", "signature": "slice(start, end)", "doc": "Sub-slice" },
-            { "kind": "method", "receiver": "bytes", "name": "bytes", "signature": "bytes()", "doc": "Byte representation" }
+            { "kind": "method", "receiver": "bytes", "name": "to_base64", "signature": "to_base64()", "doc": "Base64-encoded string" },
+            { "kind": "method", "receiver": "bytes", "name": "read_u16_le", "signature": "read_u16_le(offset)", "doc": "Read unsigned 16-bit little-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_u16_be", "signature": "read_u16_be(offset)", "doc": "Read unsigned 16-bit big-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_u32_le", "signature": "read_u32_le(offset)", "doc": "Read unsigned 32-bit little-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_u32_be", "signature": "read_u32_be(offset)", "doc": "Read unsigned 32-bit big-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_u64_le", "signature": "read_u64_le(offset)", "doc": "Read unsigned 64-bit little-endian integer if it fits in int" },
+            { "kind": "method", "receiver": "bytes", "name": "read_u64_be", "signature": "read_u64_be(offset)", "doc": "Read unsigned 64-bit big-endian integer if it fits in int" },
+            { "kind": "method", "receiver": "bytes", "name": "read_i16_le", "signature": "read_i16_le(offset)", "doc": "Read signed 16-bit little-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_i16_be", "signature": "read_i16_be(offset)", "doc": "Read signed 16-bit big-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_i32_le", "signature": "read_i32_le(offset)", "doc": "Read signed 32-bit little-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_i32_be", "signature": "read_i32_be(offset)", "doc": "Read signed 32-bit big-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_i64_le", "signature": "read_i64_le(offset)", "doc": "Read signed 64-bit little-endian integer" },
+            { "kind": "method", "receiver": "bytes", "name": "read_i64_be", "signature": "read_i64_be(offset)", "doc": "Read signed 64-bit big-endian integer" }
           ]
         },
         {
@@ -228,6 +256,33 @@
         { "kind": "function", "name": "encode", "signature": "json::encode(value) -> string", "doc": "Value to JSON string" },
         { "kind": "function", "name": "decode", "signature": "json::decode(string) -> value", "doc": "JSON string to value" },
         { "kind": "function", "name": "pretty", "signature": "json::pretty(value) -> string", "doc": "Pretty-printed JSON string" }
+      ]
+    },
+    {
+      "name": "bytes",
+      "summary": "Byte construction, encoding, concatenation, and endian packing.",
+      "members": [
+        { "kind": "function", "name": "new", "signature": "bytes::new() -> bytes", "doc": "Create empty bytes." },
+        { "kind": "function", "name": "zeroed", "signature": "bytes::zeroed(n) -> bytes", "doc": "Create zero-filled bytes of length `n`." },
+        { "kind": "function", "name": "repeat", "signature": "bytes::repeat(byte, n) -> bytes", "doc": "Create bytes filled with a repeated byte." },
+        { "kind": "function", "name": "from_list", "signature": "bytes::from_list(list<int>) -> bytes", "doc": "Create bytes from byte values in the range 0..=255." },
+        { "kind": "function", "name": "from_str", "signature": "bytes::from_str(string) -> bytes", "doc": "Encode a string as UTF-8 bytes." },
+        { "kind": "function", "name": "from_hex", "signature": "bytes::from_hex(string) -> Result<bytes, string>", "doc": "Decode hex into bytes." },
+        { "kind": "function", "name": "from_base64", "signature": "bytes::from_base64(string) -> Result<bytes, string>", "doc": "Decode standard Base64 into bytes." },
+        { "kind": "function", "name": "concat", "signature": "bytes::concat(list<bytes>) -> bytes", "doc": "Concatenate bytes values." },
+        { "kind": "function", "name": "join", "signature": "bytes::join(list<bytes>, sep?) -> bytes", "doc": "Join bytes values with an optional bytes separator." },
+        { "kind": "function", "name": "u16_le", "signature": "bytes::u16_le(n) -> bytes", "doc": "Pack unsigned 16-bit little-endian integer." },
+        { "kind": "function", "name": "u16_be", "signature": "bytes::u16_be(n) -> bytes", "doc": "Pack unsigned 16-bit big-endian integer." },
+        { "kind": "function", "name": "u32_le", "signature": "bytes::u32_le(n) -> bytes", "doc": "Pack unsigned 32-bit little-endian integer." },
+        { "kind": "function", "name": "u32_be", "signature": "bytes::u32_be(n) -> bytes", "doc": "Pack unsigned 32-bit big-endian integer." },
+        { "kind": "function", "name": "u64_le", "signature": "bytes::u64_le(n) -> bytes", "doc": "Pack unsigned 64-bit little-endian integer that fits in Ion int." },
+        { "kind": "function", "name": "u64_be", "signature": "bytes::u64_be(n) -> bytes", "doc": "Pack unsigned 64-bit big-endian integer that fits in Ion int." },
+        { "kind": "function", "name": "i16_le", "signature": "bytes::i16_le(n) -> bytes", "doc": "Pack signed 16-bit little-endian integer." },
+        { "kind": "function", "name": "i16_be", "signature": "bytes::i16_be(n) -> bytes", "doc": "Pack signed 16-bit big-endian integer." },
+        { "kind": "function", "name": "i32_le", "signature": "bytes::i32_le(n) -> bytes", "doc": "Pack signed 32-bit little-endian integer." },
+        { "kind": "function", "name": "i32_be", "signature": "bytes::i32_be(n) -> bytes", "doc": "Pack signed 32-bit big-endian integer." },
+        { "kind": "function", "name": "i64_le", "signature": "bytes::i64_le(n) -> bytes", "doc": "Pack signed 64-bit little-endian integer." },
+        { "kind": "function", "name": "i64_be", "signature": "bytes::i64_be(n) -> bytes", "doc": "Pack signed 64-bit big-endian integer." }
       ]
     },
     {
