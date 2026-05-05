@@ -614,6 +614,10 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 
 ## Methods
 
+All runtime values support `.to_string()`. The tables below list
+type-specific methods and repeat `.to_string()` where the stdlib manifest lists
+it explicitly.
+
 ### String Methods
 
 | Method | Returns | Description |
@@ -625,6 +629,8 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.starts_with(pre)` | Bool | Starts with prefix |
 | `.ends_with(suf)` | Bool | Ends with suffix |
 | `.find(sub)` | Option(Int) | Char index of first occurrence |
+| `.index(sub)` | Option(Int) | Alias for `.find(sub)` |
+| `.count(sub)` | Int | Count non-overlapping occurrences |
 | `.trim()` | String | Strip leading/trailing whitespace |
 | `.trim_start()` | String | Strip leading whitespace |
 | `.trim_end()` | String | Strip trailing whitespace |
@@ -643,6 +649,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.bytes()` | List | List of byte values (ints) |
 | `.to_int()` | Result | Parse as integer |
 | `.to_float()` | Result | Parse as float |
+| `.to_string()` | String | Convert to string |
 
 ### List Methods
 
@@ -676,7 +683,10 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.max()` | Option | Maximum element |
 | `.sum()` | Int/Float | Sum of numeric elements |
 | `.window(n)` | List | Sliding windows of size n |
+| `.chunk(n)` | List | Split into chunks of size n |
+| `.reduce(fn)` | Value | Reduce without an initial value |
 | `.sort_by(fn)` | List | Sort with custom comparator (fn returns int: neg/0/pos) |
+| `.to_string()` | String | Convert to string |
 
 ### Tuple Methods
 
@@ -685,6 +695,31 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.len()` | Int | Number of elements |
 | `.contains(val)` | Bool | Contains value |
 | `.to_list()` | List | Convert to list |
+| `.to_string()` | String | Convert to string |
+
+### Set Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.len()` | Int | Number of elements |
+| `.is_empty()` | Bool | True if empty |
+| `.contains(val)` | Bool | Contains value |
+| `.add(val)` | Set | New set with value added |
+| `.remove(val)` | Set | New set with value removed |
+| `.union(other)` | Set | Union of two sets |
+| `.intersection(other)` | Set | Intersection of two sets |
+| `.difference(other)` | Set | Difference of two sets |
+| `.to_list()` | List | Convert to list |
+| `.to_string()` | String | Convert to string |
+
+### Range Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.len()` | Int | Number of values in the range |
+| `.contains(n)` | Bool | True if the integer is in range |
+| `.to_list()` | List | Materialize the range as a list |
+| `.to_string()` | String | Convert to string |
 
 ### Dict Methods
 
@@ -705,6 +740,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.map(fn)` | Dict | Apply fn(key, value) to each entry, keep keys |
 | `.filter(fn)` | Dict | Keep entries where fn(key, value) is truthy |
 | `.zip(other)` | Dict | Merge matching keys into tuples |
+| `.to_string()` | String | Convert to string |
 
 ### Option Methods
 
@@ -719,6 +755,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.and_then(fn)` | Value | Flat-map (fn should return Option) |
 | `.or_else(fn)` | Value | Call fn if None |
 | `.unwrap_or_else(fn)` | Value | Unwrap or call fn |
+| `.to_string()` | String | Convert to string |
 
 ### Result Methods
 
@@ -734,6 +771,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.and_then(fn)` | Value | Flat-map on Ok |
 | `.or_else(fn)` | Value | Flat-map on Err |
 | `.unwrap_or_else(fn)` | Value | Unwrap or call fn with error |
+| `.to_string()` | String | Convert to string |
 
 ### Bytes Methods
 
@@ -766,6 +804,7 @@ See [Option Methods](#option-methods) and [Result Methods](#result-methods).
 | `.read_i16_le(offset)` / `.read_i16_be(offset)` | Result | Read signed 16-bit integer |
 | `.read_i32_le(offset)` / `.read_i32_be(offset)` | Result | Read signed 32-bit integer |
 | `.read_i64_le(offset)` / `.read_i64_be(offset)` | Result | Read signed 64-bit integer |
+| `.to_string()` | String | Convert to string |
 
 ### Cell Methods
 
@@ -785,6 +824,7 @@ c.get()           // 43
 | `.get()` | Value | Read the current value |
 | `.set(v)` | Unit | Replace the stored value with `v` |
 | `.update(fn)` | Unit | Apply `fn` to the current value and store the result |
+| `.to_string()` | String | Convert to string |
 
 ---
 
@@ -862,6 +902,15 @@ let result = task.await;
 the caller until the child completes. If a child fails before it is awaited,
 the nursery cancels sibling tasks and propagates the error.
 
+| Method | Description |
+|--------|-------------|
+| `task.await` | Wait for the task result |
+| `task.await_timeout(ms)` | Wait up to `ms`, returning `Option` |
+| `task.is_finished()` | Check whether the task has completed |
+| `task.cancel()` | Cancel the task |
+| `task.is_cancelled()` | Check whether the task was cancelled |
+| `task.to_string()` | Convert the task handle to a string |
+
 ### Channels
 
 ```
@@ -878,6 +927,8 @@ tx.close();
 | `rx.recv()` | Receive, parking until a value arrives; returns `None` when closed |
 | `rx.try_recv()` | Non-blocking receive, returns `Option` |
 | `rx.recv_timeout(ms)` | Receive with timeout, returns `Option` |
+| `rx.close()` | Close the receiver |
+| `tx.to_string()` / `rx.to_string()` | Convert the channel endpoint to a string |
 
 Under `async-runtime`, channels are backed by Tokio channels and integrate
 with the same parking mechanism as async host functions.
@@ -1031,6 +1082,8 @@ The following modules are available by default in every Engine:
 | `json::encode(value)` | Value to JSON string |
 | `json::decode(string)` | JSON string to value |
 | `json::pretty(value)` | Pretty-printed JSON string |
+| `json::msgpack_encode(value)` | Value to MessagePack bytes (requires the `msgpack` feature) |
+| `json::msgpack_decode(bytes)` | MessagePack bytes to value (requires the `msgpack` feature) |
 
 #### `rand`
 
@@ -1068,6 +1121,34 @@ scripts can use `io::print`, `io::println`, or `io::eprintln`.
 
 | Name | Description |
 |------|-------------|
+| `string::len(s)` | Alias for `s.len()` |
+| `string::char_len(s)` | Alias for `s.char_len()` |
+| `string::is_empty(s)` | Alias for `s.is_empty()` |
+| `string::contains(s, sub)` | Alias for `s.contains(sub)` |
+| `string::starts_with(s, pre)` | Alias for `s.starts_with(pre)` |
+| `string::ends_with(s, suf)` | Alias for `s.ends_with(suf)` |
+| `string::find(s, sub)` | Alias for `s.find(sub)` |
+| `string::index(s, sub)` | Alias for `s.index(sub)` |
+| `string::count(s, sub)` | Alias for `s.count(sub)` |
+| `string::trim(s)` | Alias for `s.trim()` |
+| `string::trim_start(s)` | Alias for `s.trim_start()` |
+| `string::trim_end(s)` | Alias for `s.trim_end()` |
+| `string::to_upper(s)` | Alias for `s.to_upper()` |
+| `string::to_lower(s)` | Alias for `s.to_lower()` |
+| `string::split(s, delim)` | Alias for `s.split(delim)` |
+| `string::replace(s, from, to)` | Alias for `s.replace(from, to)` |
+| `string::chars(s)` | Alias for `s.chars()` |
+| `string::pad_start(s, n, ch?)` | Alias for `s.pad_start(n, ch?)` |
+| `string::pad_end(s, n, ch?)` | Alias for `s.pad_end(n, ch?)` |
+| `string::strip_prefix(s, pre)` | Alias for `s.strip_prefix(pre)` |
+| `string::strip_suffix(s, suf)` | Alias for `s.strip_suffix(suf)` |
+| `string::reverse(s)` | Alias for `s.reverse()` |
+| `string::repeat(s, n)` | Alias for `s.repeat(n)` |
+| `string::slice(s, start, end?)` | Alias for `s.slice(start, end?)` |
+| `string::bytes(s)` | Alias for `s.bytes()` |
+| `string::to_int(s)` | Alias for `s.to_int()` |
+| `string::to_float(s)` | Alias for `s.to_float()` |
+| `string::to_string(x)` | Convert a value to a string |
 | `string::join(list, sep?)` | Join list elements into a string with optional separator |
 
 #### `semver`

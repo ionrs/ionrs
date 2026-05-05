@@ -786,9 +786,10 @@ Constants: `PI`, `E`, `TAU`, `INF`, `NAN`
 
 | Function | Description |
 |----------|-------------|
+| `len(s)`, `trim(s)`, `split(s, delim)`, etc. | Aliases for string value methods with `s` as the first argument |
 | `join(list, sep)` | Join list elements with separator |
 
-> String methods like `split`, `trim`, `contains`, `to_upper`, etc. are available as methods on string values directly (e.g., `"hello".to_upper()`), not as module functions.
+> String methods like `split`, `trim`, `contains`, `to_upper`, etc. are available both as methods on string values (e.g., `"hello".to_upper()`) and as `string::` module functions (e.g., `string::to_upper("hello")`).
 
 ### Top-level builtins (not in modules)
 

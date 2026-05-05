@@ -33,13 +33,22 @@
       "summary": "Built-in value types and the methods callable on them.",
       "members": [
         {
-          "kind": "type", "name": "int", "signature": "int", "doc": "Integer type"
+          "kind": "type", "name": "int", "signature": "int", "doc": "Integer type",
+          "methods": [
+            { "kind": "method", "receiver": "int", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
         },
         {
-          "kind": "type", "name": "float", "signature": "float", "doc": "Floating-point type"
+          "kind": "type", "name": "float", "signature": "float", "doc": "Floating-point type",
+          "methods": [
+            { "kind": "method", "receiver": "float", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
         },
         {
-          "kind": "type", "name": "bool", "signature": "bool", "doc": "Boolean type"
+          "kind": "type", "name": "bool", "signature": "bool", "doc": "Boolean type",
+          "methods": [
+            { "kind": "method", "receiver": "bool", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
         },
         {
           "kind": "type", "name": "string", "signature": "string", "doc": "String type",
@@ -60,7 +69,11 @@
             { "kind": "method", "receiver": "string", "name": "char_len", "signature": "char_len()", "doc": "Character count (Unicode-aware)" },
             { "kind": "method", "receiver": "string", "name": "reverse", "signature": "reverse()", "doc": "Reversed copy" },
             { "kind": "method", "receiver": "string", "name": "find", "signature": "find(sub)", "doc": "Index of first occurrence" },
+            { "kind": "method", "receiver": "string", "name": "index", "signature": "index(sub)", "doc": "Alias for find(sub)" },
+            { "kind": "method", "receiver": "string", "name": "count", "signature": "count(sub)", "doc": "Count non-overlapping occurrences" },
             { "kind": "method", "receiver": "string", "name": "repeat", "signature": "repeat(n)", "doc": "Repeat n times" },
+            { "kind": "method", "receiver": "string", "name": "slice", "signature": "slice(start, end?)", "doc": "Substring by character index" },
+            { "kind": "method", "receiver": "string", "name": "bytes", "signature": "bytes()", "doc": "List of byte values" },
             { "kind": "method", "receiver": "string", "name": "to_int", "signature": "to_int()", "doc": "Parse as integer" },
             { "kind": "method", "receiver": "string", "name": "to_float", "signature": "to_float()", "doc": "Parse as float" },
             { "kind": "method", "receiver": "string", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" },
@@ -94,6 +107,7 @@
             { "kind": "method", "receiver": "bytes", "name": "to_str", "signature": "to_str()", "doc": "Decode as UTF-8" },
             { "kind": "method", "receiver": "bytes", "name": "to_hex", "signature": "to_hex()", "doc": "Hex-encoded string" },
             { "kind": "method", "receiver": "bytes", "name": "to_base64", "signature": "to_base64()", "doc": "Base64-encoded string" },
+            { "kind": "method", "receiver": "bytes", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" },
             { "kind": "method", "receiver": "bytes", "name": "read_u16_le", "signature": "read_u16_le(offset)", "doc": "Read unsigned 16-bit little-endian integer" },
             { "kind": "method", "receiver": "bytes", "name": "read_u16_be", "signature": "read_u16_be(offset)", "doc": "Read unsigned 16-bit big-endian integer" },
             { "kind": "method", "receiver": "bytes", "name": "read_u32_le", "signature": "read_u32_le(offset)", "doc": "Read unsigned 32-bit little-endian integer" },
@@ -111,10 +125,14 @@
         {
           "kind": "type", "name": "list", "signature": "list", "doc": "List type (e.g. list<int>)",
           "methods": [
+            { "kind": "method", "receiver": "list", "name": "len", "signature": "len()", "doc": "Number of elements" },
+            { "kind": "method", "receiver": "list", "name": "is_empty", "signature": "is_empty()", "doc": "True if empty" },
+            { "kind": "method", "receiver": "list", "name": "contains", "signature": "contains(val)", "doc": "Contains value" },
             { "kind": "method", "receiver": "list", "name": "push", "signature": "push(val)", "doc": "Append value" },
             { "kind": "method", "receiver": "list", "name": "pop", "signature": "pop()", "doc": "Remove last element" },
             { "kind": "method", "receiver": "list", "name": "first", "signature": "first()", "doc": "First element (Option)" },
             { "kind": "method", "receiver": "list", "name": "last", "signature": "last()", "doc": "Last element (Option)" },
+            { "kind": "method", "receiver": "list", "name": "reverse", "signature": "reverse()", "doc": "Reversed copy" },
             { "kind": "method", "receiver": "list", "name": "sort", "signature": "sort()", "doc": "Sorted copy" },
             { "kind": "method", "receiver": "list", "name": "sort_by", "signature": "sort_by(fn)", "doc": "Sort by key function" },
             { "kind": "method", "receiver": "list", "name": "flatten", "signature": "flatten()", "doc": "Flatten one level" },
@@ -129,6 +147,7 @@
             { "kind": "method", "receiver": "list", "name": "all", "signature": "all(fn)", "doc": "True if all match" },
             { "kind": "method", "receiver": "list", "name": "index", "signature": "index(val)", "doc": "Index of first occurrence" },
             { "kind": "method", "receiver": "list", "name": "count", "signature": "count(val)", "doc": "Count occurrences" },
+            { "kind": "method", "receiver": "list", "name": "slice", "signature": "slice(start, end?)", "doc": "Sublist by index" },
             { "kind": "method", "receiver": "list", "name": "dedup", "signature": "dedup()", "doc": "Remove consecutive duplicates" },
             { "kind": "method", "receiver": "list", "name": "unique", "signature": "unique()", "doc": "Remove all duplicates" },
             { "kind": "method", "receiver": "list", "name": "sum", "signature": "sum()", "doc": "Sum of elements" },
@@ -136,12 +155,15 @@
             { "kind": "method", "receiver": "list", "name": "chunk", "signature": "chunk(n)", "doc": "Split into chunks of size n" },
             { "kind": "method", "receiver": "list", "name": "reduce", "signature": "reduce(fn)", "doc": "Reduce list with fn (no initial value)" },
             { "kind": "method", "receiver": "list", "name": "min", "signature": "min()", "doc": "Minimum element" },
-            { "kind": "method", "receiver": "list", "name": "max", "signature": "max()", "doc": "Maximum element" }
+            { "kind": "method", "receiver": "list", "name": "max", "signature": "max()", "doc": "Maximum element" },
+            { "kind": "method", "receiver": "list", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         },
         {
           "kind": "type", "name": "dict", "signature": "dict", "doc": "Dictionary type (e.g. dict<string, int>)",
           "methods": [
+            { "kind": "method", "receiver": "dict", "name": "len", "signature": "len()", "doc": "Number of entries" },
+            { "kind": "method", "receiver": "dict", "name": "is_empty", "signature": "is_empty()", "doc": "True if empty" },
             { "kind": "method", "receiver": "dict", "name": "keys", "signature": "keys()", "doc": "List of keys" },
             { "kind": "method", "receiver": "dict", "name": "values", "signature": "values()", "doc": "List of values" },
             { "kind": "method", "receiver": "dict", "name": "entries", "signature": "entries()", "doc": "List of (key, value) tuples" },
@@ -151,42 +173,81 @@
             { "kind": "method", "receiver": "dict", "name": "remove", "signature": "remove(key)", "doc": "Remove entry (dict) or element (set)" },
             { "kind": "method", "receiver": "dict", "name": "merge", "signature": "merge(other)", "doc": "Merge dicts" },
             { "kind": "method", "receiver": "dict", "name": "update", "signature": "update(other)", "doc": "Merge dict (mutating)" },
-            { "kind": "method", "receiver": "dict", "name": "keys_of", "signature": "keys_of(val)", "doc": "Keys with matching value" }
+            { "kind": "method", "receiver": "dict", "name": "map", "signature": "map(fn)", "doc": "Apply fn(key, value) to each entry and keep keys" },
+            { "kind": "method", "receiver": "dict", "name": "filter", "signature": "filter(fn)", "doc": "Keep entries where fn(key, value) is truthy" },
+            { "kind": "method", "receiver": "dict", "name": "keys_of", "signature": "keys_of(val)", "doc": "Keys with matching value" },
+            { "kind": "method", "receiver": "dict", "name": "zip", "signature": "zip(other)", "doc": "Merge matching keys into tuples" },
+            { "kind": "method", "receiver": "dict", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         },
         {
-          "kind": "type", "name": "tuple", "signature": "tuple", "doc": "Tuple type"
+          "kind": "type", "name": "tuple", "signature": "tuple", "doc": "Tuple type",
+          "methods": [
+            { "kind": "method", "receiver": "tuple", "name": "len", "signature": "len()", "doc": "Number of elements" },
+            { "kind": "method", "receiver": "tuple", "name": "contains", "signature": "contains(val)", "doc": "Contains value" },
+            { "kind": "method", "receiver": "tuple", "name": "to_list", "signature": "to_list()", "doc": "Convert to list" },
+            { "kind": "method", "receiver": "tuple", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
         },
         {
           "kind": "type", "name": "set", "signature": "set", "doc": "Set type",
           "methods": [
+            { "kind": "method", "receiver": "set", "name": "len", "signature": "len()", "doc": "Number of elements" },
+            { "kind": "method", "receiver": "set", "name": "contains", "signature": "contains(val)", "doc": "Contains value" },
+            { "kind": "method", "receiver": "set", "name": "is_empty", "signature": "is_empty()", "doc": "True if empty" },
             { "kind": "method", "receiver": "set", "name": "add", "signature": "add(val)", "doc": "Add element to set" },
+            { "kind": "method", "receiver": "set", "name": "remove", "signature": "remove(val)", "doc": "Remove element from set" },
             { "kind": "method", "receiver": "set", "name": "union", "signature": "union(other)", "doc": "Union of two sets" },
             { "kind": "method", "receiver": "set", "name": "intersection", "signature": "intersection(other)", "doc": "Intersection of two sets" },
-            { "kind": "method", "receiver": "set", "name": "difference", "signature": "difference(other)", "doc": "Difference of two sets" }
+            { "kind": "method", "receiver": "set", "name": "difference", "signature": "difference(other)", "doc": "Difference of two sets" },
+            { "kind": "method", "receiver": "set", "name": "to_list", "signature": "to_list()", "doc": "Convert to list" },
+            { "kind": "method", "receiver": "set", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         },
         {
-          "kind": "type", "name": "fn", "signature": "fn", "doc": "Function type"
+          "kind": "type", "name": "range", "signature": "range", "doc": "Range type",
+          "methods": [
+            { "kind": "method", "receiver": "range", "name": "len", "signature": "len()", "doc": "Number of values in the range" },
+            { "kind": "method", "receiver": "range", "name": "contains", "signature": "contains(int)", "doc": "True if the value is in range" },
+            { "kind": "method", "receiver": "range", "name": "to_list", "signature": "to_list()", "doc": "Materialize the range as a list" },
+            { "kind": "method", "receiver": "range", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
+        },
+        {
+          "kind": "type", "name": "fn", "signature": "fn", "doc": "Function type",
+          "methods": [
+            { "kind": "method", "receiver": "fn", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
         },
         {
           "kind": "type", "name": "cell", "signature": "cell", "doc": "Mutable reference cell type",
           "methods": [
-            { "kind": "method", "receiver": "cell", "name": "set", "signature": "set(val)", "doc": "Set cell value" }
+            { "kind": "method", "receiver": "cell", "name": "get", "signature": "get()", "doc": "Read cell value" },
+            { "kind": "method", "receiver": "cell", "name": "set", "signature": "set(val)", "doc": "Set cell value" },
+            { "kind": "method", "receiver": "cell", "name": "update", "signature": "update(fn)", "doc": "Apply fn to the current value, store it, and return it" },
+            { "kind": "method", "receiver": "cell", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         },
         {
-          "kind": "type", "name": "any", "signature": "any", "doc": "Any type (accepts all values)"
+          "kind": "type", "name": "any", "signature": "any", "doc": "Any type (accepts all values)",
+          "methods": [
+            { "kind": "method", "receiver": "any", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
         },
         {
           "kind": "type", "name": "Option", "signature": "Option<T>", "doc": "Option type (e.g. Option<int>)",
           "variants": ["Some", "None"],
           "methods": [
+            { "kind": "method", "receiver": "Option", "name": "is_some", "signature": "is_some()", "doc": "True if Some" },
+            { "kind": "method", "receiver": "Option", "name": "is_none", "signature": "is_none()", "doc": "True if None" },
             { "kind": "method", "receiver": "Option", "name": "unwrap", "signature": "unwrap()", "doc": "Extract value or error" },
             { "kind": "method", "receiver": "Option", "name": "unwrap_or", "signature": "unwrap_or(default)", "doc": "Unwrap or return default" },
             { "kind": "method", "receiver": "Option", "name": "expect", "signature": "expect(msg)", "doc": "Unwrap or error" },
-            { "kind": "method", "receiver": "Option", "name": "is_some", "signature": "is_some()", "doc": "True if Some" },
-            { "kind": "method", "receiver": "Option", "name": "is_none", "signature": "is_none()", "doc": "True if None" }
+            { "kind": "method", "receiver": "Option", "name": "map", "signature": "map(fn)", "doc": "Apply fn to the inner value if Some" },
+            { "kind": "method", "receiver": "Option", "name": "and_then", "signature": "and_then(fn)", "doc": "Flat-map if Some" },
+            { "kind": "method", "receiver": "Option", "name": "or_else", "signature": "or_else(fn)", "doc": "Call fn if None" },
+            { "kind": "method", "receiver": "Option", "name": "unwrap_or_else", "signature": "unwrap_or_else(fn)", "doc": "Unwrap or call fn if None" },
+            { "kind": "method", "receiver": "Option", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         },
         {
@@ -195,18 +256,26 @@
           "methods": [
             { "kind": "method", "receiver": "Result", "name": "is_ok", "signature": "is_ok()", "doc": "True if Ok" },
             { "kind": "method", "receiver": "Result", "name": "is_err", "signature": "is_err()", "doc": "True if Err" },
+            { "kind": "method", "receiver": "Result", "name": "unwrap", "signature": "unwrap()", "doc": "Extract Ok value or error" },
+            { "kind": "method", "receiver": "Result", "name": "unwrap_or", "signature": "unwrap_or(default)", "doc": "Unwrap or return default" },
+            { "kind": "method", "receiver": "Result", "name": "expect", "signature": "expect(msg)", "doc": "Unwrap or error with message" },
+            { "kind": "method", "receiver": "Result", "name": "map", "signature": "map(fn)", "doc": "Apply fn to the Ok value" },
             { "kind": "method", "receiver": "Result", "name": "map_err", "signature": "map_err(fn)", "doc": "Transform error" },
-            { "kind": "method", "receiver": "Result", "name": "and_then", "signature": "and_then(fn)", "doc": "Flat-map on Ok/Some" },
-            { "kind": "method", "receiver": "Result", "name": "or_else", "signature": "or_else(fn)", "doc": "Call fn on Err/None" }
+            { "kind": "method", "receiver": "Result", "name": "and_then", "signature": "and_then(fn)", "doc": "Flat-map on Ok" },
+            { "kind": "method", "receiver": "Result", "name": "or_else", "signature": "or_else(fn)", "doc": "Call fn on Err" },
+            { "kind": "method", "receiver": "Result", "name": "unwrap_or_else", "signature": "unwrap_or_else(fn)", "doc": "Unwrap or call fn with the error" },
+            { "kind": "method", "receiver": "Result", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         },
         {
           "kind": "type", "name": "Task", "signature": "Task<T>", "doc": "Async task handle returned by `spawn`. Requires the `concurrency` feature.",
           "methods": [
-            { "kind": "method", "receiver": "Task", "name": "await", "signature": "await", "doc": "Wait for task" },
+            { "kind": "method", "receiver": "Task", "name": "await", "signature": "task.await", "doc": "Wait for task" },
             { "kind": "method", "receiver": "Task", "name": "is_finished", "signature": "is_finished()", "doc": "Check if done" },
             { "kind": "method", "receiver": "Task", "name": "cancel", "signature": "cancel()", "doc": "Cancel task" },
-            { "kind": "method", "receiver": "Task", "name": "is_cancelled", "signature": "is_cancelled()", "doc": "Check if cancelled" }
+            { "kind": "method", "receiver": "Task", "name": "is_cancelled", "signature": "is_cancelled()", "doc": "Check if cancelled" },
+            { "kind": "method", "receiver": "Task", "name": "await_timeout", "signature": "await_timeout(ms)", "doc": "Wait up to ms and return Option" },
+            { "kind": "method", "receiver": "Task", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         },
         {
@@ -215,7 +284,34 @@
             { "kind": "method", "receiver": "Channel", "name": "send", "signature": "send(val)", "doc": "Send value" },
             { "kind": "method", "receiver": "Channel", "name": "recv", "signature": "recv()", "doc": "Receive value" },
             { "kind": "method", "receiver": "Channel", "name": "try_recv", "signature": "try_recv()", "doc": "Non-blocking receive" },
-            { "kind": "method", "receiver": "Channel", "name": "close", "signature": "close()", "doc": "Close channel" }
+            { "kind": "method", "receiver": "Channel", "name": "recv_timeout", "signature": "recv_timeout(ms)", "doc": "Receive with timeout" },
+            { "kind": "method", "receiver": "Channel", "name": "close", "signature": "close()", "doc": "Close channel" },
+            { "kind": "method", "receiver": "Channel", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
+        },
+        {
+          "kind": "type", "name": "AsyncTask", "signature": "AsyncTask<T>", "doc": "Native async-runtime task handle returned by `spawn`.",
+          "methods": [
+            { "kind": "method", "receiver": "AsyncTask", "name": "await", "signature": "task.await", "doc": "Wait for task" },
+            { "kind": "method", "receiver": "AsyncTask", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
+        },
+        {
+          "kind": "type", "name": "AsyncChannelSender", "signature": "AsyncChannelSender", "doc": "Native async-runtime channel sender returned by `channel(n)`.",
+          "methods": [
+            { "kind": "method", "receiver": "AsyncChannelSender", "name": "send", "signature": "send(value)", "doc": "Send, parking if the channel is full" },
+            { "kind": "method", "receiver": "AsyncChannelSender", "name": "close", "signature": "close()", "doc": "Close the sender" },
+            { "kind": "method", "receiver": "AsyncChannelSender", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
+          ]
+        },
+        {
+          "kind": "type", "name": "AsyncChannelReceiver", "signature": "AsyncChannelReceiver", "doc": "Native async-runtime channel receiver returned by `channel(n)`.",
+          "methods": [
+            { "kind": "method", "receiver": "AsyncChannelReceiver", "name": "recv", "signature": "recv()", "doc": "Receive, parking until a value arrives or the channel closes" },
+            { "kind": "method", "receiver": "AsyncChannelReceiver", "name": "try_recv", "signature": "try_recv()", "doc": "Immediate receive attempt" },
+            { "kind": "method", "receiver": "AsyncChannelReceiver", "name": "recv_timeout", "signature": "recv_timeout(ms)", "doc": "Receive with timeout" },
+            { "kind": "method", "receiver": "AsyncChannelReceiver", "name": "close", "signature": "close()", "doc": "Close the receiver" },
+            { "kind": "method", "receiver": "AsyncChannelReceiver", "name": "to_string", "signature": "to_string()", "doc": "Convert to string" }
           ]
         }
       ]
@@ -255,7 +351,9 @@
       "members": [
         { "kind": "function", "name": "encode", "signature": "json::encode(value) -> string", "doc": "Value to JSON string" },
         { "kind": "function", "name": "decode", "signature": "json::decode(string) -> value", "doc": "JSON string to value" },
-        { "kind": "function", "name": "pretty", "signature": "json::pretty(value) -> string", "doc": "Pretty-printed JSON string" }
+        { "kind": "function", "name": "pretty", "signature": "json::pretty(value) -> string", "doc": "Pretty-printed JSON string" },
+        { "kind": "function", "name": "msgpack_encode", "signature": "json::msgpack_encode(value) -> bytes", "doc": "Encode value as MessagePack bytes. Requires the `msgpack` cargo feature." },
+        { "kind": "function", "name": "msgpack_decode", "signature": "json::msgpack_decode(bytes) -> value", "doc": "Decode MessagePack bytes into a value. Requires the `msgpack` cargo feature." }
       ]
     },
     {
@@ -311,7 +409,35 @@
       "name": "string",
       "summary": "String utilities.",
       "members": [
-        { "kind": "function", "name": "join", "signature": "string::join(list, sep)", "doc": "Join list elements into string with optional separator" }
+        { "kind": "function", "name": "len", "signature": "string::len(s) -> int", "doc": "Alias for s.len()." },
+        { "kind": "function", "name": "char_len", "signature": "string::char_len(s) -> int", "doc": "Alias for s.char_len()." },
+        { "kind": "function", "name": "is_empty", "signature": "string::is_empty(s) -> bool", "doc": "Alias for s.is_empty()." },
+        { "kind": "function", "name": "contains", "signature": "string::contains(s, sub) -> bool", "doc": "Alias for s.contains(sub)." },
+        { "kind": "function", "name": "starts_with", "signature": "string::starts_with(s, prefix) -> bool", "doc": "Alias for s.starts_with(prefix)." },
+        { "kind": "function", "name": "ends_with", "signature": "string::ends_with(s, suffix) -> bool", "doc": "Alias for s.ends_with(suffix)." },
+        { "kind": "function", "name": "find", "signature": "string::find(s, sub) -> Option(Int)", "doc": "Alias for s.find(sub)." },
+        { "kind": "function", "name": "index", "signature": "string::index(s, sub) -> Option(Int)", "doc": "Alias for s.index(sub)." },
+        { "kind": "function", "name": "count", "signature": "string::count(s, sub) -> int", "doc": "Alias for s.count(sub)." },
+        { "kind": "function", "name": "trim", "signature": "string::trim(s) -> string", "doc": "Alias for s.trim()." },
+        { "kind": "function", "name": "trim_start", "signature": "string::trim_start(s) -> string", "doc": "Alias for s.trim_start()." },
+        { "kind": "function", "name": "trim_end", "signature": "string::trim_end(s) -> string", "doc": "Alias for s.trim_end()." },
+        { "kind": "function", "name": "to_upper", "signature": "string::to_upper(s) -> string", "doc": "Alias for s.to_upper()." },
+        { "kind": "function", "name": "to_lower", "signature": "string::to_lower(s) -> string", "doc": "Alias for s.to_lower()." },
+        { "kind": "function", "name": "split", "signature": "string::split(s, delim) -> list", "doc": "Alias for s.split(delim)." },
+        { "kind": "function", "name": "replace", "signature": "string::replace(s, from, to) -> string", "doc": "Alias for s.replace(from, to)." },
+        { "kind": "function", "name": "chars", "signature": "string::chars(s) -> list", "doc": "Alias for s.chars()." },
+        { "kind": "function", "name": "pad_start", "signature": "string::pad_start(s, width, char?) -> string", "doc": "Alias for s.pad_start(width, char?)." },
+        { "kind": "function", "name": "pad_end", "signature": "string::pad_end(s, width, char?) -> string", "doc": "Alias for s.pad_end(width, char?)." },
+        { "kind": "function", "name": "strip_prefix", "signature": "string::strip_prefix(s, prefix) -> string", "doc": "Alias for s.strip_prefix(prefix)." },
+        { "kind": "function", "name": "strip_suffix", "signature": "string::strip_suffix(s, suffix) -> string", "doc": "Alias for s.strip_suffix(suffix)." },
+        { "kind": "function", "name": "reverse", "signature": "string::reverse(s) -> string", "doc": "Alias for s.reverse()." },
+        { "kind": "function", "name": "repeat", "signature": "string::repeat(s, n) -> string", "doc": "Alias for s.repeat(n)." },
+        { "kind": "function", "name": "slice", "signature": "string::slice(s, start, end?) -> string", "doc": "Alias for s.slice(start, end?)." },
+        { "kind": "function", "name": "bytes", "signature": "string::bytes(s) -> list", "doc": "Alias for s.bytes()." },
+        { "kind": "function", "name": "to_int", "signature": "string::to_int(s) -> Result", "doc": "Alias for s.to_int()." },
+        { "kind": "function", "name": "to_float", "signature": "string::to_float(s) -> Result", "doc": "Alias for s.to_float()." },
+        { "kind": "function", "name": "to_string", "signature": "string::to_string(x) -> string", "doc": "Convert a value to a string." },
+        { "kind": "function", "name": "join", "signature": "string::join(list, sep?) -> string", "doc": "Join list elements into string with optional separator." }
       ]
     },
     {

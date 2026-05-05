@@ -2598,6 +2598,14 @@ impl Interpreter {
     }
 
     fn string_method(&self, s: &str, method: &str, args: &[Value], span: Span) -> SignalResult {
+        match crate::stdlib::string_value_method(crate::hash::h(method), s, args) {
+            Ok(Some(value)) => return Ok(value),
+            Ok(None) => {}
+            Err(message) => {
+                return Err(IonError::type_err(message, span.line, span.col).into());
+            }
+        }
+
         match crate::hash::h(method) {
             h if h == crate::h!("len") => Ok(Value::Int(s.len() as i64)),
             h if h == crate::h!("contains") => match &args[0] {

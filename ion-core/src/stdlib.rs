@@ -1923,28 +1923,287 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
     m
 }
 
-/// Build the `str` stdlib module.
+fn required_string_arg<'a>(args: &'a [Value], index: usize) -> Result<&'a str, String> {
+    match args.get(index) {
+        Some(Value::Str(value)) => Ok(value),
+        Some(other) => Err(format!(
+            "{}{}",
+            ion_str!("requires string argument, got "),
+            other.type_name()
+        )),
+        None => Err(ion_str!("requires string argument")),
+    }
+}
+
+fn required_non_negative_usize_arg(
+    args: &[Value],
+    index: usize,
+    context: &str,
+) -> Result<usize, String> {
+    let value = required_int_arg(args, index, context)?;
+    if value < 0 {
+        return Err(format!(
+            "{}{}",
+            context,
+            ion_str!(" requires a non-negative int argument")
+        ));
+    }
+    Ok(value as usize)
+}
+
+fn string_find_value(value: &str, needle: &str) -> Value {
+    match value.find(needle) {
+        Some(byte_idx) => {
+            let char_idx = value[..byte_idx].chars().count();
+            Value::Option(Some(Box::new(Value::Int(char_idx as i64))))
+        }
+        None => Value::Option(None),
+    }
+}
+
+fn string_count_value(value: &str, needle: &str) -> Value {
+    Value::Int(value.matches(needle).count() as i64)
+}
+
+fn string_pad_value(
+    value: &str,
+    args: &[Value],
+    start: bool,
+    context: &str,
+) -> Result<Value, String> {
+    let width = required_non_negative_usize_arg(args, 0, context)?;
+    let ch = args
+        .get(1)
+        .and_then(Value::as_str)
+        .and_then(|value| value.chars().next())
+        .unwrap_or(' ');
+    let char_len = value.chars().count();
+    if char_len >= width {
+        return Ok(Value::Str(value.to_string()));
+    }
+    let pad: String = std::iter::repeat_n(ch, width - char_len).collect();
+    if start {
+        Ok(Value::Str(format!("{}{}", pad, value)))
+    } else {
+        Ok(Value::Str(format!("{}{}", value, pad)))
+    }
+}
+
+pub(crate) fn string_value_method(
+    method_hash: u64,
+    value: &str,
+    args: &[Value],
+) -> Result<Option<Value>, String> {
+    match method_hash {
+        h if h == crate::h!("len") => Ok(Value::Int(value.len() as i64)),
+        h if h == crate::h!("char_len") => Ok(Value::Int(value.chars().count() as i64)),
+        h if h == crate::h!("is_empty") => Ok(Value::Bool(value.is_empty())),
+        h if h == crate::h!("contains") => match args.first() {
+            Some(Value::Str(needle)) => Ok(Value::Bool(value.contains(needle.as_str()))),
+            Some(Value::Int(code)) => {
+                let ch =
+                    char::from_u32(*code as u32).ok_or_else(|| ion_str!("invalid char code"))?;
+                Ok(Value::Bool(value.contains(ch)))
+            }
+            _ => Err(ion_str!("contains requires string or int argument")),
+        },
+        h if h == crate::h!("starts_with") => {
+            let prefix = required_string_arg(args, 0)?;
+            Ok(Value::Bool(value.starts_with(prefix)))
+        }
+        h if h == crate::h!("ends_with") => {
+            let suffix = required_string_arg(args, 0)?;
+            Ok(Value::Bool(value.ends_with(suffix)))
+        }
+        h if h == crate::h!("find") || h == crate::h!("index") => {
+            let needle = required_string_arg(args, 0)?;
+            Ok(string_find_value(value, needle))
+        }
+        h if h == crate::h!("count") => {
+            let needle = required_string_arg(args, 0)?;
+            Ok(string_count_value(value, needle))
+        }
+        h if h == crate::h!("trim") => Ok(Value::Str(value.trim().to_string())),
+        h if h == crate::h!("trim_start") => Ok(Value::Str(value.trim_start().to_string())),
+        h if h == crate::h!("trim_end") => Ok(Value::Str(value.trim_end().to_string())),
+        h if h == crate::h!("to_upper") => Ok(Value::Str(value.to_uppercase())),
+        h if h == crate::h!("to_lower") => Ok(Value::Str(value.to_lowercase())),
+        h if h == crate::h!("split") => {
+            let delimiter = required_string_arg(args, 0)?;
+            Ok(Value::List(
+                value
+                    .split(delimiter)
+                    .map(|part| Value::Str(part.to_string()))
+                    .collect(),
+            ))
+        }
+        h if h == crate::h!("replace") => {
+            let from = required_string_arg(args, 0)?;
+            let to = required_string_arg(args, 1)?;
+            Ok(Value::Str(value.replace(from, to)))
+        }
+        h if h == crate::h!("chars") => Ok(Value::List(
+            value.chars().map(|ch| Value::Str(ch.to_string())).collect(),
+        )),
+        h if h == crate::h!("pad_start") => string_pad_value(value, args, true, "pad_start"),
+        h if h == crate::h!("pad_end") => string_pad_value(value, args, false, "pad_end"),
+        h if h == crate::h!("strip_prefix") => {
+            let prefix = required_string_arg(args, 0)?;
+            Ok(Value::Str(
+                value.strip_prefix(prefix).unwrap_or(value).to_string(),
+            ))
+        }
+        h if h == crate::h!("strip_suffix") => {
+            let suffix = required_string_arg(args, 0)?;
+            Ok(Value::Str(
+                value.strip_suffix(suffix).unwrap_or(value).to_string(),
+            ))
+        }
+        h if h == crate::h!("reverse") => Ok(Value::Str(value.chars().rev().collect())),
+        h if h == crate::h!("repeat") => {
+            let count = required_non_negative_usize_arg(args, 0, "repeat")?;
+            Ok(Value::Str(value.repeat(count)))
+        }
+        h if h == crate::h!("slice") => {
+            let chars: Vec<char> = value.chars().collect();
+            let char_count = chars.len();
+            let start = args
+                .first()
+                .map(|_| required_non_negative_usize_arg(args, 0, "slice"))
+                .transpose()?
+                .unwrap_or(0)
+                .min(char_count);
+            let end = args
+                .get(1)
+                .map(|_| required_non_negative_usize_arg(args, 1, "slice"))
+                .transpose()?
+                .unwrap_or(char_count)
+                .min(char_count);
+            if start >= end {
+                Ok(Value::Str(String::new()))
+            } else {
+                Ok(Value::Str(chars[start..end].iter().collect()))
+            }
+        }
+        h if h == crate::h!("bytes") => Ok(Value::List(
+            value.bytes().map(|byte| Value::Int(byte as i64)).collect(),
+        )),
+        h if h == crate::h!("to_int") => Ok(match value.trim().parse::<i64>() {
+            Ok(number) => ok_value(Value::Int(number)),
+            Err(err) => err_value(err.to_string()),
+        }),
+        h if h == crate::h!("to_float") => Ok(match value.trim().parse::<f64>() {
+            Ok(number) => ok_value(Value::Float(number)),
+            Err(err) => err_value(err.to_string()),
+        }),
+        h if h == crate::h!("to_string") => Ok(Value::Str(value.to_string())),
+        _ => return Ok(None),
+    }
+    .map(Some)
+}
+
+fn string_module_method(method_hash: u64, args: &[Value]) -> Result<Value, String> {
+    let value = required_string_arg(args, 0)?;
+    string_value_method(method_hash, value, &args[1..])?
+        .ok_or_else(|| ion_str!("string module method is not implemented"))
+}
+
+macro_rules! string_module_fn {
+    ($fn_name:ident, $method:literal) => {
+        fn $fn_name(args: &[Value]) -> Result<Value, String> {
+            string_module_method(crate::h!($method), args)
+        }
+    };
+}
+
+string_module_fn!(string_len, "len");
+string_module_fn!(string_char_len, "char_len");
+string_module_fn!(string_is_empty, "is_empty");
+string_module_fn!(string_contains, "contains");
+string_module_fn!(string_starts_with, "starts_with");
+string_module_fn!(string_ends_with, "ends_with");
+string_module_fn!(string_find, "find");
+string_module_fn!(string_index, "index");
+string_module_fn!(string_count, "count");
+string_module_fn!(string_trim, "trim");
+string_module_fn!(string_trim_start, "trim_start");
+string_module_fn!(string_trim_end, "trim_end");
+string_module_fn!(string_to_upper, "to_upper");
+string_module_fn!(string_to_lower, "to_lower");
+string_module_fn!(string_split, "split");
+string_module_fn!(string_replace, "replace");
+string_module_fn!(string_chars, "chars");
+string_module_fn!(string_pad_start, "pad_start");
+string_module_fn!(string_pad_end, "pad_end");
+string_module_fn!(string_strip_prefix, "strip_prefix");
+string_module_fn!(string_strip_suffix, "strip_suffix");
+string_module_fn!(string_reverse, "reverse");
+string_module_fn!(string_repeat, "repeat");
+string_module_fn!(string_slice, "slice");
+string_module_fn!(string_bytes, "bytes");
+string_module_fn!(string_to_int, "to_int");
+string_module_fn!(string_to_float, "to_float");
+
+fn string_to_string(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(ion_str!("takes 1 argument"));
+    }
+    Ok(Value::Str(args[0].to_string()))
+}
+
+fn string_join(args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() || args.len() > 2 {
+        return Err(ion_str!("requires 1-2 arguments: list, [separator]"));
+    }
+    let items = match &args[0] {
+        Value::List(items) => items,
+        _ => return Err(ion_str!("requires a list as first argument")),
+    };
+    let sep = if args.len() > 1 {
+        args[1].as_str().unwrap_or("").to_string()
+    } else {
+        String::new()
+    };
+    let parts: Vec<String> = items.iter().map(|v| format!("{}", v)).collect();
+    Ok(Value::Str(parts.join(&sep)))
+}
+
+/// Build the `string` stdlib module.
 ///
-/// Functions: join
+/// Functions mirror string value methods with the receiver as the first
+/// argument, plus `join(list, sep?)`.
 pub fn string_module() -> Module {
     let mut m = Module::new(crate::h!("string"));
 
-    m.register_fn(crate::h!("join"), |args: &[Value]| {
-        if args.is_empty() || args.len() > 2 {
-            return Err(ion_str!("requires 1-2 arguments: list, [separator]"));
-        }
-        let items = match &args[0] {
-            Value::List(items) => items,
-            _ => return Err(ion_str!("requires a list as first argument")),
-        };
-        let sep = if args.len() > 1 {
-            args[1].as_str().unwrap_or("").to_string()
-        } else {
-            String::new()
-        };
-        let parts: Vec<String> = items.iter().map(|v| format!("{}", v)).collect();
-        Ok(Value::Str(parts.join(&sep)))
-    });
+    m.register_fn(crate::h!("len"), string_len);
+    m.register_fn(crate::h!("char_len"), string_char_len);
+    m.register_fn(crate::h!("is_empty"), string_is_empty);
+    m.register_fn(crate::h!("contains"), string_contains);
+    m.register_fn(crate::h!("starts_with"), string_starts_with);
+    m.register_fn(crate::h!("ends_with"), string_ends_with);
+    m.register_fn(crate::h!("find"), string_find);
+    m.register_fn(crate::h!("index"), string_index);
+    m.register_fn(crate::h!("count"), string_count);
+    m.register_fn(crate::h!("trim"), string_trim);
+    m.register_fn(crate::h!("trim_start"), string_trim_start);
+    m.register_fn(crate::h!("trim_end"), string_trim_end);
+    m.register_fn(crate::h!("to_upper"), string_to_upper);
+    m.register_fn(crate::h!("to_lower"), string_to_lower);
+    m.register_fn(crate::h!("split"), string_split);
+    m.register_fn(crate::h!("replace"), string_replace);
+    m.register_fn(crate::h!("chars"), string_chars);
+    m.register_fn(crate::h!("pad_start"), string_pad_start);
+    m.register_fn(crate::h!("pad_end"), string_pad_end);
+    m.register_fn(crate::h!("strip_prefix"), string_strip_prefix);
+    m.register_fn(crate::h!("strip_suffix"), string_strip_suffix);
+    m.register_fn(crate::h!("reverse"), string_reverse);
+    m.register_fn(crate::h!("repeat"), string_repeat);
+    m.register_fn(crate::h!("slice"), string_slice);
+    m.register_fn(crate::h!("bytes"), string_bytes);
+    m.register_fn(crate::h!("to_int"), string_to_int);
+    m.register_fn(crate::h!("to_float"), string_to_float);
+    m.register_fn(crate::h!("to_string"), string_to_string);
+    m.register_fn(crate::h!("join"), string_join);
 
     m
 }

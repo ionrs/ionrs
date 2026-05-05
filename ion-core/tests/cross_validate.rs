@@ -400,6 +400,12 @@ fn cross_string_find() {
         Value::Option(Some(Box::new(Value::Int(1)))),
     );
     assert_both_eq(r#""hello".find("xyz")"#, Value::Option(None));
+    assert_both_eq(
+        r#""banana".index("na")"#,
+        Value::Option(Some(Box::new(Value::Int(2)))),
+    );
+    assert_both_eq(r#""banana".index("zz")"#, Value::Option(None));
+    assert_both_eq(r#""banana".count("na")"#, Value::Int(2));
 }
 
 #[test]
@@ -963,6 +969,46 @@ fn cross_join_builtin() {
     assert_both_eq(
         r#"string::join(["a", "b"], ",")"#,
         Value::Str("a,b".to_string()),
+    );
+}
+
+#[test]
+fn cross_string_module_method_aliases() {
+    assert_both_eq(
+        r#"
+let s = "  hello  ";
+assert_eq(string::len(s), s.len());
+assert_eq(string::char_len("hé"), "hé".char_len());
+assert_eq(string::is_empty(""), "".is_empty());
+assert_eq(string::contains(s, "ell"), s.contains("ell"));
+assert_eq(string::contains(s, 104), s.contains(104));
+assert_eq(string::starts_with(s, "  he"), s.starts_with("  he"));
+assert_eq(string::ends_with(s, "  "), s.ends_with("  "));
+assert_eq(string::find(s, "lo"), s.find("lo"));
+assert_eq(string::index(s, "lo"), s.index("lo"));
+assert_eq(string::count("banana", "na"), "banana".count("na"));
+assert_eq(string::trim(s), s.trim());
+assert_eq(string::trim_start(s), s.trim_start());
+assert_eq(string::trim_end(s), s.trim_end());
+assert_eq(string::to_upper(s), s.to_upper());
+assert_eq(string::to_lower("HI"), "HI".to_lower());
+assert_eq(string::split("a,b,c", ","), "a,b,c".split(","));
+assert_eq(string::replace("hello", "l", "r"), "hello".replace("l", "r"));
+assert_eq(string::chars("hi"), "hi".chars());
+assert_eq(string::pad_start("42", 5, "0"), "42".pad_start(5, "0"));
+assert_eq(string::pad_end("42", 5, "0"), "42".pad_end(5, "0"));
+assert_eq(string::strip_prefix("prefix-value", "prefix-"), "prefix-value".strip_prefix("prefix-"));
+assert_eq(string::strip_suffix("value.txt", ".txt"), "value.txt".strip_suffix(".txt"));
+assert_eq(string::reverse("hello"), "hello".reverse());
+assert_eq(string::repeat("ab", 3), "ab".repeat(3));
+assert_eq(string::slice("hello", 1, 4), "hello".slice(1, 4));
+assert_eq(string::bytes("AB"), "AB".bytes());
+assert_eq(string::to_int("42"), "42".to_int());
+assert_eq(string::to_float("3.5"), "3.5".to_float());
+assert_eq(string::to_string(s), s.to_string());
+true
+"#,
+        Value::Bool(true),
     );
 }
 

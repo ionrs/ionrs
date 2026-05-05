@@ -2772,6 +2772,12 @@ impl Vm {
         line: usize,
         col: usize,
     ) -> Result<Value, IonError> {
+        match crate::stdlib::string_value_method(crate::hash::h(method), s, args) {
+            Ok(Some(value)) => return Ok(value),
+            Ok(None) => {}
+            Err(message) => return Err(IonError::type_err(message, line, col)),
+        }
+
         match crate::hash::h(method) {
             h if h == crate::h!("len") => Ok(Value::Int(s.len() as i64)),
             h if h == crate::h!("to_upper") => Ok(Value::Str(s.to_uppercase())),
