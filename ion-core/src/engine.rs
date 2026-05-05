@@ -11,7 +11,7 @@ use crate::log::{AtomicLogLevel, LogHandler, LogLevel, StdLogHandler};
 use crate::module::Module;
 use crate::parser::Parser;
 use crate::stdlib::OutputHandler;
-use crate::value::Value;
+use crate::value::{HostSignature, Value};
 
 /// The public embedding API for the Ion interpreter.
 pub struct Engine {
@@ -248,6 +248,23 @@ impl Engine {
             Value::BuiltinFn {
                 qualified_hash: name_hash,
                 func,
+                signature: None,
+            },
+        );
+    }
+
+    pub fn register_fn_sig(
+        &mut self,
+        name_hash: u64,
+        signature: HostSignature,
+        func: fn(&[Value]) -> Result<Value, String>,
+    ) {
+        self.interpreter.env.define_h(
+            name_hash,
+            Value::BuiltinFn {
+                qualified_hash: name_hash,
+                func,
+                signature: Some(Arc::new(signature)),
             },
         );
     }
@@ -263,6 +280,21 @@ impl Engine {
             Value::BuiltinClosure {
                 qualified_hash: name_hash,
                 func: crate::value::BuiltinClosureFn::new(func),
+                signature: None,
+            },
+        );
+    }
+
+    pub fn register_closure_sig<F>(&mut self, name_hash: u64, signature: HostSignature, func: F)
+    where
+        F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
+    {
+        self.interpreter.env.define_h(
+            name_hash,
+            Value::BuiltinClosure {
+                qualified_hash: name_hash,
+                func: crate::value::BuiltinClosureFn::new(func),
+                signature: Some(Arc::new(signature)),
             },
         );
     }
@@ -279,6 +311,27 @@ impl Engine {
             Value::AsyncBuiltinClosure {
                 qualified_hash: name_hash,
                 func: crate::value::AsyncBuiltinClosureFn::new(func),
+                signature: None,
+            },
+        );
+    }
+
+    #[cfg(feature = "async-runtime")]
+    pub fn register_async_fn_sig<F, Fut>(
+        &mut self,
+        name_hash: u64,
+        signature: HostSignature,
+        func: F,
+    ) where
+        F: Fn(Vec<Value>) -> Fut + 'static,
+        Fut: Future<Output = Result<Value, IonError>> + 'static,
+    {
+        self.interpreter.env.define_h(
+            name_hash,
+            Value::AsyncBuiltinClosure {
+                qualified_hash: name_hash,
+                func: crate::value::AsyncBuiltinClosureFn::new(func),
+                signature: Some(Arc::new(signature)),
             },
         );
     }

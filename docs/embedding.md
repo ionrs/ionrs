@@ -179,10 +179,39 @@ Sync callbacks appear to Ion scripts as `builtin_fn`; async callbacks are
 called with the same Ion syntax but require `eval_async`. Calling an async host
 function through sync `eval` produces an explicit runtime error.
 
+Signature-aware variants let host callbacks accept Ion keyword arguments,
+defaults, `*args`, and keyword-only parameters while keeping the same callback
+shape:
+
+```rust
+use ion_core::h;
+use ion_core::value::{HostSignature, Value};
+
+fn mix(args: &[Value]) -> Result<Value, String> {
+    let a = args[0].as_int().ok_or("expected int")?;
+    let b = args[1].as_int().ok_or("expected int")?;
+    Ok(Value::Int(a * 10 + b))
+}
+
+let sig = HostSignature::builder()
+    .pos_required(h!("a"))
+    .kw_only(h!("b"), Value::Int(7))
+    .build();
+
+engine.register_fn_sig(h!("mix"), sig, mix);
+```
+
+Ion code can then call `mix(3, b: 4)` or use the default with `mix(3)`.
+Unsigned legacy host callbacks still accept positional calls, but keyword calls
+are rejected with a clear error.
+
 `Module` mirrors the same callback split: `Module::register_fn`,
 `Module::register_closure`, and, with `async-runtime`, `Module::register_async_fn`.
 Async module callbacks are useful for namespaced Tokio-backed APIs such as
 `sensor::call(...)`, `sensor::upload(...)`, or `net::http::get(...)`.
+Modules also mirror the signature-aware variants:
+`Module::register_fn_sig`, `Module::register_closure_sig`, and
+`Module::register_async_fn_sig`.
 
 ## Host Types (`#[derive(IonType)]`)
 - Proc macro in `ion-derive/`
@@ -245,9 +274,9 @@ appropriate for purely synchronous hosts.
 ## Cargo.toml for Embedding
 ```toml
 [dependencies]
-ion-core = "0.9.2"  # includes derive + optimized vm by default
+ion-core = "0.9.3"  # includes derive + optimized vm by default
 # optional:
-# ion-core = { version = "0.9.2", features = ["async-runtime", "msgpack", "rewrite"] }
+# ion-core = { version = "0.9.3", features = ["async-runtime", "msgpack", "rewrite"] }
 ```
 
 ## Examples

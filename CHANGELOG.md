@@ -9,6 +9,37 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-05-05
+
+### Added
+
+- Python-style argument resolution for Ion and host callables:
+  `*args`, `**kwargs`, `*expr`, `**expr`, positional-only `/`, and
+  keyword-only `*`.
+- Signature-aware host registration APIs:
+  `Engine::{register_fn_sig, register_closure_sig, register_async_fn_sig}`
+  and matching `Module::*_sig` variants.
+
+### Changed
+
+- Keyword calls to legacy unsigned host callables now error instead of dropping
+  keyword names path-dependently.
+- Extra positional arguments and duplicate positional/keyword bindings now
+  error consistently across tree-walk, VM, and async-runtime paths.
+- Duplicate Ion parameter names are now rejected at parse time.
+- VM call handling now includes `CallResolved`, `TailCallNamed`,
+  `TailCallResolved`, `MethodCallResolved`, `SpawnCallResolved`, `KwInsert`,
+  and `KwMerge` for named and spread-containing calls.
+
+### Fixed
+
+- Method calls now expand `*expr` list spreads consistently across tree-walk,
+  VM, and async-runtime paths, while rejecting keyword arguments before method
+  dispatch.
+- Named and spread tail calls now preserve VM tail-call optimization.
+- External `EngineHandle::call_async` callbacks into signed host callables now
+  apply signature defaults and slot resolution.
+
 ## [0.9.2] — 2026-05-05
 
 This release expands the standard library around binary data, randomness, and

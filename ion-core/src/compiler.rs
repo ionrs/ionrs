@@ -273,6 +273,49 @@ impl Compiler {
         }
     }
 
+    fn compile_resolved_call_args(
+        &mut self,
+        args: &[CallArg],
+        first_positional: Option<&Expr>,
+        line: usize,
+    ) -> Result<(), IonError> {
+        self.chunk.emit_op_u16(Op::BuildList, 0, line);
+        if let Some(expr) = first_positional {
+            self.compile_expr(expr)?;
+            self.chunk.emit_op(Op::ListAppend, line);
+        }
+        for arg in args {
+            match &arg.kind {
+                CallArgKind::Positional => {
+                    self.compile_expr(&arg.value)?;
+                    self.chunk.emit_op(Op::ListAppend, line);
+                }
+                CallArgKind::SpreadPos => {
+                    self.compile_expr(&arg.value)?;
+                    self.chunk.emit_op(Op::ListExtend, line);
+                }
+                CallArgKind::Named(_) | CallArgKind::SpreadKw => {}
+            }
+        }
+
+        self.chunk.emit_op_u16(Op::BuildList, 0, line);
+        for arg in args {
+            match &arg.kind {
+                CallArgKind::Named(name) => {
+                    self.chunk.emit_constant(Value::Str(name.clone()), line);
+                    self.compile_expr(&arg.value)?;
+                    self.chunk.emit_op(Op::KwInsert, line);
+                }
+                CallArgKind::SpreadKw => {
+                    self.compile_expr(&arg.value)?;
+                    self.chunk.emit_op(Op::KwMerge, line);
+                }
+                CallArgKind::Positional | CallArgKind::SpreadPos => {}
+            }
+        }
+        Ok(())
+    }
+
     /// Try to constant-fold a binary operation on two literal operands.
     fn try_fold_binop(left: &Expr, op: &BinOp, right: &Expr) -> Option<Value> {
         match (&left.kind, op, &right.kind) {
@@ -791,24 +834,38 @@ impl Compiler {
                         return Ok(());
                     }
                 }
-                let has_named = args.iter().any(|a| a.name.is_some());
+                let has_named = args.iter().any(|a| a.name().is_some());
+                let has_spread = args.iter().any(CallArg::is_spread);
                 // Sub-expressions are not in tail position (already cleared above)
                 self.compile_expr(func)?;
-                for arg in args {
-                    self.compile_expr(&arg.value)?;
-                }
-                if has_named {
+                if has_spread {
+                    self.compile_resolved_call_args(args, None, line)?;
+                    let op = if was_tail {
+                        Op::TailCallResolved
+                    } else {
+                        Op::CallResolved
+                    };
+                    self.chunk.emit_op_span(op, line, col);
+                } else if has_named {
+                    for arg in args {
+                        self.compile_expr(&arg.value)?;
+                    }
                     // Emit CallNamed: total_args, named_count, then (position, name_idx) pairs
                     let named: Vec<(u8, u16)> = args
                         .iter()
                         .enumerate()
                         .filter_map(|(i, a)| {
-                            a.name
-                                .as_ref()
-                                .map(|n| (i as u8, self.chunk.add_constant(Value::Str(n.clone()))))
+                            a.name().map(|n| {
+                                (i as u8, self.chunk.add_constant(Value::Str(n.to_string())))
+                            })
                         })
                         .collect();
-                    self.chunk.emit_op(Op::CallNamed, line);
+                    let op = if was_tail {
+                        Op::TailCallNamed
+                    } else {
+                        Op::CallNamed
+                    };
+                    self.chunk.emit_op(op, line);
                     self.chunk.emit(args.len() as u8, line);
                     self.chunk.emit(named.len() as u8, line);
                     for (pos, name_idx) in named {
@@ -818,6 +875,9 @@ impl Compiler {
                     }
                 } else {
                     let op = if was_tail { Op::TailCall } else { Op::Call };
+                    for arg in args {
+                        self.compile_expr(&arg.value)?;
+                    }
                     self.chunk.emit_op_u8_span(op, args.len() as u8, line, col);
                 }
             }
@@ -929,13 +989,22 @@ impl Compiler {
                 method,
                 args,
             } => {
+                let has_named_or_spread = args
+                    .iter()
+                    .any(|arg| arg.name().is_some() || arg.is_spread());
                 self.compile_expr(inner)?;
-                for arg in args {
-                    self.compile_expr(&arg.value)?;
-                }
                 let idx = self.chunk.add_constant(Value::Str(method.clone()));
-                self.chunk.emit_op_u16_span(Op::MethodCall, idx, line, col);
-                self.chunk.emit_span(args.len() as u8, line, col);
+                if has_named_or_spread {
+                    self.compile_resolved_call_args(args, None, line)?;
+                    self.chunk
+                        .emit_op_u16_span(Op::MethodCallResolved, idx, line, col);
+                } else {
+                    for arg in args {
+                        self.compile_expr(&arg.value)?;
+                    }
+                    self.chunk.emit_op_u16_span(Op::MethodCall, idx, line, col);
+                    self.chunk.emit_span(args.len() as u8, line, col);
+                }
             }
 
             ExprKind::Lambda { params, body } => {
@@ -979,6 +1048,7 @@ impl Compiler {
                         .map(|n| crate::ast::Param {
                             name: n.clone(),
                             default: None,
+                            kind: crate::ast::ParamKind::Positional,
                         })
                         .collect(),
                     vec![body_stmt],
@@ -1012,13 +1082,21 @@ impl Compiler {
                 // Compile func first, then piped value as first arg, then other args
                 match &right.kind {
                     ExprKind::Call { func, args } => {
+                        let has_named_or_spread = args
+                            .iter()
+                            .any(|arg| arg.name().is_some() || arg.is_spread());
                         self.compile_expr(func)?;
-                        self.compile_expr(left)?; // piped value = first arg
-                        for arg in args {
-                            self.compile_expr(&arg.value)?;
+                        if has_named_or_spread {
+                            self.compile_resolved_call_args(args, Some(left), line)?;
+                            self.chunk.emit_op(Op::CallResolved, line);
+                        } else {
+                            self.compile_expr(left)?; // piped value = first arg
+                            for arg in args {
+                                self.compile_expr(&arg.value)?;
+                            }
+                            self.chunk
+                                .emit_op_u8(Op::Call, (args.len() + 1) as u8, line);
                         }
-                        self.chunk
-                            .emit_op_u8(Op::Call, (args.len() + 1) as u8, line);
                     }
                     _ => {
                         // bare function: left |> func  →  func(left)
@@ -1350,19 +1428,26 @@ impl Compiler {
                 col,
             ));
         };
-        let has_named = args.iter().any(|arg| arg.name.is_some());
+        let has_named = args.iter().any(|arg| arg.name().is_some());
+        let has_spread = args.iter().any(CallArg::is_spread);
         self.compile_expr(func)?;
-        for arg in args {
-            self.compile_expr(&arg.value)?;
-        }
-        if has_named {
+        if has_spread {
+            self.compile_resolved_call_args(args, None, line)?;
+            self.chunk.emit_op_span(Op::SpawnCallResolved, line, col);
+        } else if has_named {
+            for arg in args {
+                self.compile_expr(&arg.value)?;
+            }
             let named: Vec<(u8, u16)> = args
                 .iter()
                 .enumerate()
                 .filter_map(|(i, arg)| {
-                    arg.name
-                        .as_ref()
-                        .map(|name| (i as u8, self.chunk.add_constant(Value::Str(name.clone()))))
+                    arg.name().map(|name| {
+                        (
+                            i as u8,
+                            self.chunk.add_constant(Value::Str(name.to_string())),
+                        )
+                    })
                 })
                 .collect();
             self.chunk.emit_op_span(Op::SpawnCallNamed, line, col);
@@ -1374,6 +1459,9 @@ impl Compiler {
                 self.chunk.emit(name_idx as u8, line);
             }
         } else {
+            for arg in args {
+                self.compile_expr(&arg.value)?;
+            }
             self.chunk
                 .emit_op_u8_span(Op::SpawnCall, args.len() as u8, line, col);
         }

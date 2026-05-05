@@ -245,6 +245,38 @@ connect("localhost", timeout: 5, port: 8080)
 
 Positional and named arguments can be mixed. Named arguments are resolved to parameter positions at call time.
 
+### Variadic and shaped parameters
+
+Use `*name` to collect extra positional arguments into a list, and `**name` to collect extra keyword arguments into a dict:
+
+```
+fn summarize(first, *rest, **opts) {
+    #{first: first, rest: rest, opts: opts}
+}
+
+summarize(1, 2, 3, mode: "fast")
+// #{first: 1, rest: [2, 3], opts: #{mode: "fast"}}
+```
+
+Call sites can spread a list into positional arguments with `*expr` and a dict into keyword arguments with `**expr`:
+
+```
+fn score(a, b, c) { a * 100 + b * 10 + c }
+score(*[1, 2], c: 3)  // 123
+```
+
+Method calls accept positional arguments and `*expr` list spreads. Keyword arguments are only for callable values, not methods.
+
+Use `/` to mark earlier parameters positional-only, and a bare `*` to make later parameters keyword-only:
+
+```
+fn shaped(a, /, b, *, c) {
+    a + b + c
+}
+
+shaped(1, b: 2, c: 3)
+```
+
 ### Lambdas (closures)
 
 ```

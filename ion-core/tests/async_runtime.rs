@@ -1,7 +1,7 @@
 #![cfg(feature = "async-runtime")]
 
 use indexmap::IndexMap;
-use ion_core::ast::{BinOp, Expr, ExprKind, Param, Span};
+use ion_core::ast::{BinOp, Expr, ExprKind, Param, ParamKind, Span};
 use ion_core::async_runtime::{
     run_budgeted_steps, step_task, step_task_with_host_futures, AsyncChannel, ChannelRecv,
     ChannelSend, ChannelTable, ChunkArena, HostFutureTable, IonTask, NurseryState, NurseryTable,
@@ -17,7 +17,7 @@ use ion_core::lexer::Lexer;
 use ion_core::module::Module;
 use ion_core::parser::Parser;
 use ion_core::stdlib::{OutputHandler, OutputStream};
-use ion_core::value::{AsyncBuiltinClosureFn, BuiltinClosureFn, IonFn, Value};
+use ion_core::value::{AsyncBuiltinClosureFn, BuiltinClosureFn, HostSignature, IonFn, Value};
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -145,6 +145,75 @@ async fn eval_async_calls_async_host_function_without_coloring_ion_code() {
         .await
         .unwrap();
     assert_eq!(value, Value::Int(42));
+}
+
+#[tokio::test]
+async fn eval_async_resolves_ion_keyword_only_call() {
+    let mut engine = Engine::new();
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
+        Ok(Value::Int(args[0].as_int().unwrap()))
+    });
+
+    let value = engine
+        .eval_async(
+            r#"
+            fn load(x, *, y) {
+                later(x + y)
+            }
+
+            load(20, y: 22)
+            "#,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(value, Value::Int(42));
+}
+
+#[tokio::test]
+async fn eval_async_host_signature_accepts_keywords() {
+    let mut engine = Engine::new();
+    engine.register_async_fn_sig(
+        ion_core::h!("later"),
+        HostSignature::builder()
+            .pos_required(ion_core::h!("a"))
+            .kw_only(ion_core::h!("b"), Value::Int(10))
+            .build(),
+        |args| async move {
+            Ok(Value::Int(
+                args[0].as_int().unwrap() + args[1].as_int().unwrap(),
+            ))
+        },
+    );
+
+    let value = engine.eval_async("later(20, b: 22)").await.unwrap();
+
+    assert_eq!(value, Value::Int(42));
+}
+
+#[tokio::test]
+async fn eval_async_compiled_method_call_spread_and_keyword_rejection() {
+    let mut engine = Engine::new();
+    engine.register_async_fn(ion_core::h!("later"), |args| async move {
+        Ok(args.into_iter().next().unwrap_or(Value::Unit))
+    });
+
+    let value = engine
+        .eval_async("later([1, 2, 3].contains(*[2]))")
+        .await
+        .unwrap();
+    assert_eq!(value, Value::Bool(true));
+
+    let err = engine
+        .eval_async("later([1, 2, 3].contains(value: 2))")
+        .await
+        .unwrap_err();
+    assert!(
+        err.message
+            .contains("methods do not support keyword arguments"),
+        "got: {}",
+        err.message
+    );
 }
 
 #[tokio::test]
@@ -1089,6 +1158,55 @@ async fn eval_async_host_future_can_call_back_into_ion_function() {
 }
 
 #[tokio::test]
+async fn external_callback_resolves_signed_host_defaults() {
+    let mut engine = Engine::new();
+    engine.register_fn_sig(
+        ion_core::h!("target_sync"),
+        HostSignature::builder()
+            .pos_required(ion_core::h!("a"))
+            .kw_only(ion_core::h!("b"), Value::Int(10))
+            .build(),
+        |args| {
+            Ok(Value::Int(
+                args[0].as_int().unwrap() + args[1].as_int().unwrap(),
+            ))
+        },
+    );
+    engine.register_async_fn_sig(
+        ion_core::h!("target_async"),
+        HostSignature::builder()
+            .pos_required(ion_core::h!("a"))
+            .kw_only(ion_core::h!("b"), Value::Int(20))
+            .build(),
+        |args| async move {
+            Ok(Value::Int(
+                args[0].as_int().unwrap() + args[1].as_int().unwrap(),
+            ))
+        },
+    );
+
+    let handle = engine.handle();
+    let sync_handle = handle.clone();
+    engine.register_async_fn(ion_core::h!("trigger_sync"), move |args| {
+        let handle = sync_handle.clone();
+        async move { handle.call_async("target_sync", args).await }
+    });
+    engine.register_async_fn(ion_core::h!("trigger_async"), move |args| {
+        let handle = handle.clone();
+        async move { handle.call_async("target_async", args).await }
+    });
+
+    assert_eq!(
+        engine.eval_async("trigger_sync(5)").await.unwrap(),
+        Value::Int(15)
+    );
+    assert_eq!(
+        engine.eval_async("trigger_async(5)").await.unwrap(),
+        Value::Int(25)
+    );
+}
+
+#[tokio::test]
 async fn external_ion_callback_can_park_on_nested_async_host_future() {
     let mut engine = Engine::new();
     let handle = engine.handle();
@@ -1308,6 +1426,7 @@ fn step_task_async_host_call_suspends_and_resumes_bytecode_continuation() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("double"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -1360,6 +1479,7 @@ fn step_task_async_host_error_resumes_through_try_catch() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("fail"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -1413,6 +1533,7 @@ fn step_task_async_host_result_error_resumes_into_try_operator() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("fallible"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -1463,6 +1584,7 @@ fn step_task_async_host_tail_call_resumes_as_frame_return() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("double"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -1513,6 +1635,7 @@ fn step_task_spawn_call_await_task_suspends_and_resumes() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("later"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -1546,6 +1669,7 @@ fn step_task_await_polls_other_spawned_tasks_for_overlap() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("later"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -1562,6 +1686,7 @@ fn step_task_await_polls_other_spawned_tasks_for_overlap() {
                     TaskProbeFuture::new(idx, Rc::clone(&poll_counts), Rc::clone(&states))
                 }
             }),
+            signature: None,
         },
         1,
     );
@@ -1660,6 +1785,7 @@ fn compiled_async_spawn_await_runs_on_continuation_runtime() {
             func: AsyncBuiltinClosureFn::new(|args| async move {
                 Ok(Value::Int(args[0].as_int().unwrap()))
             }),
+            signature: None,
         },
         false,
     );
@@ -1708,6 +1834,7 @@ fn compiled_async_select_races_branch_tasks_on_continuation_runtime() {
                     TaskProbeFuture::new(idx, Rc::clone(&poll_counts), Rc::clone(&states))
                 }
             }),
+            signature: None,
         },
         false,
     );
@@ -2278,6 +2405,7 @@ fn step_task_method_call_maps_with_registered_function_continuation() {
         vec![Param {
             name: "x".into(),
             default: None,
+            kind: ParamKind::Positional,
         }],
         vec![],
         HashMap::new(),
@@ -2323,6 +2451,7 @@ fn step_task_method_call_filters_with_builtin_closure_continuation() {
         Value::BuiltinClosure {
             qualified_hash: ion_core::h!("keep_even"),
             func: keep_even,
+            signature: None,
         },
         1,
     );
@@ -2350,6 +2479,7 @@ fn step_task_method_call_map_suspends_on_async_host_callback() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("double_later"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -2401,6 +2531,7 @@ fn step_task_option_and_cell_closure_methods_use_continuations() {
         vec![Param {
             name: "x".into(),
             default: None,
+            kind: ParamKind::Positional,
         }],
         vec![],
         HashMap::new(),
@@ -2447,6 +2578,7 @@ fn step_task_result_closure_method_suspends_on_async_host_callback() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("handle_later"),
             func: async_fn,
+            signature: None,
         },
         1,
     );
@@ -2510,6 +2642,7 @@ fn step_task_dict_closure_methods_use_two_arg_continuations() {
         Value::BuiltinClosure {
             qualified_hash: ion_core::h!("map_value"),
             func: map_value,
+            signature: None,
         },
         1,
     );
@@ -2519,6 +2652,7 @@ fn step_task_dict_closure_methods_use_two_arg_continuations() {
         Value::BuiltinClosure {
             qualified_hash: ion_core::h!("keep_even"),
             func: keep_even,
+            signature: None,
         },
         1,
     );
@@ -2565,6 +2699,7 @@ fn step_task_list_fold_reduce_and_flat_map_use_continuations() {
         Value::BuiltinFn {
             qualified_hash: ion_core::h!("add"),
             func: add,
+            signature: None,
         },
         1,
     );
@@ -2578,6 +2713,7 @@ fn step_task_list_fold_reduce_and_flat_map_use_continuations() {
         Value::BuiltinFn {
             qualified_hash: ion_core::h!("add"),
             func: add,
+            signature: None,
         },
         1,
     );
@@ -2588,6 +2724,7 @@ fn step_task_list_fold_reduce_and_flat_map_use_continuations() {
         Value::BuiltinClosure {
             qualified_hash: ion_core::h!("duplicate"),
             func: duplicate,
+            signature: None,
         },
         1,
     );
@@ -2630,6 +2767,7 @@ fn step_task_method_call_sort_by_uses_continuation_comparator() {
         Value::BuiltinClosure {
             qualified_hash: ion_core::h!("compare"),
             func: compare,
+            signature: None,
         },
         4,
     );
@@ -2658,6 +2796,7 @@ fn step_task_method_call_sort_by_suspends_on_async_host_comparator() {
         Value::AsyncBuiltinClosure {
             qualified_hash: ion_core::h!("compare"),
             func: async_fn,
+            signature: None,
         },
         4,
     );
@@ -3029,6 +3168,7 @@ fn step_task_calls_registered_function_chunk_with_explicit_frame() {
         vec![Param {
             name: "x".into(),
             default: None,
+            kind: ParamKind::Positional,
         }],
         vec![],
         HashMap::new(),
@@ -3079,10 +3219,12 @@ fn step_task_registered_function_chunk_uses_captures_and_default_args() {
             Param {
                 name: "a".into(),
                 default: None,
+                kind: ParamKind::Positional,
             },
             Param {
                 name: "b".into(),
                 default: Some(default_expr_add_ident_int("a", 20)),
+                kind: ParamKind::Positional,
             },
         ],
         vec![],
@@ -3125,6 +3267,7 @@ fn step_task_calls_sync_builtin_and_closure_inline() {
         Value::BuiltinFn {
             qualified_hash: ion_core::h!("inc"),
             func: inc,
+            signature: None,
         },
         1,
     );
@@ -3134,6 +3277,7 @@ fn step_task_calls_sync_builtin_and_closure_inline() {
         Value::BuiltinClosure {
             qualified_hash: ion_core::h!("plus_two"),
             func: closure,
+            signature: None,
         },
         1,
     );
@@ -3165,10 +3309,12 @@ fn step_task_call_named_reorders_registered_function_chunk_args() {
             Param {
                 name: "a".into(),
                 default: None,
+                kind: ParamKind::Positional,
             },
             Param {
                 name: "b".into(),
                 default: None,
+                kind: ParamKind::Positional,
             },
         ],
         vec![],
@@ -3225,10 +3371,12 @@ fn step_task_call_named_fills_registered_function_defaults() {
             Param {
                 name: "a".into(),
                 default: None,
+                kind: ParamKind::Positional,
             },
             Param {
                 name: "b".into(),
                 default: Some(expr_int(2)),
+                kind: ParamKind::Positional,
             },
         ],
         vec![],
@@ -3279,6 +3427,7 @@ fn step_task_tail_calls_registered_function_chunk_by_reusing_frame() {
         vec![Param {
             name: "x".into(),
             default: None,
+            kind: ParamKind::Positional,
         }],
         vec![],
         HashMap::new(),
@@ -3316,6 +3465,7 @@ fn step_task_reports_missing_registered_function_chunk() {
         vec![Param {
             name: "x".into(),
             default: None,
+            kind: ParamKind::Positional,
         }],
         vec![],
         HashMap::new(),

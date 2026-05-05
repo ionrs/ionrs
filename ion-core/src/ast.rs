@@ -85,6 +85,16 @@ pub enum StmtKind {
 pub struct Param {
     pub name: String,
     pub default: Option<Expr>,
+    pub kind: ParamKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamKind {
+    Positional,
+    PositionalOnly,
+    KeywordOnly,
+    VarArgs,
+    VarKwargs,
 }
 
 #[derive(Debug, Clone)]
@@ -301,8 +311,61 @@ pub enum FStrPart {
 
 #[derive(Debug, Clone)]
 pub struct CallArg {
-    pub name: Option<String>,
+    pub kind: CallArgKind,
     pub value: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub enum CallArgKind {
+    Positional,
+    Named(String),
+    SpreadPos,
+    SpreadKw,
+}
+
+impl CallArg {
+    pub fn positional(value: Expr) -> Self {
+        Self {
+            kind: CallArgKind::Positional,
+            value,
+        }
+    }
+
+    pub fn named(name: String, value: Expr) -> Self {
+        Self {
+            kind: CallArgKind::Named(name),
+            value,
+        }
+    }
+
+    pub fn spread_pos(value: Expr) -> Self {
+        Self {
+            kind: CallArgKind::SpreadPos,
+            value,
+        }
+    }
+
+    pub fn spread_kw(value: Expr) -> Self {
+        Self {
+            kind: CallArgKind::SpreadKw,
+            value,
+        }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match &self.kind {
+            CallArgKind::Named(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    pub fn is_named_like(&self) -> bool {
+        matches!(self.kind, CallArgKind::Named(_) | CallArgKind::SpreadKw)
+    }
+
+    pub fn is_spread(&self) -> bool {
+        matches!(self.kind, CallArgKind::SpreadPos | CallArgKind::SpreadKw)
+    }
 }
 
 /// A branch in a `select {}` expression.

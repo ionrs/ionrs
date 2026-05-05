@@ -238,6 +238,50 @@ fn cross_fn_named_default_uses_outer_binding() {
 }
 
 #[test]
+fn cross_python_style_function_args() {
+    assert_both_eq(
+        "fn f(a, *rest) { a + rest.len() * 10 } f(2, 3, 4, 5)",
+        Value::Int(32),
+    );
+    assert_both_eq(
+        "fn f(a, **kw) { a + kw.b + kw.c } f(1, b: 2, c: 3)",
+        Value::Int(6),
+    );
+    assert_both_eq("fn f(a, *, b) { a + b } f(1, b: 2)", Value::Int(3));
+    assert_both_eq("fn f(a, /, b) { a * 10 + b } f(1, b: 2)", Value::Int(12));
+}
+
+#[test]
+fn cross_call_spreads_and_argument_errors() {
+    assert_both_eq(
+        "fn f(a, b, c) { a * 100 + b * 10 + c } f(*[1, 2], c: 3)",
+        Value::Int(123),
+    );
+    assert_both_eq(
+        "fn f(**kw) { kw.x * 10 + kw.y } f(**#{x: 1, y: 2})",
+        Value::Int(12),
+    );
+    assert_both("fn f(a) { a } f(1, a: 2)");
+    assert_both("fn f(a) { a } f(1, 2)");
+    assert_both("fn f(a, /, b) { a + b } f(a: 1, b: 2)");
+}
+
+#[test]
+fn cross_method_call_spreads_and_keyword_errors() {
+    assert_both_eq("[1, 2, 3].contains(*[2])", Value::Bool(true));
+    assert_both("[1, 2, 3].contains(value: 2)");
+    assert_both("[1, 2, 3].contains(**#{value: 2})");
+}
+
+#[test]
+fn cross_named_entry_preserves_tail_calls() {
+    assert_both_eq(
+        "fn id(x) { x } fn outer(x) { id(x) } outer(x: 42)",
+        Value::Int(42),
+    );
+}
+
+#[test]
 fn cross_closure() {
     assert_both_eq("let x = 10; fn add_x(y) { x + y } add_x(5)", Value::Int(15));
 }

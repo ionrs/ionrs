@@ -3,6 +3,7 @@
 use indexmap::IndexMap;
 
 use crate::bytecode::{Chunk, Op};
+use crate::call::{keyword_args_from_dict, resolve_host_call, resolve_ion_slots, KeywordArg};
 use crate::env::Env;
 use crate::error::IonError;
 use crate::host_types::TypeRegistry;
@@ -30,6 +31,12 @@ struct ExceptionHandler {
     locals_depth: usize,
 }
 
+struct PendingTailCall {
+    func: Value,
+    positional: Vec<Value>,
+    named: Vec<KeywordArg>,
+}
+
 /// The Ion virtual machine.
 pub struct Vm {
     /// Value stack.
@@ -42,8 +49,8 @@ pub struct Vm {
     iterators: Vec<Box<dyn Iterator<Item = Value>>>,
     /// Compilation cache: fn_id -> compiled bytecode chunk.
     fn_cache: std::collections::HashMap<u64, crate::bytecode::Chunk>,
-    /// Pending tail call: (func, args) to be executed by the trampoline.
-    pending_tail_call: Option<(Value, Vec<Value>)>,
+    /// Pending tail call to be executed by the trampoline.
+    pending_tail_call: Option<PendingTailCall>,
     /// Stack-slot local variables (fast indexed access).
     locals: Vec<LocalSlot>,
     /// Scope boundaries in the locals array (each entry is the locals.len() at scope start).
@@ -586,6 +593,10 @@ impl Vm {
                 }
                 self.call_function_named(arg_count, &named_map, line, col)?;
             }
+            Op::CallResolved => {
+                let (func, positional, named) = self.pop_resolved_call(line, col)?;
+                self.call_function_resolved(func, positional, named, line, col)?;
+            }
             Op::TailCall => {
                 let arg_count = chunk.read_u8(self.ip) as usize;
                 self.ip += 1;
@@ -595,7 +606,44 @@ impl Vm {
                 let func = self.stack[func_idx].clone();
                 let args: Vec<Value> = self.stack[args_start..].to_vec();
                 self.stack.truncate(func_idx);
-                self.pending_tail_call = Some((func, args));
+                self.pending_tail_call = Some(PendingTailCall {
+                    func,
+                    positional: args,
+                    named: Vec::new(),
+                });
+                return Ok(Some(Value::Unit)); // value is unused; caller checks pending_tail_call
+            }
+            Op::TailCallNamed => {
+                let arg_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                let named_count = chunk.read_u8(self.ip) as usize;
+                self.ip += 1;
+                let mut named_map: Vec<(usize, String)> = Vec::with_capacity(named_count);
+                for _ in 0..named_count {
+                    let pos = chunk.read_u8(self.ip) as usize;
+                    self.ip += 1;
+                    let name_idx = chunk.read_u16(self.ip) as usize;
+                    self.ip += 2;
+                    if let Value::Str(name) = &chunk.constants[name_idx] {
+                        named_map.push((pos, name.clone()));
+                    }
+                }
+                let (func, positional, named) =
+                    self.pop_named_call_args(arg_count, &named_map, line, col)?;
+                self.pending_tail_call = Some(PendingTailCall {
+                    func,
+                    positional,
+                    named,
+                });
+                return Ok(Some(Value::Unit)); // value is unused; caller checks pending_tail_call
+            }
+            Op::TailCallResolved => {
+                let (func, positional, named) = self.pop_resolved_call(line, col)?;
+                self.pending_tail_call = Some(PendingTailCall {
+                    func,
+                    positional,
+                    named,
+                });
                 return Ok(Some(Value::Unit)); // value is unused; caller checks pending_tail_call
             }
             Op::Return => {
@@ -689,6 +737,21 @@ impl Vm {
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 let receiver = self.pop(line, col)?;
                 let result = self.call_method(receiver, &method, &args, line, col)?;
+                self.stack.push(result);
+            }
+            Op::MethodCallResolved => {
+                let method_idx = chunk.read_u16(self.ip) as usize;
+                self.ip += 2;
+                let method = self.const_as_str(&chunk.constants[method_idx], line, col)?;
+                let (receiver, positional, named) = self.pop_resolved_method_call(line, col)?;
+                if !named.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!("methods do not support keyword arguments"),
+                        line,
+                        col,
+                    ));
+                }
+                let result = self.call_method(receiver, &method, &positional, line, col)?;
                 self.stack.push(result);
             }
 
@@ -1281,6 +1344,66 @@ impl Vm {
                     }
                 }
             }
+            Op::KwInsert => {
+                let value = self.pop(line, col)?;
+                let key = self.pop(line, col)?;
+                let key = match key {
+                    Value::Str(key) => key,
+                    other => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "{}{}",
+                                ion_str!("keyword name must be string, got "),
+                                other.type_name()
+                            ),
+                            line,
+                            col,
+                        ));
+                    }
+                };
+                let mut found = false;
+                for i in (0..self.stack.len()).rev() {
+                    if let Value::List(ref mut items) = self.stack[i] {
+                        items.push(Value::Tuple(vec![Value::Str(key.clone()), value.clone()]));
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return Err(IonError::runtime(
+                        ion_str!("KwInsert: no keyword list"),
+                        line,
+                        col,
+                    ));
+                }
+            }
+            Op::KwMerge => {
+                let source = self.pop(line, col)?;
+                let Value::Dict(map) = source else {
+                    return Err(IonError::type_err(
+                        ion_str!("** argument must be a dict"),
+                        line,
+                        col,
+                    ));
+                };
+                let mut found = false;
+                for i in (0..self.stack.len()).rev() {
+                    if let Value::List(ref mut items) = self.stack[i] {
+                        for (key, value) in map {
+                            items.push(Value::Tuple(vec![Value::Str(key), value]));
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return Err(IonError::runtime(
+                        ion_str!("KwMerge: no keyword list"),
+                        line,
+                        col,
+                    ));
+                }
+            }
 
             // --- Slice ---
             Op::CheckType => {
@@ -1387,6 +1510,18 @@ impl Vm {
                     col,
                 ));
             }
+            Op::SpawnCallResolved => {
+                let _ = self.pop(line, col)?; // keyword pair list
+                let _ = self.pop(line, col)?; // positional list
+                let _ = self.pop(line, col)?; // function
+                return Err(IonError::runtime(
+                    ion_str!(
+                        "spawn requires the pollable async runtime; it cannot run in the synchronous VM"
+                    ),
+                    line,
+                    col,
+                ));
+            }
             Op::AwaitTask => {
                 return Err(IonError::runtime(
                     ion_str!(
@@ -1438,7 +1573,7 @@ impl Vm {
     // ---- Helpers ----
 
     fn decode_op(&self, byte: u8, line: usize, col: usize) -> Result<Op, IonError> {
-        if byte > Op::Print as u8 {
+        if byte > Op::KwMerge as u8 {
             return Err(IonError::runtime(
                 format!("{}{}", ion_str!("invalid opcode: "), byte),
                 line,
@@ -3204,6 +3339,111 @@ impl Vm {
         self.pop(line, col)
     }
 
+    fn pop_resolved_call(
+        &mut self,
+        line: usize,
+        col: usize,
+    ) -> Result<(Value, Vec<Value>, Vec<KeywordArg>), IonError> {
+        let keyword_pairs = self.pop(line, col)?;
+        let positional = self.pop(line, col)?;
+        let func = self.pop(line, col)?;
+        let positional = Self::resolved_positionals_from_value(positional, line, col)?;
+        let named = Self::resolved_keywords_from_value(keyword_pairs, line, col)?;
+        Ok((func, positional, named))
+    }
+
+    fn pop_resolved_method_call(
+        &mut self,
+        line: usize,
+        col: usize,
+    ) -> Result<(Value, Vec<Value>, Vec<KeywordArg>), IonError> {
+        let keyword_pairs = self.pop(line, col)?;
+        let positional = self.pop(line, col)?;
+        let receiver = self.pop(line, col)?;
+        let positional = Self::resolved_positionals_from_value(positional, line, col)?;
+        let named = Self::resolved_keywords_from_value(keyword_pairs, line, col)?;
+        Ok((receiver, positional, named))
+    }
+
+    fn resolved_positionals_from_value(
+        positional: Value,
+        line: usize,
+        col: usize,
+    ) -> Result<Vec<Value>, IonError> {
+        let positional = match positional {
+            Value::List(items) => items,
+            other => {
+                return Err(IonError::type_err(
+                    format!(
+                        "{}{}",
+                        ion_str!("resolved positional args must be a list, got "),
+                        other.type_name()
+                    ),
+                    line,
+                    col,
+                ));
+            }
+        };
+        Ok(positional)
+    }
+
+    fn resolved_keywords_from_value(
+        keyword_pairs: Value,
+        line: usize,
+        col: usize,
+    ) -> Result<Vec<KeywordArg>, IonError> {
+        let named = match keyword_pairs {
+            Value::List(items) => {
+                let mut named = Vec::with_capacity(items.len());
+                for item in items {
+                    let Value::Tuple(pair) = item else {
+                        return Err(IonError::type_err(
+                            ion_str!("resolved keyword arg must be a tuple"),
+                            line,
+                            col,
+                        ));
+                    };
+                    if pair.len() != 2 {
+                        return Err(IonError::type_err(
+                            ion_str!("resolved keyword tuple must have length 2"),
+                            line,
+                            col,
+                        ));
+                    }
+                    let name = match &pair[0] {
+                        Value::Str(name) => name.clone(),
+                        other => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "{}{}",
+                                    ion_str!("resolved keyword name must be string, got "),
+                                    other.type_name()
+                                ),
+                                line,
+                                col,
+                            ));
+                        }
+                    };
+                    named.push(KeywordArg::new(name, pair[1].clone()));
+                }
+                named
+            }
+            Value::Dict(map) => keyword_args_from_dict(map),
+            other => {
+                return Err(IonError::type_err(
+                    format!(
+                        "{}{}",
+                        ion_str!("resolved keyword args must be a list, got "),
+                        other.type_name()
+                    ),
+                    line,
+                    col,
+                ));
+            }
+        };
+        Ok(named)
+    }
+
     fn eval_default_arg(
         &self,
         param_name: &str,
@@ -3227,64 +3467,49 @@ impl Vm {
         })
     }
 
-    fn prepare_positional_function_args(
+    fn prepare_function_args_from_call(
         &mut self,
         ion_fn: &crate::value::IonFn,
-        args: &[Value],
+        positional: Vec<Value>,
+        named: Vec<KeywordArg>,
         line: usize,
         col: usize,
     ) -> Result<Vec<Value>, IonError> {
-        let mut prepared = Vec::with_capacity(ion_fn.params.len());
-        for (i, param) in ion_fn.params.iter().enumerate() {
-            let val = if i < args.len() {
-                args[i].clone()
-            } else if let Some(default) = &param.default {
-                self.eval_default_arg(&param.name, default, line, col)?
-            } else {
-                return Err(IonError::runtime(
-                    format!(
-                        "{}{}{}{}{}{}",
-                        ion_str!("function '"),
-                        ion_fn.name,
-                        ion_str!("' expected "),
-                        ion_fn.params.len(),
-                        ion_str!(" arguments, got "),
-                        args.len(),
-                    ),
-                    line,
-                    col,
-                ));
-            };
-            self.env.define(param.name.clone(), val.clone(), false);
-            prepared.push(val);
-        }
-        Ok(prepared)
+        let slots = resolve_ion_slots(&ion_fn.params, &ion_fn.name, positional, named, line, col)?;
+        self.finalize_function_slots(ion_fn, slots, line, col)
     }
 
-    fn prepare_named_function_args(
+    fn finalize_function_slots(
         &mut self,
         ion_fn: &crate::value::IonFn,
-        ordered: &[Option<Value>],
+        mut slots: Vec<Option<Value>>,
         line: usize,
         col: usize,
     ) -> Result<Vec<Value>, IonError> {
         let mut prepared = Vec::with_capacity(ion_fn.params.len());
         for (i, param) in ion_fn.params.iter().enumerate() {
-            let val = if let Some(Some(val)) = ordered.get(i) {
-                val.clone()
-            } else if let Some(default) = &param.default {
-                self.eval_default_arg(&param.name, default, line, col)?
-            } else {
-                return Err(IonError::runtime(
-                    format!(
-                        "{}{}{}",
-                        ion_str!("missing argument '"),
-                        param.name,
-                        ion_str!("'"),
-                    ),
-                    line,
-                    col,
-                ));
+            let val = match slots.get_mut(i).and_then(Option::take) {
+                Some(value) => value,
+                None => match param.kind {
+                    crate::ast::ParamKind::VarArgs => Value::List(Vec::new()),
+                    crate::ast::ParamKind::VarKwargs => Value::Dict(IndexMap::new()),
+                    _ => {
+                        if let Some(default) = &param.default {
+                            self.eval_default_arg(&param.name, default, line, col)?
+                        } else {
+                            return Err(IonError::runtime(
+                                format!(
+                                    "{}{}{}",
+                                    ion_str!("missing argument '"),
+                                    param.name,
+                                    ion_str!("'"),
+                                ),
+                                line,
+                                col,
+                            ));
+                        }
+                    }
+                },
             };
             self.env.define(param.name.clone(), val.clone(), false);
             prepared.push(val);
@@ -3296,10 +3521,20 @@ impl Vm {
         // Stack: [..., func, arg0, arg1, ..., argN-1]
         let args_start = self.stack.len() - arg_count;
         let func_idx = args_start - 1;
-        let mut func = self.stack[func_idx].clone();
-        let mut args: Vec<Value> = self.stack[args_start..].to_vec();
+        let func = self.stack[func_idx].clone();
+        let positional: Vec<Value> = self.stack[args_start..].to_vec();
         self.stack.truncate(func_idx);
+        self.call_function_value(func, positional, Vec::new(), line, col)
+    }
 
+    fn call_function_value(
+        &mut self,
+        mut func: Value,
+        mut positional: Vec<Value>,
+        mut named: Vec<KeywordArg>,
+        line: usize,
+        col: usize,
+    ) -> Result<(), IonError> {
         // Trampoline loop: handles tail calls without growing the Rust stack
         loop {
             match func {
@@ -3310,24 +3545,91 @@ impl Vm {
                 Value::BuiltinFn { qualified_hash, .. }
                     if qualified_hash == crate::h!("timeout") =>
                 {
-                    let result = self.builtin_timeout(&args, line, col)?;
+                    let result = self.builtin_timeout(&positional, line, col)?;
                     self.stack.push(result);
                     return Ok(());
                 }
-                Value::BuiltinFn { func, .. } => {
-                    let result = func(&args).map_err(|e| IonError::runtime(e, line, col))?;
+                Value::BuiltinFn {
+                    func,
+                    signature: Some(signature),
+                    ..
+                } => {
+                    let resolved = resolve_host_call(
+                        &signature,
+                        positional.clone(),
+                        named.clone(),
+                        line,
+                        col,
+                    )?;
+                    let result = func(&resolved).map_err(|e| IonError::runtime(e, line, col))?;
                     self.stack.push(result);
                     return Ok(());
                 }
-                Value::BuiltinClosure { func, .. } => {
+                Value::BuiltinFn {
+                    func,
+                    signature: None,
+                    ..
+                } => {
+                    if !named.is_empty() {
+                        return Err(IonError::runtime(
+                            ion_str!(
+                                "host callable does not declare a signature; cannot pass keyword arguments"
+                            ),
+                            line,
+                            col,
+                        ));
+                    }
+                    let result = func(&positional).map_err(|e| IonError::runtime(e, line, col))?;
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                Value::BuiltinClosure {
+                    func,
+                    signature: Some(signature),
+                    ..
+                } => {
+                    let resolved = resolve_host_call(
+                        &signature,
+                        positional.clone(),
+                        named.clone(),
+                        line,
+                        col,
+                    )?;
                     let result = func
-                        .call(&args)
+                        .call(&resolved)
+                        .map_err(|e| IonError::runtime(e, line, col))?;
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                Value::BuiltinClosure {
+                    func,
+                    signature: None,
+                    ..
+                } => {
+                    if !named.is_empty() {
+                        return Err(IonError::runtime(
+                            ion_str!(
+                                "host callable does not declare a signature; cannot pass keyword arguments"
+                            ),
+                            line,
+                            col,
+                        ));
+                    }
+                    let result = func
+                        .call(&positional)
                         .map_err(|e| IonError::runtime(e, line, col))?;
                     self.stack.push(result);
                     return Ok(());
                 }
                 Value::Module(ref table) => {
-                    let Some(result) = crate::stdlib::call_stdlib_module(table, &args) else {
+                    if !named.is_empty() {
+                        return Err(IonError::runtime(
+                            ion_str!("module calls do not support keyword arguments"),
+                            line,
+                            col,
+                        ));
+                    }
+                    let Some(result) = crate::stdlib::call_stdlib_module(table, &positional) else {
                         return Err(IonError::type_err(
                             format!("{}{}", ion_str!("cannot call "), func.type_name()),
                             line,
@@ -3359,14 +3661,15 @@ impl Vm {
                     let saved_locals_base = self.locals_base;
                     let saved_locals_len = self.locals.len();
                     let saved_frames_len = self.local_frames.len();
-                    let prepared_args =
-                        match self.prepare_positional_function_args(&ion_fn, &args, line, col) {
-                            Ok(args) => args,
-                            Err(e) => {
-                                self.env.pop_scope();
-                                return Err(e);
-                            }
-                        };
+                    let prepared_args = match self
+                        .prepare_function_args_from_call(&ion_fn, positional, named, line, col)
+                    {
+                        Ok(args) => args,
+                        Err(e) => {
+                            self.env.pop_scope();
+                            return Err(e);
+                        }
+                    };
 
                     self.locals_base = self.locals.len(); // new base for function's locals
 
@@ -3402,9 +3705,10 @@ impl Vm {
                         self.env.pop_scope();
 
                         // Check for pending tail call (trampoline)
-                        if let Some((tail_func, tail_args)) = self.pending_tail_call.take() {
-                            func = tail_func;
-                            args = tail_args;
+                        if let Some(tail_call) = self.pending_tail_call.take() {
+                            func = tail_call.func;
+                            positional = tail_call.positional;
+                            named = tail_call.named;
                             continue; // loop back without growing Rust stack
                         }
 
@@ -3463,6 +3767,18 @@ impl Vm {
         line: usize,
         col: usize,
     ) -> Result<(), IonError> {
+        let (func, positional, named) =
+            self.pop_named_call_args(arg_count, named_map, line, col)?;
+        self.call_function_value(func, positional, named, line, col)
+    }
+
+    fn pop_named_call_args(
+        &mut self,
+        arg_count: usize,
+        named_map: &[(usize, String)],
+        _line: usize,
+        _col: usize,
+    ) -> Result<(Value, Vec<Value>, Vec<KeywordArg>), IonError> {
         // Stack: [..., func, arg0, arg1, ..., argN-1]
         let args_start = self.stack.len() - arg_count;
         let func_idx = args_start - 1;
@@ -3470,103 +3786,27 @@ impl Vm {
         let raw_args: Vec<Value> = self.stack[args_start..].to_vec();
         self.stack.truncate(func_idx);
 
-        match &func {
-            Value::Fn(ion_fn) => {
-                // Reorder args based on named_map
-                let mut ordered = vec![None; ion_fn.params.len()];
-                let mut pos_idx = 0;
-                for (i, val) in raw_args.into_iter().enumerate() {
-                    if let Some((_, ref name)) = named_map.iter().find(|(pos, _)| *pos == i) {
-                        // Named arg: find param by name
-                        let param_idx = ion_fn
-                            .params
-                            .iter()
-                            .position(|p| &p.name == name)
-                            .ok_or_else(|| {
-                                IonError::runtime(
-                                    format!(
-                                        "{}'{}'{}'{}'",
-                                        ion_str!("unknown parameter '"),
-                                        name,
-                                        ion_str!("' for function '"),
-                                        ion_fn.name
-                                    ),
-                                    line,
-                                    col,
-                                )
-                            })?;
-                        ordered[param_idx] = Some(val);
-                    } else {
-                        // Positional arg: fill next available slot
-                        while pos_idx < ordered.len() && ordered[pos_idx].is_some() {
-                            pos_idx += 1;
-                        }
-                        if pos_idx < ordered.len() {
-                            ordered[pos_idx] = Some(val);
-                            pos_idx += 1;
-                        }
-                    }
-                }
-                // Fill defaults and push reordered args
-                self.env.push_scope();
-                for (name, val) in &ion_fn.captures {
-                    self.env.define(name.clone(), val.clone(), false);
-                }
-                let reordered = match self.prepare_named_function_args(ion_fn, &ordered, line, col)
-                {
-                    Ok(args) => args,
-                    Err(e) => {
-                        self.env.pop_scope();
-                        return Err(e);
-                    }
-                };
-                self.env.pop_scope();
-                // Push func + reordered args, then call normally
-                self.stack.push(func.clone());
-                for arg in &reordered {
-                    self.stack.push(arg.clone());
-                }
-                self.call_function(reordered.len(), line, col)
+        let mut positional = Vec::new();
+        let mut named = Vec::with_capacity(named_map.len());
+        for (idx, value) in raw_args.into_iter().enumerate() {
+            if let Some((_, name)) = named_map.iter().find(|(pos, _)| *pos == idx) {
+                named.push(KeywordArg::new(name.clone(), value));
+            } else {
+                positional.push(value);
             }
-            Value::BuiltinFn { func, .. } => {
-                // Builtins don't support named args, just pass positionally
-                let result = func(&raw_args).map_err(|e| IonError::runtime(e, line, col))?;
-                self.stack.push(result);
-                Ok(())
-            }
-            Value::BuiltinClosure { func, .. } => {
-                let result = func
-                    .call(&raw_args)
-                    .map_err(|e| IonError::runtime(e, line, col))?;
-                self.stack.push(result);
-                Ok(())
-            }
-            Value::Module(table) => {
-                let Some(result) = crate::stdlib::call_stdlib_module(table, &raw_args) else {
-                    return Err(IonError::type_err(
-                        format!("cannot call {}", func.type_name()),
-                        line,
-                        col,
-                    ));
-                };
-                self.stack
-                    .push(result.map_err(|e| IonError::runtime(e, line, col))?);
-                Ok(())
-            }
-            #[cfg(feature = "async-runtime")]
-            Value::AsyncBuiltinClosure { .. } => Err(IonError::runtime(
-                ion_str!(
-                    "async host function cannot be called by the synchronous evaluator; use eval_async"
-                ),
-                line,
-                col,
-            )),
-            _ => Err(IonError::type_err(
-                format!("cannot call {}", func.type_name()),
-                line,
-                col,
-            )),
         }
+        Ok((func, positional, named))
+    }
+
+    fn call_function_resolved(
+        &mut self,
+        func: Value,
+        positional: Vec<Value>,
+        named: Vec<KeywordArg>,
+        line: usize,
+        col: usize,
+    ) -> Result<(), IonError> {
+        self.call_function_value(func, positional, named, line, col)
     }
 
     #[cfg(all(

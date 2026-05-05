@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::call::{keyword_args_from_dict, resolve_host_call, resolve_ion_slots, KeywordArg};
 use crate::env::Env;
 use crate::error::{ErrorKind, IonError};
 use crate::host_types::TypeRegistry;
@@ -1180,20 +1181,9 @@ impl Interpreter {
                 // right should be a Call — insert lval as first argument
                 match &right.kind {
                     ExprKind::Call { func, args } => {
-                        let mut new_args = vec![CallArg {
-                            name: None,
-                            value: Expr {
-                                kind: ExprKind::Int(0),
-                                span, // placeholder
-                            },
-                        }];
-                        new_args.extend(args.iter().cloned());
                         let func_val = self.eval_expr(func)?;
-                        let mut arg_vals = vec![lval];
-                        for arg in args {
-                            arg_vals.push(self.eval_expr(&arg.value)?);
-                        }
-                        self.call_value(&func_val, &arg_vals, span)
+                        let (positional, named) = self.eval_call_args(args, span, vec![lval])?;
+                        self.call_value_resolved(&func_val, positional, named, span)
                     }
                     ExprKind::Ident(_) => {
                         // Bare function name, call with lval as only arg
@@ -1240,10 +1230,7 @@ impl Interpreter {
 
             ExprKind::MethodCall { expr, method, args } => {
                 let receiver = self.eval_expr(expr)?;
-                let mut arg_vals = Vec::new();
-                for arg in args {
-                    arg_vals.push(self.eval_expr(&arg.value)?);
-                }
+                let arg_vals = self.eval_positional_call_args(args, span)?;
                 self.method_call(&receiver, method, &arg_vals, span)
             }
 
@@ -1257,20 +1244,8 @@ impl Interpreter {
                     }
                 }
                 let func_val = self.eval_expr(func)?;
-                let has_named = args.iter().any(|a| a.name.is_some());
-                if has_named {
-                    let mut evaluated: Vec<(Option<String>, Value)> = Vec::new();
-                    for arg in args {
-                        evaluated.push((arg.name.clone(), self.eval_expr(&arg.value)?));
-                    }
-                    self.call_with_named(&func_val, evaluated, span)
-                } else {
-                    let mut arg_vals = Vec::new();
-                    for arg in args {
-                        arg_vals.push(self.eval_expr(&arg.value)?);
-                    }
-                    self.call_value(&func_val, &arg_vals, span)
-                }
+                let (positional, named) = self.eval_call_args(args, span, Vec::new())?;
+                self.call_value_resolved(&func_val, positional, named, span)
             }
 
             ExprKind::Lambda { params, body } => {
@@ -1280,6 +1255,7 @@ impl Interpreter {
                     .map(|p| Param {
                         name: p.clone(),
                         default: None,
+                        kind: ParamKind::Positional,
                     })
                     .collect();
                 // Wrap body expr into a block with one ExprStmt
@@ -3165,7 +3141,128 @@ impl Interpreter {
         }
     }
 
+    fn eval_call_args(
+        &mut self,
+        args: &[CallArg],
+        span: Span,
+        mut positional: Vec<Value>,
+    ) -> Result<(Vec<Value>, Vec<KeywordArg>), SignalOrError> {
+        let mut named = Vec::new();
+        let mut named_phase = false;
+        for arg in args {
+            match &arg.kind {
+                CallArgKind::Positional => {
+                    if named_phase {
+                        return Err(IonError::parse(
+                            ion_str!("positional arguments cannot follow keyword arguments"),
+                            span.line,
+                            span.col,
+                        )
+                        .into());
+                    }
+                    positional.push(self.eval_expr(&arg.value)?);
+                }
+                CallArgKind::SpreadPos => {
+                    if named_phase {
+                        return Err(IonError::parse(
+                            ion_str!("positional arguments cannot follow keyword arguments"),
+                            span.line,
+                            span.col,
+                        )
+                        .into());
+                    }
+                    match self.eval_expr(&arg.value)? {
+                        Value::List(items) => positional.extend(items),
+                        other => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "{}{}",
+                                    ion_str!("* argument must be a list, got "),
+                                    other.type_name()
+                                ),
+                                span.line,
+                                span.col,
+                            )
+                            .into());
+                        }
+                    }
+                }
+                CallArgKind::Named(name) => {
+                    named_phase = true;
+                    let value = self.eval_expr(&arg.value)?;
+                    named.push(KeywordArg::new(name.clone(), value));
+                }
+                CallArgKind::SpreadKw => {
+                    named_phase = true;
+                    match self.eval_expr(&arg.value)? {
+                        Value::Dict(map) => named.extend(keyword_args_from_dict(map)),
+                        other => {
+                            return Err(IonError::type_err(
+                                format!(
+                                    "{}{}",
+                                    ion_str!("** argument must be a dict, got "),
+                                    other.type_name()
+                                ),
+                                span.line,
+                                span.col,
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
+        }
+        Ok((positional, named))
+    }
+
+    fn eval_positional_call_args(
+        &mut self,
+        args: &[CallArg],
+        span: Span,
+    ) -> Result<Vec<Value>, SignalOrError> {
+        let mut positional = Vec::new();
+        for arg in args {
+            match &arg.kind {
+                CallArgKind::Positional => positional.push(self.eval_expr(&arg.value)?),
+                CallArgKind::SpreadPos => match self.eval_expr(&arg.value)? {
+                    Value::List(items) => positional.extend(items),
+                    other => {
+                        return Err(IonError::type_err(
+                            format!(
+                                "{}{}",
+                                ion_str!("* argument must be a list, got "),
+                                other.type_name()
+                            ),
+                            span.line,
+                            span.col,
+                        )
+                        .into());
+                    }
+                },
+                CallArgKind::Named(_) | CallArgKind::SpreadKw => {
+                    return Err(IonError::runtime(
+                        ion_str!("methods do not support keyword arguments"),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
+            }
+        }
+        Ok(positional)
+    }
+
     fn call_value(&mut self, func: &Value, args: &[Value], span: Span) -> SignalResult {
+        self.call_value_resolved(func, args.to_vec(), Vec::new(), span)
+    }
+
+    fn call_value_resolved(
+        &mut self,
+        func: &Value,
+        args: Vec<Value>,
+        named: Vec<KeywordArg>,
+        span: Span,
+    ) -> SignalResult {
         match func {
             Value::Fn(ion_fn) => {
                 if self.call_depth >= self.limits.max_call_depth {
@@ -3183,27 +3280,39 @@ impl Interpreter {
                     for (name, val) in &ion_fn.captures {
                         self.env.define(name.clone(), val.clone(), false);
                     }
+                    let mut slots = resolve_ion_slots(
+                        &ion_fn.params,
+                        &ion_fn.name,
+                        args,
+                        named,
+                        span.line,
+                        span.col,
+                    )?;
                     // Bind parameters
                     for (i, param) in ion_fn.params.iter().enumerate() {
-                        let val = if i < args.len() {
-                            args[i].clone()
-                        } else if let Some(default) = &param.default {
-                            self.eval_expr(default)?
-                        } else {
-                            return Err(IonError::runtime(
-                                format!(
-                                    "{}{}{}{}{}{}",
-                                    ion_str!("function '"),
-                                    ion_fn.name,
-                                    ion_str!("' expected "),
-                                    ion_fn.params.len(),
-                                    ion_str!(" arguments, got "),
-                                    args.len(),
-                                ),
-                                span.line,
-                                span.col,
-                            )
-                            .into());
+                        let val = match slots[i].take() {
+                            Some(value) => value,
+                            None => match param.kind {
+                                ParamKind::VarArgs => Value::List(Vec::new()),
+                                ParamKind::VarKwargs => Value::Dict(IndexMap::new()),
+                                _ => {
+                                    if let Some(default) = &param.default {
+                                        self.eval_expr(default)?
+                                    } else {
+                                        return Err(IonError::runtime(
+                                            format!(
+                                                "{}{}{}",
+                                                ion_str!("missing argument '"),
+                                                param.name,
+                                                ion_str!("'")
+                                            ),
+                                            span.line,
+                                            span.col,
+                                        )
+                                        .into());
+                                    }
+                                }
+                            },
                         };
                         self.env.define(param.name.clone(), val, false);
                     }
@@ -3246,31 +3355,89 @@ impl Interpreter {
             Value::BuiltinFn { qualified_hash, .. }
                 if *qualified_hash == crate::h!("timeout") =>
             {
-                self.builtin_timeout(args, span)
+                self.builtin_timeout(&args, span)
             }
-            Value::BuiltinFn { func, .. } => {
+            Value::BuiltinFn {
+                func,
+                signature: Some(signature),
+                ..
+            } => {
+                let resolved = resolve_host_call(signature, args, named, span.line, span.col)
+                    .map_err(SignalOrError::Error)?;
+                func(&resolved).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            }
+            Value::BuiltinFn {
+                func,
+                signature: None,
+                ..
+            } => {
+                if !named.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!(
+                            "host callable does not declare a signature; cannot pass keyword arguments"
+                        ),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
                 // Error messages from stdlib closures are intentionally
                 // generic ("takes 1 argument") so no `mod::fn` literal
                 // lands in `.rodata`. Function context is conveyed via the
                 // script source span, not the error string — also keeps
                 // `try { assert(false, "boom") } catch e { e }` semantics
                 // unchanged for caught error values.
-                func(args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+                func(&args).map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
             }
-            Value::BuiltinClosure { func, .. } => func
-                .call(args)
-                .map_err(|msg| IonError::runtime(msg, span.line, span.col).into()),
-            Value::Module(table) => match crate::stdlib::call_stdlib_module(table, args) {
-                Some(result) => {
-                    result.map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            Value::BuiltinClosure {
+                func,
+                signature: Some(signature),
+                ..
+            } => {
+                let resolved = resolve_host_call(signature, args, named, span.line, span.col)
+                    .map_err(SignalOrError::Error)?;
+                func.call(&resolved)
+                    .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            }
+            Value::BuiltinClosure {
+                func,
+                signature: None,
+                ..
+            } => {
+                if !named.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!(
+                            "host callable does not declare a signature; cannot pass keyword arguments"
+                        ),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
                 }
-                None => Err(IonError::type_err(
-                    format!("{}{}", ion_str!("not callable: "), func.type_name()),
-                    span.line,
-                    span.col,
-                )
-                .into()),
-            },
+                func.call(&args)
+                    .map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+            }
+            Value::Module(table) => {
+                if !named.is_empty() {
+                    return Err(IonError::runtime(
+                        ion_str!("module calls do not support keyword arguments"),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
+                match crate::stdlib::call_stdlib_module(table, &args) {
+                    Some(result) => {
+                        result.map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
+                    }
+                    None => Err(IonError::type_err(
+                        format!("{}{}", ion_str!("not callable: "), func.type_name()),
+                        span.line,
+                        span.col,
+                    )
+                    .into()),
+                }
+            }
             #[cfg(feature = "async-runtime")]
             Value::AsyncBuiltinClosure { .. } => Err(IonError::runtime(
                 ion_str!(
@@ -3341,110 +3508,6 @@ impl Interpreter {
                 // task terminates at the next statement boundary.
                 task.cancel();
                 Ok(Value::Option(None))
-            }
-        }
-    }
-
-    fn call_with_named(
-        &mut self,
-        func: &Value,
-        named_args: Vec<(Option<String>, Value)>,
-        span: Span,
-    ) -> SignalResult {
-        match func {
-            Value::Fn(ion_fn) => {
-                // Reorder named args to match parameter positions
-                let mut ordered = vec![None; ion_fn.params.len()];
-                let mut pos_idx = 0;
-                for (name, val) in named_args {
-                    if let Some(name) = name {
-                        // Find param by name
-                        let param_idx = ion_fn
-                            .params
-                            .iter()
-                            .position(|p| p.name == name)
-                            .ok_or_else(|| {
-                                IonError::runtime(
-                                    format!(
-                                        "{}{}{}{}",
-                                        ion_str!("unknown parameter '"),
-                                        name,
-                                        ion_str!("' for function '"),
-                                        ion_fn.name,
-                                    ),
-                                    span.line,
-                                    span.col,
-                                )
-                            })?;
-                        ordered[param_idx] = Some(val);
-                    } else {
-                        // Positional arg — fill next empty slot
-                        while pos_idx < ordered.len() && ordered[pos_idx].is_some() {
-                            pos_idx += 1;
-                        }
-                        if pos_idx < ordered.len() {
-                            ordered[pos_idx] = Some(val);
-                            pos_idx += 1;
-                        }
-                    }
-                }
-                // Keep as Option<Value> so we can distinguish "not provided" from "provided Unit"
-                let opt_args: Vec<Option<Value>> = ordered;
-                // Use call_value with the reordered args, but handle defaults specially
-                if self.call_depth >= self.limits.max_call_depth {
-                    return Err(IonError::runtime(
-                        ion_str!("maximum call depth exceeded").to_string(),
-                        span.line,
-                        span.col,
-                    )
-                    .into());
-                }
-                self.call_depth += 1;
-                self.env.push_scope();
-                let result = (|| {
-                    for (name, val) in &ion_fn.captures {
-                        self.env.define(name.clone(), val.clone(), false);
-                    }
-                    for (i, param) in ion_fn.params.iter().enumerate() {
-                        let val = if i < opt_args.len() && opt_args[i].is_some() {
-                            opt_args[i].clone().unwrap()
-                        } else if let Some(default) = &param.default {
-                            self.eval_expr(default)?
-                        } else {
-                            return Err(IonError::runtime(
-                                format!(
-                                    "{}{}{}",
-                                    ion_str!("missing argument '"),
-                                    param.name,
-                                    ion_str!("'"),
-                                ),
-                                span.line,
-                                span.col,
-                            )
-                            .into());
-                        };
-                        self.env.define(param.name.clone(), val, false);
-                    }
-                    self.eval_stmts(&ion_fn.body)
-                })();
-                self.env.pop_scope();
-                self.call_depth -= 1;
-                match result {
-                    Ok(v) => Ok(v),
-                    Err(SignalOrError::Signal(Signal::Return(v))) => Ok(v),
-                    Err(SignalOrError::Error(e)) if e.kind == ErrorKind::PropagatedErr => {
-                        Ok(Value::Result(Err(Box::new(Value::Str(e.message.clone())))))
-                    }
-                    Err(SignalOrError::Error(e)) if e.kind == ErrorKind::PropagatedNone => {
-                        Ok(Value::Option(None))
-                    }
-                    Err(e) => Err(e),
-                }
-            }
-            _ => {
-                // For builtins, just pass positional values
-                let args: Vec<Value> = named_args.into_iter().map(|(_, v)| v).collect();
-                self.call_value(func, &args, span)
             }
         }
     }

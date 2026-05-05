@@ -368,16 +368,131 @@ impl Parser {
     }
 
     fn parse_params(&mut self) -> Result<Vec<Param>, IonError> {
-        let mut params = Vec::new();
+        let mut params: Vec<Param> = Vec::new();
+        let mut slash_seen = false;
+        let mut keyword_only = false;
+        let mut var_args_seen = false;
+        let mut var_kwargs_seen = false;
         while !self.check(&Token::RParen) {
+            if self.check(&Token::Slash) {
+                if slash_seen || keyword_only || params.is_empty() {
+                    return Err(IonError::parse(
+                        ion_str!("invalid '/' parameter marker"),
+                        self.span().line,
+                        self.span().col,
+                    ));
+                }
+                for param in &mut params {
+                    if param.kind == ParamKind::Positional {
+                        param.kind = ParamKind::PositionalOnly;
+                    }
+                }
+                slash_seen = true;
+                self.advance();
+                if !self.check(&Token::RParen) {
+                    self.eat(&Token::Comma)?;
+                }
+                continue;
+            }
+
+            if self.check(&Token::Star) {
+                let marker_span = self.span();
+                self.advance();
+                if self.check(&Token::Star) {
+                    if var_kwargs_seen {
+                        return Err(IonError::parse(
+                            ion_str!("duplicate **kwargs parameter"),
+                            marker_span.line,
+                            marker_span.col,
+                        ));
+                    }
+                    self.advance();
+                    let name = self.eat_ident()?;
+                    if params.iter().any(|param| param.name == name) {
+                        return Err(IonError::parse(
+                            ion_format!("duplicate parameter '{}'", name),
+                            marker_span.line,
+                            marker_span.col,
+                        ));
+                    }
+                    params.push(Param {
+                        name,
+                        default: None,
+                        kind: ParamKind::VarKwargs,
+                    });
+                    var_kwargs_seen = true;
+                    keyword_only = true;
+                } else if matches!(self.peek(), Token::Ident(_)) {
+                    if var_args_seen || var_kwargs_seen {
+                        return Err(IonError::parse(
+                            ion_str!("invalid *args parameter"),
+                            marker_span.line,
+                            marker_span.col,
+                        ));
+                    }
+                    let name = self.eat_ident()?;
+                    if params.iter().any(|param| param.name == name) {
+                        return Err(IonError::parse(
+                            ion_format!("duplicate parameter '{}'", name),
+                            marker_span.line,
+                            marker_span.col,
+                        ));
+                    }
+                    params.push(Param {
+                        name,
+                        default: None,
+                        kind: ParamKind::VarArgs,
+                    });
+                    var_args_seen = true;
+                    keyword_only = true;
+                } else {
+                    if keyword_only || var_args_seen || var_kwargs_seen {
+                        return Err(IonError::parse(
+                            ion_str!("invalid '*' parameter marker"),
+                            marker_span.line,
+                            marker_span.col,
+                        ));
+                    }
+                    keyword_only = true;
+                }
+                if !self.check(&Token::RParen) {
+                    self.eat(&Token::Comma)?;
+                }
+                continue;
+            }
+
+            if var_kwargs_seen {
+                return Err(IonError::parse(
+                    ion_str!("parameters cannot follow **kwargs"),
+                    self.span().line,
+                    self.span().col,
+                ));
+            }
+
             let name = self.eat_ident()?;
+            if params.iter().any(|param| param.name == name) {
+                return Err(IonError::parse(
+                    ion_format!("duplicate parameter '{}'", name),
+                    self.prev_span().line,
+                    self.prev_span().col,
+                ));
+            }
             let default = if self.check(&Token::Eq) {
                 self.advance();
                 Some(self.parse_expr()?)
             } else {
                 None
             };
-            params.push(Param { name, default });
+            let kind = if keyword_only {
+                ParamKind::KeywordOnly
+            } else {
+                ParamKind::Positional
+            };
+            params.push(Param {
+                name,
+                default,
+                kind,
+            });
             if !self.check(&Token::RParen) {
                 self.eat(&Token::Comma)?;
             }
@@ -1049,25 +1164,54 @@ impl Parser {
 
     fn parse_call_args(&mut self) -> Result<Vec<CallArg>, IonError> {
         let mut args = Vec::new();
+        let mut named_phase = false;
         while !self.check(&Token::RParen) && !self.is_at_end() {
-            // Check for named argument: `name: value`
-            let arg = if let Token::Ident(name) = self.peek().clone() {
+            let span = self.span();
+            let arg = if self.check(&Token::Star) {
+                self.advance();
+                if self.check(&Token::Star) {
+                    self.advance();
+                    named_phase = true;
+                    CallArg::spread_kw(self.parse_expr()?)
+                } else {
+                    if named_phase {
+                        return Err(IonError::parse(
+                            ion_str!("positional arguments cannot follow keyword arguments"),
+                            span.line,
+                            span.col,
+                        ));
+                    }
+                    CallArg::spread_pos(self.parse_expr()?)
+                }
+            } else if let Token::Ident(name) = self.peek().clone() {
                 if self.tokens.get(self.pos + 1).map(|t| &t.token) == Some(&Token::Colon) {
                     let name = name.clone();
                     self.advance(); // ident
                     self.advance(); // colon
                     let value = self.parse_expr()?;
-                    CallArg {
-                        name: Some(name),
-                        value,
-                    }
+                    named_phase = true;
+                    CallArg::named(name, value)
                 } else {
+                    if named_phase {
+                        return Err(IonError::parse(
+                            ion_str!("positional arguments cannot follow keyword arguments"),
+                            span.line,
+                            span.col,
+                        ));
+                    }
                     let value = self.parse_expr()?;
-                    CallArg { name: None, value }
+                    CallArg::positional(value)
                 }
             } else {
+                if named_phase {
+                    return Err(IonError::parse(
+                        ion_str!("positional arguments cannot follow keyword arguments"),
+                        span.line,
+                        span.col,
+                    ));
+                }
                 let value = self.parse_expr()?;
-                CallArg { name: None, value }
+                CallArg::positional(value)
             };
             args.push(arg);
             if !self.check(&Token::RParen) {

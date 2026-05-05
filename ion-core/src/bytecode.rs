@@ -67,6 +67,10 @@ pub enum Op {
     Call, // u8 arg count
     /// Tail call: like Call but reuses the current frame (no stack growth).
     TailCall, // u8 arg count
+    /// Tail call with named arguments.
+    TailCallNamed, // u8 total_args, u8 named_count, then [u8 position, u16 name_idx] * named_count
+    /// Tail call with prebuilt positional list and keyword pair list on the stack.
+    TailCallResolved,
     /// Return from current function.
     Return,
 
@@ -95,6 +99,8 @@ pub enum Op {
     SetIndex,
     /// Method call: pop args + receiver, push result.
     MethodCall, // u16 method name constant index, u8 arg count
+    /// Method call with prebuilt positional list and keyword pair list on the stack.
+    MethodCallResolved, // u16 method name constant index
 
     // --- Closures ---
     /// Create a closure from a function prototype.
@@ -165,6 +171,8 @@ pub enum Op {
 
     /// Call with named arguments: u8 arg count, then u8 count of named pairs, each is u16 (arg position) + u16 (name constant)
     CallNamed, // u8 total_args, u8 named_count, then [u8 position, u16 name_idx] * named_count
+    /// Call with prebuilt positional list and keyword pair list on the stack.
+    CallResolved,
 
     /// Begin a try block: push exception handler.
     TryBegin, // u16 catch handler offset
@@ -176,6 +184,8 @@ pub enum Op {
     SpawnCall, // u8 arg count
     /// Spawn a function call with named arguments as an async runtime task.
     SpawnCallNamed, // u8 total_args, u8 named_count, then [u8 position, u16 name_idx] * named_count
+    /// Spawn a function call with prebuilt positional list and keyword pair list.
+    SpawnCallResolved,
     /// Await an AsyncTask by parking this VM continuation on the runtime future table.
     AwaitTask,
     /// Race N AsyncTask handles and push `(winner_index, value)` when one completes.
@@ -183,6 +193,11 @@ pub enum Op {
 
     /// Print (for testing/debugging)
     Print, // u8: 0 = print, 1 = println
+
+    /// Append a key/value pair to the keyword pair list below it on the stack.
+    KwInsert,
+    /// Extend a keyword pair list with every entry from a dict on TOS.
+    KwMerge,
 }
 
 /// A compiled bytecode chunk.
@@ -368,8 +383,13 @@ impl Chunk {
                 || x == Op::ListExtend as u8
                 || x == Op::DictInsert as u8
                 || x == Op::DictMerge as u8
+                || x == Op::KwInsert as u8
+                || x == Op::KwMerge as u8
                 || x == Op::IterDrop as u8
                 || x == Op::ImportGlob as u8
+                || x == Op::CallResolved as u8
+                || x == Op::TailCallResolved as u8
+                || x == Op::SpawnCallResolved as u8
                 || x == Op::AwaitTask as u8 =>
             {
                 1
@@ -410,7 +430,8 @@ impl Chunk {
                 || x == Op::SetLocalSlot as u8
                 || x == Op::TryBegin as u8
                 || x == Op::TryEnd as u8
-                || x == Op::CheckType as u8 =>
+                || x == Op::CheckType as u8
+                || x == Op::MethodCallResolved as u8 =>
             {
                 3
             }
@@ -421,7 +442,10 @@ impl Chunk {
             // 6-byte (u16 + u16 + u8)
             x if x == Op::ConstructEnum as u8 => 6,
             // Variable-width named calls: 1(op) + 1(total_args) + 1(named_count) + named_count * 3
-            x if x == Op::CallNamed as u8 || x == Op::SpawnCallNamed as u8 => {
+            x if x == Op::CallNamed as u8
+                || x == Op::TailCallNamed as u8
+                || x == Op::SpawnCallNamed as u8 =>
+            {
                 if offset + 2 < code.len() {
                     let named_count = code[offset + 2] as usize;
                     3 + named_count * 3 // op + total_args + named_count + (position u8 + name u16) * count

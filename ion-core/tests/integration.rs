@@ -10,7 +10,7 @@ use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef, IonType};
 use ion_core::interpreter::Limits;
 use ion_core::module::Module;
 use ion_core::stdlib::{OutputHandler, OutputStream};
-use ion_core::value::Value;
+use ion_core::value::{HostSignature, Value};
 use ion_core::IonType;
 use std::sync::{Arc, Mutex};
 
@@ -289,6 +289,41 @@ fn test_fn_default_args() {
         eval("fn greet(name, greeting = \"hello\") { greeting + \" \" + name } greet(\"world\")"),
         Value::Str("hello world".into())
     );
+}
+
+#[test]
+fn test_python_style_function_args() {
+    assert_eq!(
+        eval("fn f(a, *rest) { a + rest.len() * 10 } f(2, 3, 4, 5)"),
+        Value::Int(32)
+    );
+    assert_eq!(
+        eval("fn f(a, **kw) { a + kw.b + kw.c } f(1, b: 2, c: 3)"),
+        Value::Int(6)
+    );
+    assert_eq!(eval("fn f(a, *, b) { a + b } f(1, b: 2)"), Value::Int(3));
+    assert_eq!(
+        eval("fn f(a, /, b) { a * 10 + b } f(1, b: 2)"),
+        Value::Int(12)
+    );
+}
+
+#[test]
+fn test_call_spreads_and_argument_errors() {
+    assert_eq!(
+        eval("fn f(a, b, c) { a * 100 + b * 10 + c } f(*[1, 2], c: 3)"),
+        Value::Int(123)
+    );
+    assert_eq!(
+        eval("fn f(**kw) { kw.x * 10 + kw.y } f(**#{x: 1, y: 2})"),
+        Value::Int(12)
+    );
+    assert!(eval_err("fn f(a) { a } f(1, a: 2)").contains("duplicate argument"));
+    assert!(eval_err("fn f(a) { a } f(1, 2)").contains("positional arguments"));
+    assert!(eval_err("fn f(a, /, b) { a + b } f(a: 1, b: 2)").contains("unknown parameter"));
+    assert!(eval_err("fn f(a, a) { a }").contains("duplicate parameter"));
+    assert!(eval_err("fn f(a, *a) { a }").contains("duplicate parameter"));
+    assert!(eval_err("fn f(a, **a) { a }").contains("duplicate parameter"));
 }
 
 #[test]
@@ -1298,6 +1333,39 @@ fn test_engine_register_fn() {
         _ => Err("expected int".to_string()),
     });
     assert_eq!(engine.eval("square(5)").unwrap(), Value::Int(25));
+}
+
+#[test]
+fn test_engine_host_signature_keywords() {
+    fn mix(args: &[Value]) -> Result<Value, String> {
+        Ok(Value::Int(
+            args[0].as_int().unwrap() * 10 + args[1].as_int().unwrap(),
+        ))
+    }
+
+    let mut engine = Engine::new();
+    engine.register_fn_sig(
+        ion_core::h!("mix"),
+        HostSignature::builder()
+            .pos_required(ion_core::h!("a"))
+            .kw_only(ion_core::h!("b"), Value::Int(7))
+            .build(),
+        mix,
+    );
+
+    assert_eq!(engine.eval("mix(3, b: 4)").unwrap(), Value::Int(34));
+    assert_eq!(engine.eval("mix(3)").unwrap(), Value::Int(37));
+}
+
+#[test]
+fn test_unsigned_host_callable_rejects_keywords() {
+    let mut engine = Engine::new();
+    engine.register_fn(ion_core::h!("legacy"), |args: &[Value]| {
+        Ok(Value::Int(args.len() as i64))
+    });
+
+    let msg = engine.eval("legacy(a: 1)").unwrap_err().message;
+    assert!(msg.contains("does not declare a signature"), "got: {}", msg);
 }
 
 // ============================================================
@@ -4263,6 +4331,30 @@ fn engine_with_math_module() -> Engine {
 fn test_module_path_access() {
     let mut engine = engine_with_math_module();
     assert_eq!(engine.eval("math::add(1, 2)").unwrap(), Value::Int(3));
+}
+
+#[test]
+fn test_module_host_signature_keywords() {
+    fn add(args: &[Value]) -> Result<Value, String> {
+        Ok(Value::Int(
+            args[0].as_int().unwrap() + args[1].as_int().unwrap(),
+        ))
+    }
+
+    let mut engine = Engine::new();
+    let mut math = Module::new(ion_core::h!("sigmath"));
+    math.register_fn_sig(
+        ion_core::h!("add"),
+        HostSignature::builder()
+            .pos_required(ion_core::h!("a"))
+            .kw_only(ion_core::h!("b"), Value::Int(10))
+            .build(),
+        add,
+    );
+    engine.register_module(math);
+
+    assert_eq!(engine.eval("sigmath::add(3, b: 4)").unwrap(), Value::Int(7));
+    assert_eq!(engine.eval("sigmath::add(3)").unwrap(), Value::Int(13));
 }
 
 #[test]

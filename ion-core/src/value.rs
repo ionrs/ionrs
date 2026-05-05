@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use serde_json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 #[cfg(feature = "async-runtime")]
 use std::future::Future;
@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::ast::{Param, Stmt};
+use crate::ast::{Param, ParamKind, Stmt};
 #[cfg(feature = "vm")]
 use crate::bytecode::Chunk;
 #[cfg(feature = "async-runtime")]
@@ -38,18 +38,21 @@ pub enum Value {
     BuiltinFn {
         qualified_hash: u64,
         func: BuiltinFn,
+        signature: Option<Arc<HostSignature>>,
     },
     /// Closure-backed builtin (captures host-side state like a
     /// `tokio::runtime::Handle`, DB pool, etc.). Same shape as `BuiltinFn`.
     BuiltinClosure {
         qualified_hash: u64,
         func: BuiltinClosureFn,
+        signature: Option<Arc<HostSignature>>,
     },
     /// Async closure-backed builtin — only executable by the async runtime.
     #[cfg(feature = "async-runtime")]
     AsyncBuiltinClosure {
         qualified_hash: u64,
         func: AsyncBuiltinClosureFn,
+        signature: Option<Arc<HostSignature>>,
     },
     /// Host-registered module. Items (functions, constants, submodules) are
     /// keyed by name hash; lookup is `IndexMap::get(&hash)` — no string
@@ -117,6 +120,161 @@ pub struct IonFn {
     pub body: Vec<Stmt>,
     /// Captured environment for closures
     pub captures: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HostSignature {
+    pub params: Vec<HostParam>,
+    pub has_var_args: bool,
+    pub has_var_kwargs: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HostParam {
+    pub name_hash: u64,
+    pub kind: ParamKind,
+    pub default: Option<Value>,
+}
+
+impl HostSignature {
+    pub fn builder() -> HostSignatureBuilder {
+        HostSignatureBuilder { params: Vec::new() }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct HostSignatureBuilder {
+    params: Vec<HostParam>,
+}
+
+impl HostSignatureBuilder {
+    pub fn pos_required(mut self, name_hash: u64) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::Positional,
+            default: None,
+        });
+        self
+    }
+
+    pub fn pos(mut self, name_hash: u64, default: Value) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::Positional,
+            default: Some(default),
+        });
+        self
+    }
+
+    pub fn pos_only_required(mut self, name_hash: u64) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::PositionalOnly,
+            default: None,
+        });
+        self
+    }
+
+    pub fn pos_only(mut self, name_hash: u64, default: Value) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::PositionalOnly,
+            default: Some(default),
+        });
+        self
+    }
+
+    pub fn kw_only_required(mut self, name_hash: u64) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::KeywordOnly,
+            default: None,
+        });
+        self
+    }
+
+    pub fn kw_only(mut self, name_hash: u64, default: Value) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::KeywordOnly,
+            default: Some(default),
+        });
+        self
+    }
+
+    pub fn var_args(mut self, name_hash: u64) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::VarArgs,
+            default: None,
+        });
+        self
+    }
+
+    pub fn var_kwargs(mut self, name_hash: u64) -> Self {
+        self.params.push(HostParam {
+            name_hash,
+            kind: ParamKind::VarKwargs,
+            default: None,
+        });
+        self
+    }
+
+    pub fn build(self) -> HostSignature {
+        let mut seen = HashSet::new();
+        let mut has_var_args = false;
+        let mut has_var_kwargs = false;
+        for param in &self.params {
+            if !seen.insert(param.name_hash) {
+                panic!("{}", ion_str!("duplicate host parameter"));
+            }
+            match param.kind {
+                ParamKind::VarArgs => {
+                    if has_var_args {
+                        panic!("{}", ion_str!("duplicate *args parameter"));
+                    }
+                    has_var_args = true;
+                }
+                ParamKind::VarKwargs => {
+                    if has_var_kwargs {
+                        panic!("{}", ion_str!("duplicate **kwargs parameter"));
+                    }
+                    has_var_kwargs = true;
+                }
+                _ => {}
+            }
+        }
+        HostSignature {
+            params: self.params,
+            has_var_args,
+            has_var_kwargs,
+        }
+    }
+}
+
+pub struct HostArgs<'a> {
+    values: &'a [Value],
+    signature: &'a HostSignature,
+}
+
+impl<'a> HostArgs<'a> {
+    pub fn new(values: &'a [Value], signature: &'a HostSignature) -> Self {
+        Self { values, signature }
+    }
+
+    pub fn get(&self, name_hash: u64) -> Option<&'a Value> {
+        self.signature
+            .params
+            .iter()
+            .position(|param| param.name_hash == name_hash)
+            .and_then(|idx| self.values.get(idx))
+    }
+
+    pub fn get_str(&self, name_hash: u64) -> Result<&'a str, String> {
+        self.get(name_hash)
+            .and_then(Value::as_str)
+            .ok_or_else(|| ion_str!("expected string argument"))
+    }
 }
 
 impl IonFn {

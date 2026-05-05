@@ -6,7 +6,7 @@
 use ion_core::engine::Engine;
 use ion_core::h;
 use ion_core::host_types::{HostEnumDef, HostStructDef, HostVariantDef};
-use ion_core::value::Value;
+use ion_core::value::{HostSignature, Value};
 
 fn vm_eval(src: &str) -> Value {
     let mut engine = Engine::new();
@@ -362,7 +362,18 @@ fn test_vm_fstring() {
 fn test_vm_list_methods() {
     assert_eq!(vm_eval("[1, 2, 3].len()"), Value::Int(3));
     assert_eq!(vm_eval("[1, 2, 3].contains(2)"), Value::Bool(true));
+    assert_eq!(vm_eval("[1, 2, 3].contains(*[2])"), Value::Bool(true));
     assert_eq!(vm_eval("[].is_empty()"), Value::Bool(true));
+}
+
+#[test]
+fn test_vm_method_keywords_rejected() {
+    let err = vm_eval_err("[1, 2, 3].contains(value: 2)");
+    assert!(
+        err.contains("methods do not support keyword arguments"),
+        "got: {}",
+        err
+    );
 }
 
 #[test]
@@ -1166,6 +1177,36 @@ fn test_vm_tail_call_accumulator() {
     );
 }
 
+#[test]
+fn test_vm_tail_call_named_deep_recursion() {
+    assert_eq!(
+        vm_eval(
+            r#"
+        fn countdown(n) {
+            if n <= 0 { 0 } else { countdown(n: n - 1) }
+        }
+        countdown(n: 10000)
+    "#
+        ),
+        Value::Int(0)
+    );
+}
+
+#[test]
+fn test_vm_tail_call_resolved_deep_recursion() {
+    assert_eq!(
+        vm_eval(
+            r#"
+        fn countdown(n) {
+            if n <= 0 { 0 } else { countdown(*[n - 1]) }
+        }
+        countdown(10000)
+    "#
+        ),
+        Value::Int(0)
+    );
+}
+
 // ============================================================
 // Dict spread
 // ============================================================
@@ -1768,5 +1809,64 @@ fn test_vm_named_args_mixed() {
     assert_eq!(
         vm_eval(r#"fn add(a, b) { a + b } add(1, b: 2)"#),
         Value::Int(3)
+    );
+}
+
+#[test]
+fn test_vm_python_style_function_args() {
+    assert_eq!(
+        vm_eval("fn f(a, *rest) { a + rest.len() * 10 } f(2, 3, 4, 5)"),
+        Value::Int(32)
+    );
+    assert_eq!(
+        vm_eval("fn f(a, **kw) { a + kw.b + kw.c } f(1, b: 2, c: 3)"),
+        Value::Int(6)
+    );
+    assert_eq!(vm_eval("fn f(a, *, b) { a + b } f(1, b: 2)"), Value::Int(3));
+    assert_eq!(
+        vm_eval("fn f(a, /, b) { a * 10 + b } f(1, b: 2)"),
+        Value::Int(12)
+    );
+}
+
+#[test]
+fn test_vm_call_spreads() {
+    assert_eq!(
+        vm_eval("fn f(a, b, c) { a * 100 + b * 10 + c } f(*[1, 2], c: 3)"),
+        Value::Int(123)
+    );
+    assert_eq!(
+        vm_eval("fn f(**kw) { kw.x * 10 + kw.y } f(**#{x: 1, y: 2})"),
+        Value::Int(12)
+    );
+}
+
+#[test]
+fn test_vm_host_signature_keywords() {
+    fn mix(args: &[Value]) -> Result<Value, String> {
+        Ok(Value::Int(
+            args[0].as_int().unwrap() * 10 + args[1].as_int().unwrap(),
+        ))
+    }
+
+    let mut engine = Engine::new();
+    engine.register_fn_sig(
+        h!("mix"),
+        HostSignature::builder()
+            .pos_required(h!("a"))
+            .kw_only(h!("b"), Value::Int(7))
+            .build(),
+        mix,
+    );
+
+    assert_eq!(engine.vm_eval("mix(3, b: 4)").unwrap(), Value::Int(34));
+    assert_eq!(engine.vm_eval("mix(3)").unwrap(), Value::Int(37));
+}
+
+#[test]
+fn test_vm_named_entry_preserves_tail_calls() {
+    assert_eq!(
+        vm_eval("fn id(x) { x } fn outer(x) { id(x) } outer(x: 42)"),
+        Value::Int(42)
     );
 }

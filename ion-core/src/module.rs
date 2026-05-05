@@ -16,7 +16,7 @@ use crate::error::IonError;
 use crate::hash::mix;
 #[cfg(feature = "async-runtime")]
 use crate::value::AsyncBuiltinClosureFn;
-use crate::value::{BuiltinClosureFn, BuiltinFn, Value};
+use crate::value::{BuiltinClosureFn, BuiltinFn, HostSignature, Value};
 
 fn register_qualified_name(qualified_hash: u64, module_hash: u64, name_hash: u64) {
     if crate::names::lookup(qualified_hash).is_some() {
@@ -112,6 +112,21 @@ impl Module {
             Value::BuiltinFn {
                 qualified_hash,
                 func,
+                signature: None,
+            },
+        );
+        assert_unique_item(prev, self.name_hash);
+    }
+
+    pub fn register_fn_sig(&mut self, name_hash: u64, signature: HostSignature, func: BuiltinFn) {
+        let qualified_hash = mix(self.name_hash, name_hash);
+        register_qualified_name(qualified_hash, self.name_hash, name_hash);
+        let prev = self.items.insert(
+            name_hash,
+            Value::BuiltinFn {
+                qualified_hash,
+                func,
+                signature: Some(Arc::new(signature)),
             },
         );
         assert_unique_item(prev, self.name_hash);
@@ -129,6 +144,24 @@ impl Module {
             Value::BuiltinClosure {
                 qualified_hash,
                 func: BuiltinClosureFn::new(func),
+                signature: None,
+            },
+        );
+        assert_unique_item(prev, self.name_hash);
+    }
+
+    pub fn register_closure_sig<F>(&mut self, name_hash: u64, signature: HostSignature, func: F)
+    where
+        F: Fn(&[Value]) -> Result<Value, String> + Send + Sync + 'static,
+    {
+        let qualified_hash = mix(self.name_hash, name_hash);
+        register_qualified_name(qualified_hash, self.name_hash, name_hash);
+        let prev = self.items.insert(
+            name_hash,
+            Value::BuiltinClosure {
+                qualified_hash,
+                func: BuiltinClosureFn::new(func),
+                signature: Some(Arc::new(signature)),
             },
         );
         assert_unique_item(prev, self.name_hash);
@@ -149,6 +182,30 @@ impl Module {
             Value::AsyncBuiltinClosure {
                 qualified_hash,
                 func: AsyncBuiltinClosureFn::new(func),
+                signature: None,
+            },
+        );
+        assert_unique_item(prev, self.name_hash);
+    }
+
+    #[cfg(feature = "async-runtime")]
+    pub fn register_async_fn_sig<F, Fut>(
+        &mut self,
+        name_hash: u64,
+        signature: HostSignature,
+        func: F,
+    ) where
+        F: Fn(Vec<Value>) -> Fut + 'static,
+        Fut: Future<Output = Result<Value, IonError>> + 'static,
+    {
+        let qualified_hash = mix(self.name_hash, name_hash);
+        register_qualified_name(qualified_hash, self.name_hash, name_hash);
+        let prev = self.items.insert(
+            name_hash,
+            Value::AsyncBuiltinClosure {
+                qualified_hash,
+                func: AsyncBuiltinClosureFn::new(func),
+                signature: Some(Arc::new(signature)),
             },
         );
         assert_unique_item(prev, self.name_hash);

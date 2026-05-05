@@ -127,6 +127,7 @@ macro_rules! global_builtin {
             $crate::value::Value::BuiltinFn {
                 qualified_hash: __h,
                 func: $f,
+                signature: None,
             },
         );
     }};
@@ -147,6 +148,7 @@ pub mod async_rt_std;
 pub mod async_runtime;
 #[cfg(feature = "vm")]
 pub mod bytecode;
+pub mod call;
 #[cfg(feature = "vm")]
 pub mod compiler;
 pub mod engine;

@@ -13,9 +13,14 @@
 - `TryBegin` (3 bytes: u16 catch offset) — push exception handler
 - `TryEnd` (3 bytes: u16 jump offset) — pop handler, jump over catch
 - `CallNamed` (3 + named_count * 3 bytes) — u8 total_args, u8 named_count, then [u8 pos, u16 name_idx] per named arg
+- `CallResolved` — pop function, positional-list, and keyword-pair-list; run the shared argument resolver
 - `TailCall` — trampoline-style TCO
+- `TailCallNamed` / `TailCallResolved` — tail-call variants for named and spread call sites
+- `MethodCallResolved` — method call variant for `*expr` spreads; rejects keyword arguments
 - `SpawnCall` / `SpawnCallNamed` — create child Ion tasks for async-runtime
   execution
+- `SpawnCallResolved` — async-runtime spawn variant for calls containing `*` or `**` spreads
+- `KwInsert` / `KwMerge` — build keyword-pair lists for resolved calls
 - `AwaitTask` — park the current continuation until a child task completes
 - `SelectTasks` — race child task handles and resume with the winning branch
 - `Closure` — captures env values
@@ -33,7 +38,12 @@
 
 ## Named Args (VM)
 - `CallNamed` opcode reads metadata, calls `call_function_named`
-- `call_function_named` reorders args to match `IonFn` params by name
+- `call_function_named` preserves keyword metadata and dispatches through the shared resolver
+- Calls containing `*expr` or `**expr` are lowered by the compiler to `CallResolved` or `TailCallResolved`
+- Resolved calls use a positional `Value::List` plus a keyword-pair `Value::List`
+- Keyword pair entries are `Value::Tuple([Value::Str(name), value])`
+- Resolved Ion calls preserve bytecode tail-call behavior
+- Method calls with `*expr` use `MethodCallResolved`; method keyword arguments are rejected before dispatch
 
 ## Compilation
 - `begin_scope()`/`end_scope()` track locals (NOT raw PushScope/PopScope)
