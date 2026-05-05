@@ -17,6 +17,20 @@ const ionGrammarRaw = JSON.parse(
 // grammar's `name` is the display string "Ion" — override to "ion" so
 // markdown ` ```ion ` blocks resolve.
 const ionGrammar = { ...ionGrammarRaw, name: "ion" };
+const stdlibManifest = JSON.parse(
+  readFileSync(
+    resolve(here, "..", "ion-core", "src", "stdlib-docs.json"),
+    "utf8"
+  )
+);
+
+const stdlibReferenceItems = [
+  { label: "Overview", link: "/reference/" },
+  ...stdlibManifest.modules.map((module) => ({
+    label: module.name,
+    link: `/reference/${module.name}/`,
+  })),
+];
 
 const gitDescribe = (() => {
   try {
@@ -76,7 +90,7 @@ export default defineConfig({
         },
         {
           label: "Stdlib reference",
-          autogenerate: { directory: "reference" },
+          items: stdlibReferenceItems,
           collapsed: false,
         },
         { label: "Design", autogenerate: { directory: "design" } },
