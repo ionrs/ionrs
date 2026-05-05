@@ -130,6 +130,7 @@ const rootMarkdown = [
 const docsToGuides = [
   ["concurrency.md", "Concurrency"],
   ["embedding.md", "Embedding"],
+  ["hide-names.md", "Hide names"],
   ["performance.md", "Performance"],
   ["testing.md", "Testing"],
   ["tooling.md", "Tooling"],
