@@ -1,6 +1,9 @@
 use std::fmt;
 
-#[derive(Debug, Clone)]
+use redacted_error::{ErrorCode, Message, PublicError};
+
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone)]
 pub struct IonError {
     pub kind: ErrorKind,
     pub message: String,
@@ -24,12 +27,25 @@ pub enum ErrorKind {
 impl IonError {
     /// Format error with source context showing the offending line.
     pub fn format_with_source(&self, source: &str) -> String {
-        let mut out = Self::format_single(self, source);
-        for extra in &self.additional {
-            out.push('\n');
-            out.push_str(&Self::format_single(extra, source));
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = source;
+            let mut out = format!("error: {}\n", self.public_message());
+            for extra in &self.additional {
+                out.push_str(&format!("error: {}\n", extra.public_message()));
+            }
+            return out;
         }
-        out
+
+        #[cfg(debug_assertions)]
+        {
+            let mut out = Self::format_single(self, source);
+            for extra in &self.additional {
+                out.push('\n');
+                out.push_str(&Self::format_single(extra, source));
+            }
+            out
+        }
     }
 
     fn format_single(err: &IonError, source: &str) -> String {
@@ -133,93 +149,120 @@ impl IonError {
     }
 
     pub fn lex(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self {
-            kind: ErrorKind::LexError,
-            message: message.into(),
-            line,
-            col,
-            additional: Vec::new(),
-        }
+        Self::new(ErrorKind::LexError, message, line, col)
     }
 
     pub fn parse(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self {
-            kind: ErrorKind::ParseError,
-            message: message.into(),
-            line,
-            col,
-            additional: Vec::new(),
-        }
+        Self::new(ErrorKind::ParseError, message, line, col)
     }
 
     pub fn runtime(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self {
-            kind: ErrorKind::RuntimeError,
-            message: message.into(),
-            line,
-            col,
-            additional: Vec::new(),
-        }
+        Self::new(ErrorKind::RuntimeError, message, line, col)
     }
 
     pub fn type_err(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self {
-            kind: ErrorKind::TypeError,
-            message: message.into(),
-            line,
-            col,
-            additional: Vec::new(),
-        }
+        Self::new(ErrorKind::TypeError, message, line, col)
     }
 
     pub fn name(message: impl Into<String>, line: usize, col: usize) -> Self {
-        Self {
-            kind: ErrorKind::NameError,
-            message: message.into(),
-            line,
-            col,
-            additional: Vec::new(),
-        }
+        Self::new(ErrorKind::NameError, message, line, col)
     }
 
     pub fn propagated_err(message: impl Into<String>, line: usize, col: usize) -> Self {
+        Self::new(ErrorKind::PropagatedErr, message, line, col)
+    }
+
+    pub fn propagated_none(line: usize, col: usize) -> Self {
+        Self::new(ErrorKind::PropagatedNone, "", line, col)
+    }
+
+    fn new(kind: ErrorKind, message: impl Into<String>, line: usize, col: usize) -> Self {
+        #[cfg(debug_assertions)]
+        let message = message.into();
+
+        #[cfg(not(debug_assertions))]
+        let message = {
+            let _ = message;
+            Self::public_message_for_kind(&kind).into_string()
+        };
+
         Self {
-            kind: ErrorKind::PropagatedErr,
-            message: message.into(),
+            kind,
+            message,
             line,
             col,
             additional: Vec::new(),
         }
     }
 
-    pub fn propagated_none(line: usize, col: usize) -> Self {
-        Self {
-            kind: ErrorKind::PropagatedNone,
-            message: String::new(),
-            line,
-            col,
-            additional: Vec::new(),
+    pub fn public_message(&self) -> Message {
+        Self::public_message_for_kind(&self.kind)
+    }
+
+    fn public_message_for_kind(kind: &ErrorKind) -> Message {
+        match kind {
+            ErrorKind::LexError => redacted_error::message!("lex error"),
+            ErrorKind::ParseError => redacted_error::message!("parse error"),
+            ErrorKind::RuntimeError => redacted_error::message!("runtime error"),
+            ErrorKind::TypeError => redacted_error::message!("type error"),
+            ErrorKind::NameError => redacted_error::message!("name error"),
+            ErrorKind::PropagatedErr => redacted_error::message!("propagated error"),
+            ErrorKind::PropagatedNone => redacted_error::message!("propagated none"),
         }
     }
 }
 
 impl fmt::Display for IonError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let kind = match &self.kind {
-            ErrorKind::LexError => ion_str!("LexError"),
-            ErrorKind::ParseError => ion_str!("ParseError"),
-            ErrorKind::RuntimeError => ion_str!("RuntimeError"),
-            ErrorKind::TypeError => ion_str!("TypeError"),
-            ErrorKind::NameError => ion_str!("NameError"),
-            ErrorKind::PropagatedErr => ion_str!("PropagatedErr"),
-            ErrorKind::PropagatedNone => ion_str!("PropagatedNone"),
-        };
-        write!(
-            f,
-            "{} at {}:{}: {}",
-            kind, self.line, self.col, self.message
-        )
+        #[cfg(not(debug_assertions))]
+        {
+            return f.write_str(self.public_message().as_str());
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            let kind = match &self.kind {
+                ErrorKind::LexError => ion_str!("LexError"),
+                ErrorKind::ParseError => ion_str!("ParseError"),
+                ErrorKind::RuntimeError => ion_str!("RuntimeError"),
+                ErrorKind::TypeError => ion_str!("TypeError"),
+                ErrorKind::NameError => ion_str!("NameError"),
+                ErrorKind::PropagatedErr => ion_str!("PropagatedErr"),
+                ErrorKind::PropagatedNone => ion_str!("PropagatedNone"),
+            };
+            write!(
+                f,
+                "{} at {}:{}: {}",
+                kind, self.line, self.col, self.message
+            )
+        }
     }
 }
 
 impl std::error::Error for IonError {}
+
+pub fn type_conversion_failed_message() -> String {
+    redacted_error::message_string!("type conversion failed")
+}
+
+impl ErrorCode for IonError {
+    fn code(&self) -> Message {
+        match &self.kind {
+            ErrorKind::LexError => redacted_error::message!("ion.lex_error"),
+            ErrorKind::ParseError => redacted_error::message!("ion.parse_error"),
+            ErrorKind::RuntimeError => redacted_error::message!("ion.runtime_error"),
+            ErrorKind::TypeError => redacted_error::message!("ion.type_error"),
+            ErrorKind::NameError => redacted_error::message!("ion.name_error"),
+            ErrorKind::PropagatedErr => redacted_error::message!("ion.propagated_error"),
+            ErrorKind::PropagatedNone => redacted_error::message!("ion.propagated_none"),
+        }
+    }
+}
+
+impl PublicError for IonError {
+    fn public_message(&self) -> Message {
+        IonError::public_message(self)
+    }
+}
+
+redacted_error::impl_redacted_debug!(IonError);

@@ -95,7 +95,7 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
                             }
                             #[cfg(not(debug_assertions))]
                             {
-                                format!("missing field in host struct #{:016x}", #type_hash)
+                                ion_core::error::type_conversion_failed_message()
                             }
                         })?;
                     ion_core::host_types::IonType::from_ion(v)?
@@ -128,7 +128,7 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
                             }
                             #[cfg(not(debug_assertions))]
                             {
-                                format!("expected host struct #{:016x}, got different host struct", #type_hash)
+                                ion_core::error::type_conversion_failed_message()
                             }
                         });
                     }
@@ -143,7 +143,7 @@ fn derive_struct(name: &syn::Ident, name_str: &str, data: &syn::DataStruct) -> T
                         }
                         #[cfg(not(debug_assertions))]
                         {
-                            format!("expected host struct #{:016x}, got {}", #type_hash, val.type_name())
+                            ion_core::error::type_conversion_failed_message()
                         }
                     })
                 }
@@ -266,7 +266,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                                 }
                                 #[cfg(not(debug_assertions))]
                                 {
-                                    format!("variant in host enum #{:016x} takes no arguments", #type_hash)
+                                    ion_core::error::type_conversion_failed_message()
                                 }
                             });
                         }
@@ -293,7 +293,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                                 }
                                 #[cfg(not(debug_assertions))]
                                 {
-                                    format!("variant in host enum #{:016x} expects {} arguments, got {}", #type_hash, #count, data.len())
+                                    ion_core::error::type_conversion_failed_message()
                                 }
                             });
                         }
@@ -324,7 +324,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                             }
                             #[cfg(not(debug_assertions))]
                             {
-                                format!("expected host enum #{:016x}, got different host enum", #type_hash)
+                                ion_core::error::type_conversion_failed_message()
                             }
                         });
                     }
@@ -337,7 +337,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                             }
                             #[cfg(not(debug_assertions))]
                             {
-                                format!("unknown variant in host enum #{:016x}", #type_hash)
+                                ion_core::error::type_conversion_failed_message()
                             }
                         }),
                     }
@@ -349,7 +349,7 @@ fn derive_enum(name: &syn::Ident, name_str: &str, data: &syn::DataEnum) -> Token
                         }
                         #[cfg(not(debug_assertions))]
                         {
-                            format!("expected host enum #{:016x}, got {}", #type_hash, val.type_name())
+                            ion_core::error::type_conversion_failed_message()
                         }
                     })
                 }

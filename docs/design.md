@@ -35,9 +35,18 @@
   - Only the outer type is checked at runtime; inner/generic types are documentation-only hints
   - `any` accepts all types; unknown type names also pass (forward compatibility)
 
-## Security Feature
-- `obfstr` crate integration: cargo feature `obfuscate`
-- `ion_str!()` macro returns `String`, wraps `obfstr::obfstr!()` when feature enabled
-- `ion_static_str!()` for `&'static str` contexts (pass-through, not obfuscated)
-- When using `ion_str!()` with `str::contains()`, use `&*ion_str!(...)` for `&str` coercion
-- All error messages, format strings in interpreter/vm use `ion_str!()`
+## Error Redaction and Name Hiding
+- Public Rust errors use `redacted-error` through crate-local helpers; release
+  `Display` and `Debug` must not include runtime detail.
+- The workspace does not depend directly on a string-obfuscation crate; do not
+  add one back.
+- `ion_str!()` returns a `String` for static public messages. In release it
+  collapses diagnostics to a generic public error unless the call site uses the
+  explicit public-string facade.
+- `ion_format!()` is for dynamic diagnostic detail. It formats in debug builds
+  and skips evaluating format arguments in release builds.
+- `ion_static_str!()` is for `&'static str` contexts such as type names; release
+  builds collapse these diagnostics to a generic public word.
+- Function, method, module, type, field, and variant names are protected with
+  compile-time hashes and debug-only name registration rather than runtime
+  string obfuscation.

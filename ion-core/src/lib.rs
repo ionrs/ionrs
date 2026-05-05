@@ -1,4 +1,5 @@
 #![allow(clippy::result_large_err)]
+#![cfg_attr(not(debug_assertions), allow(dead_code, unused_variables))]
 //! Ion — an embeddable scripting language for Rust.
 //!
 //! Ion is a small, strongly-typed scripting language inspired by Starlark,
@@ -32,40 +33,22 @@
 //! - **`legacy-threaded-concurrency`** — Legacy sync-eval backend using OS
 //!   threads and crossbeam channels
 //! - **`msgpack`** — `Value::to_msgpack()` / `from_msgpack()` via `rmpv`
-//! - **`obfuscate`** — String obfuscation via `obfstr`
 //! - **`rewrite`** — Source rewriter at [`rewrite::replace_global`]
 
-/// Macro for string obfuscation. Returns a `String`.
-/// When the `obfuscate` feature is enabled, strings are encrypted at compile
-/// time and decrypted at runtime via `obfstr`. Without the feature, they
-/// pass through as regular `String`s.
-#[cfg(all(feature = "obfuscate", debug_assertions))]
-macro_rules! ion_str {
-    ($s:literal) => {{
-        let _tmp: String = obfstr::obfstr!($s).to_string();
-        _tmp
-    }};
-}
-
-#[cfg(all(not(feature = "obfuscate"), debug_assertions))]
+/// Public error/message string facade. In debug builds this preserves the
+/// literal for diagnostics; release-only dynamic detail is stripped by
+/// `ion_format!` and the error constructors in [`error`].
+#[cfg(debug_assertions)]
 macro_rules! ion_str {
     ($s:literal) => {
-        String::from($s)
+        redacted_error::message_string!($s)
     };
 }
 
-#[cfg(all(feature = "obfuscate", not(debug_assertions)))]
-macro_rules! ion_str {
-    ($s:literal) => {{
-        let _tmp: String = obfstr::obfstr!("runtime error").to_string();
-        _tmp
-    }};
-}
-
-#[cfg(all(not(feature = "obfuscate"), not(debug_assertions)))]
+#[cfg(not(debug_assertions))]
 macro_rules! ion_str {
     ($s:literal) => {
-        String::from("runtime error")
+        redacted_error::message_string!("runtime error")
     };
 }
 
@@ -79,28 +62,19 @@ macro_rules! ion_format {
 #[cfg(not(debug_assertions))]
 macro_rules! ion_format {
     ($($arg:tt)*) => {
-        ion_str!("runtime error")
+        redacted_error::message_string!("runtime error")
     };
 }
 
-#[cfg(feature = "obfuscate")]
-macro_rules! ion_obf_string {
-    ($s:literal) => {{
-        let _tmp: String = obfstr::obfstr!($s).to_string();
-        _tmp
-    }};
-}
-
-#[cfg(not(feature = "obfuscate"))]
 macro_rules! ion_obf_string {
     ($s:literal) => {
-        String::from($s)
+        redacted_error::message_string!($s)
     };
 }
 
-/// Same as `ion_str!` but returns `&str` (non-obfuscated in obfuscate mode
-/// for contexts requiring `&'static str` like type_name()).
-/// These strings are short type names that are low-value for obfuscation.
+/// Same as `ion_str!` but returns `&str` for contexts requiring `&'static str`
+/// like type names. Release builds collapse these diagnostics to a generic
+/// public word.
 #[cfg(debug_assertions)]
 macro_rules! ion_static_str {
     ($s:literal) => {

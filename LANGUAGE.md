@@ -1523,4 +1523,3 @@ The VM automatically falls back to tree-walk interpretation for unsupported feat
 | `derive` | Yes | `#[derive(IonType)]` proc macro |
 | `async-runtime` | No | Native Tokio async evaluation (`eval_async`, async host functions, timers, channels) |
 | `legacy-threaded-concurrency` | No | Legacy sync-eval backend using OS threads and crossbeam channels |
-| `obfuscate` | No | String obfuscation via `obfstr` |

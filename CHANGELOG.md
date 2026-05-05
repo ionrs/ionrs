@@ -9,6 +9,29 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-05-05
+
+### Changed
+
+- Reworked Rust error handling to follow the workspace redaction guideline:
+  debug builds keep diagnostic detail, while release `Display` and `Debug`
+  output use stable public messages.
+- Moved the Rust error-handling guide to `docs/error-handling.md` and updated
+  the design docs to describe release redaction and compile-time name hiding.
+- Replaced direct string-obfuscation plumbing with the `redacted-error` facade
+  built without its optional obfuscation backend.
+
+### Fixed
+
+- Prevented release-facing CLI, LSP, stdio, MessagePack, semver, filesystem,
+  async runtime, host conversion, and rewrite error paths from exposing raw
+  paths, OS errors, host names, type names, or other runtime detail.
+
+### Removed
+
+- Removed the legacy string-obfuscation cargo feature and direct
+  string-obfuscation dependency from `ion-core`.
+
 ## [0.9.3] — 2026-05-05
 
 ### Added

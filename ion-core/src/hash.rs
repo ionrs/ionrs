@@ -58,6 +58,7 @@ pub(crate) fn is_to_string_name(s: &str) -> bool {
         )
 }
 
+#[cfg(feature = "async-runtime")]
 pub(crate) fn is_len_name(s: &str) -> bool {
     let bytes = s.as_bytes();
     bytes.len() == 3 && matches!((bytes[0], bytes[1], bytes[2]), (108, 101, 110))

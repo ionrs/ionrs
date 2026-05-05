@@ -51,13 +51,25 @@ impl OutputHandler for StdOutput {
         match stream {
             OutputStream::Stdout => {
                 let mut stdout = std::io::stdout().lock();
-                stdout.write_all(text.as_bytes()).map_err(|e| e.to_string())
+                stdout.write_all(text.as_bytes()).map_err(io_write_error)
             }
             OutputStream::Stderr => {
                 let mut stderr = std::io::stderr().lock();
-                stderr.write_all(text.as_bytes()).map_err(|e| e.to_string())
+                stderr.write_all(text.as_bytes()).map_err(io_write_error)
             }
         }
+    }
+}
+
+fn io_write_error(err: impl std::fmt::Display) -> String {
+    #[cfg(debug_assertions)]
+    {
+        format!("io write failed: {}", redacted_error::display(err))
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = err;
+        redacted_error::message_string!("io write failed")
     }
 }
 
@@ -99,7 +111,7 @@ fn result_int(result: Result<i64, String>) -> Value {
 
 fn check_bytes_len(len: usize, context: &str) -> Result<(), String> {
     if len > MAX_BYTES_LEN {
-        return Err(format!(
+        return Err(ion_format!(
             "{}{}{}{}",
             context,
             ion_str!(" would create "),
@@ -112,7 +124,7 @@ fn check_bytes_len(len: usize, context: &str) -> Result<(), String> {
 
 pub(crate) fn byte_from_int(value: i64, context: &str) -> Result<u8, String> {
     if !(0..=255).contains(&value) {
-        return Err(format!(
+        return Err(ion_format!(
             "{}{}{}",
             context,
             ion_str!(" byte value out of range: "),
@@ -124,7 +136,11 @@ pub(crate) fn byte_from_int(value: i64, context: &str) -> Result<u8, String> {
 
 fn byte_from_value(value: &Value, context: &str) -> Result<u8, String> {
     let Some(value) = value.as_int() else {
-        return Err(format!("{}{}", context, ion_str!(" requires an int byte")));
+        return Err(ion_format!(
+            "{}{}",
+            context,
+            ion_str!(" requires an int byte")
+        ));
     };
     byte_from_int(value, context)
 }
@@ -140,7 +156,7 @@ fn bytes_from_list(items: &[Value], context: &str) -> Result<Vec<u8>, String> {
 fn required_int_arg(args: &[Value], index: usize, context: &str) -> Result<i64, String> {
     args.get(index)
         .and_then(Value::as_int)
-        .ok_or_else(|| format!("{}{}", context, ion_str!(" requires an int argument")))
+        .ok_or_else(|| ion_format!("{}{}", context, ion_str!(" requires an int argument")))
 }
 
 fn optional_int_arg(
@@ -152,7 +168,7 @@ fn optional_int_arg(
     match args.get(index) {
         Some(value) => value
             .as_int()
-            .ok_or_else(|| format!("{}{}", context, ion_str!(" requires an int argument"))),
+            .ok_or_else(|| ion_format!("{}{}", context, ion_str!(" requires an int argument"))),
         None => Ok(default),
     }
 }
@@ -164,13 +180,13 @@ fn required_bytes_arg<'a>(
 ) -> Result<&'a [u8], String> {
     match args.get(index) {
         Some(Value::Bytes(bytes)) => Ok(bytes),
-        Some(other) => Err(format!(
+        Some(other) => Err(ion_format!(
             "{}{}{}",
             context,
             ion_str!(" requires bytes, got "),
             other.type_name()
         )),
-        None => Err(format!("{}{}", context, ion_str!(" requires bytes"))),
+        None => Err(ion_format!("{}{}", context, ion_str!(" requires bytes"))),
     }
 }
 
@@ -178,7 +194,7 @@ fn byte_pattern(value: &Value, context: &str) -> Result<Vec<u8>, String> {
     match value {
         Value::Int(value) => byte_from_int(*value, context).map(|byte| vec![byte]),
         Value::Bytes(bytes) => Ok(bytes.clone()),
-        other => Err(format!(
+        other => Err(ion_format!(
             "{}{}{}",
             context,
             ion_str!(" requires int or bytes, got "),
@@ -196,19 +212,23 @@ fn bytes_constructor(args: &[Value], context: &str) -> Result<Value, String> {
             Value::Int(value) if *value >= 0 => {
                 let len = *value as usize;
                 if len > MAX_BYTES_LEN {
-                    return Err(format!("{}{}", ion_str!("invalid byte count: "), value));
+                    return Err(ion_format!("{}{}", ion_str!("invalid byte count: "), value));
                 }
                 check_bytes_len(len, context)?;
                 Ok(Value::Bytes(vec![0u8; len]))
             }
-            Value::Int(value) => Err(format!("{}{}", ion_str!("invalid byte count: "), value)),
-            other => Err(format!(
+            Value::Int(value) => Err(ion_format!("{}{}", ion_str!("invalid byte count: "), value)),
+            other => Err(ion_format!(
                 "{}{}",
                 ion_str!("bytes() not supported for "),
                 other.type_name()
             )),
         },
-        _ => Err(format!("{}{}", context, ion_str!(" takes 0 or 1 argument"))),
+        _ => Err(ion_format!(
+            "{}{}",
+            context,
+            ion_str!(" takes 0 or 1 argument")
+        )),
     }
 }
 
@@ -463,7 +483,7 @@ fn normalize_slice_bound(index: i64, len: usize) -> usize {
 fn read_offset(args: &[Value], context: &str) -> Result<usize, String> {
     let offset = required_int_arg(args, 0, context)?;
     if offset < 0 {
-        return Err(format!(
+        return Err(ion_format!(
             "{}{}",
             context,
             ion_str!(" offset must be non-negative")
@@ -481,9 +501,9 @@ fn read_bytes_window<'a>(
     let offset = read_offset(args, context)?;
     let end = offset
         .checked_add(width)
-        .ok_or_else(|| format!("{}{}", context, ion_str!(" offset overflow")))?;
+        .ok_or_else(|| ion_format!("{}{}", context, ion_str!(" offset overflow")))?;
     if end > bytes.len() {
-        return Err(format!(
+        return Err(ion_format!(
             "{}{}",
             context,
             ion_str!(" read past end of bytes")
@@ -515,7 +535,7 @@ pub(crate) fn read_unsigned(
                 window[7],
             ]);
             if value > i64::MAX as u64 {
-                Err(format!(
+                Err(ion_format!(
                     "{}{}",
                     context,
                     ion_str!(" u64 value does not fit in int")
@@ -530,7 +550,7 @@ pub(crate) fn read_unsigned(
                 window[7],
             ]);
             if value > i64::MAX as u64 {
-                Err(format!(
+                Err(ion_format!(
                     "{}{}",
                     context,
                     ion_str!(" u64 value does not fit in int")
@@ -595,12 +615,12 @@ fn pack_unsigned(
     context: &str,
 ) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("{}{}", context, ion_str!(" takes 1 argument")));
+        return Err(ion_format!("{}{}", context, ion_str!(" takes 1 argument")));
     }
     let value = required_int_arg(args, 0, context)?;
     let (min, max) = unsigned_bounds(width);
     if value < min || value > max {
-        return Err(format!(
+        return Err(ion_format!(
             "{}{}{}{}{}",
             context,
             ion_str!(" requires value in "),
@@ -628,12 +648,12 @@ fn pack_signed(
     context: &str,
 ) -> Result<Value, String> {
     if args.len() != 1 {
-        return Err(format!("{}{}", context, ion_str!(" takes 1 argument")));
+        return Err(ion_format!("{}{}", context, ion_str!(" takes 1 argument")));
     }
     let value = required_int_arg(args, 0, context)?;
     let (min, max) = signed_bounds(width);
     if value < min || value > max {
-        return Err(format!(
+        return Err(ion_format!(
             "{}{}{}{}{}",
             context,
             ion_str!(" requires value in "),
@@ -1092,7 +1112,7 @@ fn rand_choice(args: &[Value]) -> Result<Value, String> {
                 )))))
             }
         }
-        other => Err(format!(
+        other => Err(ion_format!(
             "{}{}",
             ion_str!("rand::choice not supported for "),
             other.type_name()
@@ -1124,7 +1144,7 @@ fn rand_shuffle(args: &[Value]) -> Result<Value, String> {
             shuffle_slice(&mut rng, &mut shuffled)?;
             Ok(Value::Bytes(shuffled))
         }
-        other => Err(format!(
+        other => Err(ion_format!(
             "{}{}",
             ion_str!("rand::shuffle not supported for "),
             other.type_name()
@@ -1172,7 +1192,7 @@ fn rand_sample(args: &[Value]) -> Result<Value, String> {
             sampled.truncate(n);
             Ok(Value::Bytes(sampled))
         }
-        other => Err(format!(
+        other => Err(ion_format!(
             "{}{}",
             ion_str!("rand::sample not supported for "),
             other.type_name()
@@ -1201,7 +1221,7 @@ pub fn math_module() -> Module {
         match &args[0] {
             Value::Int(n) => Ok(Value::Int(n.abs())),
             Value::Float(n) => Ok(Value::Float(n.abs())),
-            _ => Err(format!(
+            _ => Err(ion_format!(
                 "{}{}",
                 ion_str!("not supported for "),
                 args[0].type_name()
@@ -1254,7 +1274,7 @@ pub fn math_module() -> Module {
     m.register_fn(crate::h!("floor"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Float(n.floor())),
         Value::Int(n) => Ok(Value::Int(*n)),
-        _ => Err(format!(
+        _ => Err(ion_format!(
             "{}{}",
             ion_str!("not supported for "),
             args[0].type_name()
@@ -1264,7 +1284,7 @@ pub fn math_module() -> Module {
     m.register_fn(crate::h!("ceil"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Float(n.ceil())),
         Value::Int(n) => Ok(Value::Int(*n)),
-        _ => Err(format!(
+        _ => Err(ion_format!(
             "{}{}",
             ion_str!("not supported for "),
             args[0].type_name()
@@ -1274,7 +1294,7 @@ pub fn math_module() -> Module {
     m.register_fn(crate::h!("round"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Float(n.round())),
         Value::Int(n) => Ok(Value::Int(*n)),
-        _ => Err(format!(
+        _ => Err(ion_format!(
             "{}{}",
             ion_str!("not supported for "),
             args[0].type_name()
@@ -1383,7 +1403,7 @@ pub fn math_module() -> Module {
     m.register_fn(crate::h!("is_nan"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Bool(n.is_nan())),
         Value::Int(_) => Ok(Value::Bool(false)),
-        _ => Err(format!(
+        _ => Err(ion_format!(
             "{}{}",
             ion_str!("not supported for "),
             args[0].type_name()
@@ -1393,7 +1413,7 @@ pub fn math_module() -> Module {
     m.register_fn(crate::h!("is_inf"), |args: &[Value]| match &args[0] {
         Value::Float(n) => Ok(Value::Bool(n.is_infinite())),
         Value::Int(_) => Ok(Value::Bool(false)),
-        _ => Err(format!(
+        _ => Err(ion_format!(
             "{}{}",
             ion_str!("not supported for "),
             args[0].type_name()
@@ -1425,7 +1445,7 @@ pub fn json_module() -> Module {
             .as_str()
             .ok_or_else(|| ion_str!("requires a string"))?;
         let json: serde_json::Value =
-            serde_json::from_str(s).map_err(|e| format!("{}{}", ion_str!("error: "), e))?;
+            serde_json::from_str(s).map_err(|e| ion_format!("{}{}", ion_str!("error: "), e))?;
         Ok(Value::from_json(json))
     });
 
@@ -1436,7 +1456,7 @@ pub fn json_module() -> Module {
         let json = args[0].to_json();
         serde_json::to_string_pretty(&json)
             .map(Value::Str)
-            .map_err(|e| format!("{}{}", ion_str!("error: "), e))
+            .map_err(|e| ion_format!("{}{}", ion_str!("error: "), e))
     });
 
     #[cfg(feature = "msgpack")]
@@ -1509,7 +1529,7 @@ pub fn bytes_module() -> Module {
         }
         match &args[0] {
             Value::List(items) => bytes_from_list(items, "bytes::from_list").map(Value::Bytes),
-            other => Err(format!(
+            other => Err(ion_format!(
                 "{}{}",
                 ion_str!("requires list, got "),
                 other.type_name()
@@ -1554,7 +1574,7 @@ pub fn bytes_module() -> Module {
         let parts = match &args[0] {
             Value::List(parts) => parts,
             other => {
-                return Err(format!(
+                return Err(ion_format!(
                     "{}{}",
                     ion_str!("requires list, got "),
                     other.type_name()
@@ -1565,7 +1585,7 @@ pub fn bytes_module() -> Module {
             Value::Bytes(bytes) => len
                 .checked_add(bytes.len())
                 .ok_or_else(|| ion_str!("bytes::concat length overflow")),
-            other => Err(format!(
+            other => Err(ion_format!(
                 "{}{}",
                 ion_str!("requires list of bytes, got "),
                 other.type_name()
@@ -1588,7 +1608,7 @@ pub fn bytes_module() -> Module {
         let parts = match &args[0] {
             Value::List(parts) => parts,
             other => {
-                return Err(format!(
+                return Err(ion_format!(
                     "{}{}",
                     ion_str!("requires list, got "),
                     other.type_name()
@@ -1604,7 +1624,7 @@ pub fn bytes_module() -> Module {
             Value::Bytes(bytes) => len
                 .checked_add(bytes.len())
                 .ok_or_else(|| ion_str!("bytes::join length overflow")),
-            other => Err(format!(
+            other => Err(ion_format!(
                 "{}{}",
                 ion_str!("requires list of bytes, got "),
                 other.type_name()
@@ -1772,7 +1792,7 @@ pub fn log_module_with_handler(
             .as_str()
             .ok_or_else(|| ion_str!("requires a string"))?;
         let parsed = LogLevel::from_str_ci(name)
-            .ok_or_else(|| format!("{}{}", ion_str!("unknown level: "), name))?;
+            .ok_or_else(|| ion_format!("{}{}", ion_str!("unknown level: "), name))?;
         level_for_set.set(parsed);
         Ok(Value::Unit)
     });
@@ -1794,7 +1814,7 @@ pub fn log_module_with_handler(
             .as_str()
             .ok_or_else(|| ion_str!("requires a string"))?;
         let parsed = LogLevel::from_str_ci(name)
-            .ok_or_else(|| format!("{}{}", ion_str!("unknown level: "), name))?;
+            .ok_or_else(|| ion_format!("{}{}", ion_str!("unknown level: "), name))?;
         Ok(Value::Bool(handler_for_enabled.enabled(parsed)))
     });
 
@@ -1825,7 +1845,7 @@ fn extract_message(v: &Value) -> Result<String, String> {
 fn extract_fields(v: &Value) -> Result<Vec<(String, Value)>, String> {
     match v {
         Value::Dict(map) => Ok(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
-        other => Err(format!(
+        other => Err(ion_format!(
             "{}{}",
             ion_str!("invalid fields: "),
             other.type_name()
@@ -1926,7 +1946,7 @@ pub fn io_module_with_output(output: Arc<dyn OutputHandler>) -> Module {
 fn required_string_arg<'a>(args: &'a [Value], index: usize) -> Result<&'a str, String> {
     match args.get(index) {
         Some(Value::Str(value)) => Ok(value),
-        Some(other) => Err(format!(
+        Some(other) => Err(ion_format!(
             "{}{}",
             ion_str!("requires string argument, got "),
             other.type_name()
@@ -1942,7 +1962,7 @@ fn required_non_negative_usize_arg(
 ) -> Result<usize, String> {
     let value = required_int_arg(args, index, context)?;
     if value < 0 {
-        return Err(format!(
+        return Err(ion_format!(
             "{}{}",
             context,
             ion_str!(" requires a non-negative int argument")
@@ -2236,7 +2256,7 @@ fn semver_version_to_dict(v: &Version) -> Value {
 #[cfg(feature = "semver")]
 fn semver_parse_arg(v: &Value) -> Result<Version, String> {
     match v {
-        Value::Str(s) => Version::parse(s).map_err(|e| e.to_string()),
+        Value::Str(s) => Version::parse(s).map_err(|e| ion_format!("invalid version: {}", e)),
         Value::Dict(map) => {
             let major = map
                 .get("major")
@@ -2282,7 +2302,7 @@ fn semver_parse_arg(v: &Value) -> Result<Version, String> {
                 build,
             })
         }
-        _ => Err(format!(
+        _ => Err(ion_format!(
             "{}{}",
             ion_str!("expected string or dict, got "),
             v.type_name()
@@ -2305,7 +2325,7 @@ pub fn semver_module() -> Module {
         let s = args[0]
             .as_str()
             .ok_or_else(|| ion_str!("requires a string"))?;
-        let v = Version::parse(s).map_err(|e| format!("{}", e))?;
+        let v = Version::parse(s).map_err(|e| ion_format!("{}", e))?;
         Ok(semver_version_to_dict(&v))
     });
 
@@ -2393,7 +2413,8 @@ pub fn semver_module() -> Module {
         let req_str = args[1]
             .as_str()
             .ok_or_else(|| ion_str!("requirement must be a string"))?;
-        let req = VersionReq::parse(req_str).map_err(|e| format!("invalid requirement: {}", e))?;
+        let req =
+            VersionReq::parse(req_str).map_err(|e| ion_format!("invalid requirement: {}", e))?;
         Ok(Value::Bool(req.matches(&v)))
     });
 
@@ -2468,7 +2489,7 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
         match std::env::var(name) {
             Ok(v) => Ok(Value::Str(v)),
             Err(_) if args.len() == 2 => Ok(args[1].clone()),
-            Err(e) => Err(format!("'{}': {}", name, e)),
+            Err(e) => Err(ion_format!("'{}': {}", name, e)),
         }
     });
 
@@ -2499,7 +2520,7 @@ pub fn os_module_with_args(args: Arc<Vec<String>>) -> Module {
         }
         std::env::current_dir()
             .map(|p| Value::Str(p.to_string_lossy().into_owned()))
-            .map_err(|e| format!("{}", e))
+            .map_err(|e| ion_format!("{}", e))
     });
 
     m.register_fn(crate::h!("pid"), |args: &[Value]| {
@@ -2807,7 +2828,11 @@ fn fs_metadata_to_dict(md: &std::fs::Metadata) -> Value {
 fn fs_nonnegative_int_arg(args: &[Value], index: usize, context: &str) -> Result<u64, String> {
     let value = required_int_arg(args, index, context)?;
     if value < 0 {
-        return Err(format!("{}{}", context, ion_str!(" must be non-negative")));
+        return Err(ion_format!(
+            "{}{}",
+            context,
+            ion_str!(" must be non-negative")
+        ));
     }
     Ok(value as u64)
 }
@@ -2952,7 +2977,7 @@ pub fn fs_module() -> Module {
             Value::Str(s) => std::fs::write(path, s.as_bytes()),
             Value::Bytes(b) => std::fs::write(path, b),
             other => {
-                return Err(format!(
+                return Err(ion_format!(
                     "{}{}",
                     ion_str!("invalid contents: "),
                     other.type_name()
@@ -2979,7 +3004,7 @@ pub fn fs_module() -> Module {
             Value::Str(s) => s.as_bytes(),
             Value::Bytes(b) => b,
             other => {
-                return Err(format!(
+                return Err(ion_format!(
                     "{}{}",
                     ion_str!("invalid contents: "),
                     other.type_name()

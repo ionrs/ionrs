@@ -3294,7 +3294,7 @@ impl Vm {
                         .unwrap_or_else(|| ion_str!("called expect on Err"));
                     #[cfg(debug_assertions)]
                     {
-                        Err(IonError::runtime(format!("{}: {}", msg, e), line, col))
+                        Err(IonError::runtime(ion_format!("{}: {}", msg, e), line, col))
                     }
                     #[cfg(not(debug_assertions))]
                     {

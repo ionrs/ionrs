@@ -108,7 +108,7 @@ pub fn dump_sidecar_json() -> String {
 /// values, malformed hex keys) are skipped silently.
 pub fn load_sidecar_json(json: &str) -> Result<usize, String> {
     let value: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| format!("sidecar parse error: {}", e))?;
+        serde_json::from_str(json).map_err(|e| ion_format!("sidecar parse error: {}", e))?;
     let obj = match value {
         serde_json::Value::Object(o) => o,
         _ => return Err(String::from("sidecar root must be a JSON object")),

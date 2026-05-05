@@ -22,37 +22,65 @@
 use crate::error::IonError;
 use crate::lexer::Lexer;
 use crate::token::{SpannedToken, Token};
+use redacted_error::{message as m, ErrorCode, Message, PublicError};
 
 /// Errors produced by the rewriter.
-#[derive(Debug, Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone, thiserror::Error)]
 pub enum RewriteError {
     /// The source failed to tokenize.
+    #[cfg_attr(debug_assertions, error("{prefix} {0}", prefix = m!("lex error:")))]
+    #[cfg_attr(not(debug_assertions), error("{}", m!("rewrite failed")))]
     Lex(IonError),
     /// No top-level `let NAME = ...;` binding exists for the given name.
+    #[cfg_attr(
+        debug_assertions,
+        error("{prefix} {0}", prefix = m!("no top-level let binding found for:"))
+    )]
+    #[cfg_attr(not(debug_assertions), error("{}", m!("binding not found")))]
     NotFound(String),
     /// The let binding was found but its structure could not be parsed
     /// (e.g. truncated source, missing `=` or terminating `;`).
+    #[cfg_attr(
+        debug_assertions,
+        error("{prefix} {0}", prefix = m!("malformed let binding:"))
+    )]
+    #[cfg_attr(not(debug_assertions), error("{}", m!("invalid rewrite input")))]
     Malformed(String),
     /// The rewritten source no longer parses as valid Ion.
+    #[cfg_attr(
+        debug_assertions,
+        error("{prefix} {0}", prefix = m!("rewritten source is invalid:"))
+    )]
+    #[cfg_attr(not(debug_assertions), error("{}", m!("invalid replacement")))]
     InvalidReplacement(IonError),
 }
 
-impl std::fmt::Display for RewriteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ErrorCode for RewriteError {
+    fn code(&self) -> Message {
         match self {
-            RewriteError::Lex(e) => write!(f, "lex error: {}", e.message),
-            RewriteError::NotFound(name) => {
-                write!(f, "no top-level `let {}` binding found", name)
-            }
-            RewriteError::Malformed(msg) => write!(f, "malformed let binding: {}", msg),
-            RewriteError::InvalidReplacement(e) => {
-                write!(f, "rewritten source is invalid: {}", e.message)
+            RewriteError::Lex(_) => redacted_error::message!("rewrite.lex_error"),
+            RewriteError::NotFound(_) => redacted_error::message!("rewrite.not_found"),
+            RewriteError::Malformed(_) => redacted_error::message!("rewrite.malformed"),
+            RewriteError::InvalidReplacement(_) => {
+                redacted_error::message!("rewrite.invalid_replacement")
             }
         }
     }
 }
 
-impl std::error::Error for RewriteError {}
+impl PublicError for RewriteError {
+    fn public_message(&self) -> Message {
+        match self {
+            RewriteError::Lex(_) => redacted_error::message!("rewrite failed"),
+            RewriteError::NotFound(_) => redacted_error::message!("binding not found"),
+            RewriteError::Malformed(_) => redacted_error::message!("invalid rewrite input"),
+            RewriteError::InvalidReplacement(_) => redacted_error::message!("invalid replacement"),
+        }
+    }
+}
+
+redacted_error::impl_redacted_debug!(RewriteError);
 
 /// Replace the value of the top-level `let NAME = ...;` binding with
 /// `new_value_src` (an Ion source fragment).

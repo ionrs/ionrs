@@ -470,6 +470,7 @@ impl Value {
     }
 }
 
+#[cfg(not(debug_assertions))]
 fn fmt_opaque_value(f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(ion_obf_string!("<value>").as_str())
 }
@@ -953,7 +954,7 @@ impl Value {
         let mp = self.to_msgpack_value();
         let mut buf = Vec::new();
         rmpv::encode::write_value(&mut buf, &mp)
-            .map_err(|e| format!("{}{}", ion_str!("msgpack_encode error: "), e))?;
+            .map_err(|e| ion_format!("{}{}", ion_str!("msgpack_encode error: "), e))?;
         Ok(buf)
     }
 
@@ -962,7 +963,7 @@ impl Value {
     pub fn from_msgpack(data: &[u8]) -> Result<Value, String> {
         let mut cursor = std::io::Cursor::new(data);
         let mp = rmpv::decode::read_value(&mut cursor)
-            .map_err(|e| format!("{}{}", ion_str!("msgpack_decode error: "), e))?;
+            .map_err(|e| ion_format!("{}{}", ion_str!("msgpack_decode error: "), e))?;
         Ok(Self::from_msgpack_value(mp))
     }
 

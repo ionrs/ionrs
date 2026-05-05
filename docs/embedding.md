@@ -274,9 +274,9 @@ appropriate for purely synchronous hosts.
 ## Cargo.toml for Embedding
 ```toml
 [dependencies]
-ion-core = "0.9.3"  # includes derive + optimized vm by default
+ion-core = "0.9.4"  # includes derive + optimized vm by default
 # optional:
-# ion-core = { version = "0.9.3", features = ["async-runtime", "msgpack", "rewrite"] }
+# ion-core = { version = "0.9.4", features = ["async-runtime", "msgpack", "rewrite"] }
 ```
 
 ## Examples

@@ -201,7 +201,7 @@ impl ChannelSender for StdChannelSender {
         match guard.as_ref() {
             Some(sender) => sender
                 .send(val)
-                .map_err(|e| IonError::runtime(format!("channel send failed: {}", e), 0, 0)),
+                .map_err(|e| IonError::runtime(ion_format!("channel send failed: {}", e), 0, 0)),
             None => Err(IonError::runtime("channel is closed".to_string(), 0, 0)),
         }
     }

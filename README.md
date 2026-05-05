@@ -264,7 +264,6 @@ editors/      Editor syntax highlighting
 | `semver` | Yes | `semver::` stdlib module |
 | `os` | Yes | `os::` stdlib module for process and environment helpers |
 | `fs` | Yes | `fs::` stdlib module for filesystem I/O and random file padding |
-| `obfuscate` | No | String obfuscation via obfstr |
 | `msgpack` | No | `Value::to_msgpack()` via rmpv |
 | `rewrite` | No | Source rewriter — `rewrite::replace_global(src, name, new_value)` |
 | `embedded-stdlib-docs` | No | Embed the stdlib docs manifest for editor/tooling surfaces |

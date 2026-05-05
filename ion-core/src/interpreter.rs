@@ -3072,7 +3072,7 @@ impl Interpreter {
                     {
                         let msg = args[0].as_str().unwrap_or(&default_msg);
                         Err(
-                            IonError::runtime(format!("{}: {}", msg, e), span.line, span.col)
+                            IonError::runtime(ion_format!("{}: {}", msg, e), span.line, span.col)
                                 .into(),
                         )
                     }
@@ -4084,7 +4084,7 @@ pub fn register_builtins_with_handlers(
             Value::Str(s) => Ok(Value::Int(s.len() as i64)),
             Value::Dict(map) => Ok(Value::Int(map.len() as i64)),
             Value::Bytes(b) => Ok(Value::Int(b.len() as i64)),
-            _ => Err(format!(
+            _ => Err(ion_format!(
                 "{}{}",
                 ion_str!("len() not supported for "),
                 args[0].type_name()
@@ -4165,7 +4165,7 @@ pub fn register_builtins_with_handlers(
                 )
             }),
             Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
-            _ => Err(format!(
+            _ => Err(ion_format!(
                 "{}{}",
                 ion_str!("cannot convert "),
                 args[0].type_name()
@@ -4187,7 +4187,7 @@ pub fn register_builtins_with_handlers(
                     ion_str!("' to float")
                 )
             }),
-            _ => Err(format!(
+            _ => Err(ion_format!(
                 "{}{}",
                 ion_str!("cannot convert "),
                 args[0].type_name()
@@ -4228,7 +4228,7 @@ pub fn register_builtins_with_handlers(
                     })
                     .collect(),
             )),
-            _ => Err(format!(
+            _ => Err(ion_format!(
                 "{}{}",
                 ion_str!("enumerate() not supported for "),
                 args[0].type_name()
@@ -4246,7 +4246,7 @@ pub fn register_builtins_with_handlers(
         let condition = match &args[0] {
             Value::Bool(b) => *b,
             _ => {
-                return Err(format!(
+                return Err(ion_format!(
                     "{}{}",
                     ion_str!("assert condition must be bool, got "),
                     args[0].type_name()

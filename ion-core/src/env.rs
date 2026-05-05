@@ -166,7 +166,7 @@ impl Env {
             for binding in frame.iter_mut().rev() {
                 if binding.sym == sym {
                     if !binding.mutable {
-                        return Err(format!(
+                        return Err(ion_format!(
                             "{}'{}'",
                             ion_str!("cannot assign to immutable variable "),
                             self.pool.resolve(sym),
@@ -177,7 +177,7 @@ impl Env {
                 }
             }
         }
-        Err(format!(
+        Err(ion_format!(
             "{}{}",
             ion_str!("undefined variable: "),
             self.pool.resolve(sym)

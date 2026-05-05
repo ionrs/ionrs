@@ -371,14 +371,11 @@ impl Engine {
 
     /// Extract a typed Rust value from the script scope.
     pub fn get_typed<T: IonType>(&self, name: &str) -> Result<T, String> {
-        let val = self.interpreter.env.get(name).ok_or_else(|| {
-            format!(
-                "{}{}{}",
-                ion_str!("variable '"),
-                name,
-                ion_str!("' not found")
-            )
-        })?;
+        let val = self
+            .interpreter
+            .env
+            .get(name)
+            .ok_or_else(|| ion_format!("variable '{}' not found", name))?;
         T::from_ion(val)
     }
 

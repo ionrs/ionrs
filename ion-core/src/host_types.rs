@@ -232,7 +232,7 @@ impl IonType for i64 {
     }
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_int()
-            .ok_or_else(|| format!("expected int, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected int, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -246,7 +246,7 @@ impl IonType for i32 {
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_int()
             .map(|n| n as i32)
-            .ok_or_else(|| format!("expected int, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected int, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -260,7 +260,7 @@ impl IonType for u16 {
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_int()
             .map(|n| n as u16)
-            .ok_or_else(|| format!("expected int, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected int, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -274,7 +274,7 @@ impl IonType for u32 {
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_int()
             .map(|n| n as u32)
-            .ok_or_else(|| format!("expected int, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected int, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -288,7 +288,7 @@ impl IonType for u64 {
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_int()
             .map(|n| n as u64)
-            .ok_or_else(|| format!("expected int, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected int, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -302,7 +302,7 @@ impl IonType for usize {
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_int()
             .map(|n| n as usize)
-            .ok_or_else(|| format!("expected int, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected int, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -315,7 +315,7 @@ impl IonType for f64 {
     }
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_float()
-            .ok_or_else(|| format!("expected float, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected float, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -329,7 +329,7 @@ impl IonType for f32 {
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_float()
             .map(|n| n as f32)
-            .ok_or_else(|| format!("expected float, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected float, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -342,7 +342,7 @@ impl IonType for bool {
     }
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_bool()
-            .ok_or_else(|| format!("expected bool, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected bool, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -356,7 +356,7 @@ impl IonType for String {
     fn from_ion(val: &Value) -> Result<Self, String> {
         val.as_str()
             .map(|s| s.to_string())
-            .ok_or_else(|| format!("expected string, got {}", val.type_name()))
+            .ok_or_else(|| ion_format!("expected string, got {}", val.type_name()))
     }
     fn ion_type_def() -> IonTypeDef {
         unreachable!("primitives are not registered")
@@ -370,7 +370,7 @@ impl<T: IonType> IonType for Vec<T> {
     fn from_ion(val: &Value) -> Result<Self, String> {
         match val {
             Value::List(items) => items.iter().map(T::from_ion).collect(),
-            _ => Err(format!("expected list, got {}", val.type_name())),
+            _ => Err(ion_format!("expected list, got {}", val.type_name())),
         }
     }
     fn ion_type_def() -> IonTypeDef {
@@ -389,7 +389,7 @@ impl<T: IonType> IonType for Option<T> {
         match val {
             Value::Option(Some(v)) => Ok(Some(T::from_ion(v)?)),
             Value::Option(None) => Ok(None),
-            _ => Err(format!("expected Option, got {}", val.type_name())),
+            _ => Err(ion_format!("expected Option, got {}", val.type_name())),
         }
     }
     fn ion_type_def() -> IonTypeDef {

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use ion_core::ast::{Param, StmtKind, UseImports};
@@ -605,26 +606,31 @@ struct ManifestMember {
 fn load_external_doc_paths(catalog: &mut DocCatalog, paths: Vec<PathBuf>) {
     for path in paths {
         if let Err(err) = load_doc_manifest(catalog, &path) {
+            #[cfg(debug_assertions)]
             eprintln!(
                 "ion-lsp: warning: failed to load doc manifest {}: {}",
                 path.display(),
                 err
             );
+            #[cfg(not(debug_assertions))]
+            {
+                let _ = path;
+                eprintln!("ion-lsp: warning: {}", err);
+            }
         }
     }
 }
 
 fn load_doc_manifest(catalog: &mut DocCatalog, path: &Path) -> Result<(), String> {
-    let text = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
+    let text = std::fs::read_to_string(path).map_err(doc_manifest_read_error)?;
     parse_doc_manifest(catalog, &text)
 }
 
 fn parse_doc_manifest(catalog: &mut DocCatalog, text: &str) -> Result<(), String> {
-    let manifest: IonDocManifest = serde_json::from_str(text).map_err(|err| err.to_string())?;
+    let manifest: IonDocManifest = serde_json::from_str(text).map_err(doc_manifest_parse_error)?;
     if manifest.ion_doc_version != 1 && manifest.ion_doc_version != 2 {
-        return Err(format!(
-            "unsupported ionDocVersion {}; expected 1 or 2",
-            manifest.ion_doc_version
+        return Err(unsupported_doc_manifest_version_error(
+            manifest.ion_doc_version,
         ));
     }
     // profile/homepage/repository/license/categories are surfaced by the
@@ -641,6 +647,45 @@ fn parse_doc_manifest(catalog: &mut DocCatalog, text: &str) -> Result<(), String
         merge_manifest_module(catalog, None, module);
     }
     Ok(())
+}
+
+fn doc_manifest_read_error(err: impl fmt::Display) -> String {
+    #[cfg(debug_assertions)]
+    {
+        format!("doc manifest read failed: {}", redacted_error::display(err))
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = err;
+        redacted_error::message_string!("doc manifest read failed")
+    }
+}
+
+fn doc_manifest_parse_error(err: impl fmt::Display) -> String {
+    #[cfg(debug_assertions)]
+    {
+        format!(
+            "doc manifest parse failed: {}",
+            redacted_error::display(err)
+        )
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = err;
+        redacted_error::message_string!("doc manifest parse failed")
+    }
+}
+
+fn unsupported_doc_manifest_version_error(version: u32) -> String {
+    #[cfg(debug_assertions)]
+    {
+        format!("unsupported ionDocVersion {version}; expected 1 or 2")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = version;
+        redacted_error::message_string!("unsupported doc manifest version")
+    }
 }
 
 fn merge_manifest_module(
@@ -1345,20 +1390,22 @@ fn handle_rename(
     new_name: &str,
 ) -> Result<WorkspaceEdit, String> {
     if !is_valid_identifier(new_name) {
-        return Err(format!("'{new_name}' is not a valid Ion identifier"));
+        return Err(invalid_new_identifier_error(new_name));
     }
     let Some(old_name) = word_at_position(source, pos.line, pos.character) else {
-        return Err("no identifier under cursor".to_string());
+        return Err(redacted_error::message_string!(
+            "no identifier under cursor"
+        ));
     };
     if !is_valid_identifier(&old_name) {
-        return Err(format!("'{old_name}' is not a renameable identifier"));
+        return Err(invalid_existing_identifier_error(&old_name));
     }
     if new_name == old_name {
         return Ok(WorkspaceEdit::default());
     }
     let occurrences = find_identifier_occurrences(source, &old_name);
     if occurrences.is_empty() {
-        return Err(format!("no occurrences of '{old_name}' found"));
+        return Err(rename_target_not_found_error(&old_name));
     }
     let edits: Vec<TextEdit> = occurrences
         .into_iter()
@@ -1373,6 +1420,42 @@ fn handle_rename(
         changes: Some(changes),
         ..Default::default()
     })
+}
+
+fn invalid_new_identifier_error(name: &str) -> String {
+    #[cfg(debug_assertions)]
+    {
+        format!("'{name}' is not a valid Ion identifier")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = name;
+        redacted_error::message_string!("invalid Ion identifier")
+    }
+}
+
+fn invalid_existing_identifier_error(name: &str) -> String {
+    #[cfg(debug_assertions)]
+    {
+        format!("'{name}' is not a renameable identifier")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = name;
+        redacted_error::message_string!("invalid Ion identifier")
+    }
+}
+
+fn rename_target_not_found_error(name: &str) -> String {
+    #[cfg(debug_assertions)]
+    {
+        format!("no occurrences of '{name}' found")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = name;
+        redacted_error::message_string!("rename target not found")
+    }
 }
 
 // ---- Notification handling ----

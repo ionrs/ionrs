@@ -3,6 +3,7 @@ use ion_core::lexer::Lexer;
 use ion_core::parser::Parser;
 use ion_core::stdlib::StdOutput;
 use std::env;
+use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 
@@ -65,7 +66,7 @@ fn check_source(target: Option<&str>) -> i32 {
         Some("-") => {
             let mut buf = String::new();
             if let Err(e) = io::stdin().read_to_string(&mut buf) {
-                eprintln!("ion --check: failed reading stdin: {e}");
+                print_read_stdin_error(e);
                 return 1;
             }
             (buf, "<stdin>".to_string())
@@ -73,7 +74,7 @@ fn check_source(target: Option<&str>) -> i32 {
         Some(path) => match fs::read_to_string(path) {
             Ok(s) => (s, path.to_string()),
             Err(e) => {
-                eprintln!("ion --check: cannot read {path}: {e}");
+                print_check_file_read_error(path, e);
                 return 1;
             }
         },
@@ -104,7 +105,7 @@ fn run_file(path: &str, use_vm: bool, script_args: Vec<String>) {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error reading {}: {}", path, e);
+            print_script_read_error(path, e);
             std::process::exit(1);
         }
     };
@@ -188,7 +189,7 @@ fn run_repl(use_vm: bool) {
                 break;
             }
             Err(e) => {
-                eprintln!("Read error: {}", e);
+                print_repl_read_error(e);
                 break;
             }
             Ok(_) => {}
@@ -273,5 +274,57 @@ fn run_repl(use_vm: bool) {
                 eprint!("\x1b[31m{}\x1b[0m", e.format_with_source(&source));
             }
         }
+    }
+}
+
+fn print_read_stdin_error(err: impl fmt::Display) {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "ion --check: failed reading stdin: {}",
+        redacted_error::display(err)
+    );
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = err;
+        eprintln!(
+            "{}",
+            redacted_error::message!("ion --check: failed reading stdin")
+        );
+    }
+}
+
+fn print_check_file_read_error(path: &str, err: impl fmt::Display) {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "ion --check: cannot read {path}: {}",
+        redacted_error::display(err)
+    );
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = (path, err);
+        eprintln!(
+            "{}",
+            redacted_error::message!("ion --check: cannot read input")
+        );
+    }
+}
+
+fn print_script_read_error(path: &str, err: impl fmt::Display) {
+    #[cfg(debug_assertions)]
+    eprintln!("Error reading {path}: {}", redacted_error::display(err));
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = (path, err);
+        eprintln!("{}", redacted_error::message!("Error reading input"));
+    }
+}
+
+fn print_repl_read_error(err: impl fmt::Display) {
+    #[cfg(debug_assertions)]
+    eprintln!("Read error: {}", redacted_error::display(err));
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = err;
+        eprintln!("{}", redacted_error::message!("Read error"));
     }
 }
