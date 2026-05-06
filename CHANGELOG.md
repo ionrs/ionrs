@@ -9,6 +9,34 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.9.5] — 2026-05-06
+
+### Added
+
+- Added `llms.txt` with AI-agent notes for host integration, including the
+  `HostSignature` registration path and the preference for named arguments over
+  fixed-shape option dictionaries.
+- Added `VM_AUDIT.md` with verified VM correctness, soundness, performance, and
+  architecture findings plus post-fix verification notes.
+
+### Fixed
+
+- Isolated VM exception handlers by function frame so `try` handlers from a
+  returning callee cannot catch later caller errors with stale chunk offsets.
+- Prevented bytecode operand truncation for large calls and other u8-count
+  operands; large normal calls now lower through resolved-call bytecode when
+  needed.
+- Replaced unchecked integer arithmetic in the VM, tree-walk interpreter, async
+  continuation scaffold, and constant folding with checked behavior that
+  reports `integer overflow`.
+- Normalized reverse and inclusive slice bounds for list, string, and bytes
+  syntax and `.slice()` methods, including saturated inclusive ends at
+  `i64::MAX`.
+- Rejected negative string repeat counts across VM, tree-walk, and async
+  runtime paths instead of panicking.
+- Discarded `break value` results from statement loops while preserving loop
+  expression break values, preventing orphaned stack values on loop exit.
+
 ## [0.9.4] — 2026-05-05
 
 ### Changed
