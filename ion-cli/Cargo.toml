@@ -1,6 +1,6 @@
 [package]
 name = "ionrs-cli"
-version = "0.9.5"
+version = "0.9.6"
 edition = "2021"
 description = "CLI runner and REPL for the Ion scripting language"
 license = "MIT"
@@ -22,6 +22,6 @@ vm = ["ion-core/vm"]
 async-runtime = ["ion-core/async-runtime", "dep:tokio"]
 
 [dependencies]
-ion-core = { version = "0.9.5", path = "../ion-core", default-features = true }
+ion-core = { version = "0.9.6", path = "../ion-core", default-features = true }
 redacted-error = { version = "0.2", default-features = false }
 tokio = { version = "1", features = ["rt", "macros"], optional = true }

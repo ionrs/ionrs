@@ -184,7 +184,7 @@ fn try_match_let(
     }
     // Require `=`.
     if !matches!(tokens.get(j).map(|t| &t.token), Some(Token::Eq)) {
-        return Err(RewriteError::Malformed(format!(
+        return Err(RewriteError::Malformed(redacted_error::detail!(
             "expected `=` after `let {}`",
             name
         )));

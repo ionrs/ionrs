@@ -184,7 +184,7 @@ impl Parser {
         } else {
             let s = self.span();
             Err(IonError::parse(
-                format!(
+                ion_format!(
                     "{}{:?}{}{:?}",
                     ion_str!("expected "),
                     expected,
@@ -204,7 +204,7 @@ impl Parser {
         } else {
             let s = self.span();
             Err(IonError::parse(
-                format!(
+                ion_format!(
                     "{}{:?}",
                     ion_str!("expected identifier, found "),
                     self.peek()
@@ -235,7 +235,7 @@ impl Parser {
                     other => {
                         let s = self.span();
                         Err(IonError::parse(
-                            format!(
+                            ion_format!(
                                 "{}{:?}",
                                 ion_str!("expected loop after label, found "),
                                 other,
@@ -1712,7 +1712,7 @@ impl Parser {
             _ => {
                 let s = self.span();
                 Err(IonError::parse(
-                    format!("{}{:?}", ion_str!("unexpected token: "), self.peek()),
+                    ion_format!("{}{:?}", ion_str!("unexpected token: "), self.peek()),
                     s.line,
                     s.col,
                 ))
@@ -2030,7 +2030,7 @@ impl Parser {
             _ => {
                 let s = self.span();
                 Err(IonError::parse(
-                    format!(
+                    ion_format!(
                         "{}{:?}",
                         ion_str!("unexpected token in pattern: "),
                         self.peek()
@@ -2081,7 +2081,7 @@ impl Parser {
                 if !parser.is_at_end() {
                     let s = parser.span();
                     return Err(IonError::parse(
-                        format!(
+                        ion_format!(
                             "{}{:?}",
                             ion_str!("unexpected token in f-string expression: "),
                             parser.peek()

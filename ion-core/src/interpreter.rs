@@ -544,7 +544,11 @@ impl Interpreter {
                                     .get(name)
                                     .ok_or_else(|| {
                                         IonError::name(
-                                            format!("{}{}", ion_str!("undefined variable: "), name),
+                                            ion_format!(
+                                                "{}{}",
+                                                ion_str!("undefined variable: "),
+                                                name
+                                            ),
                                             stmt.span.line,
                                             stmt.span.col,
                                         )
@@ -574,7 +578,7 @@ impl Interpreter {
                             .get(&var_name)
                             .ok_or_else(|| {
                                 IonError::name(
-                                    format!("{}{}", ion_str!("undefined variable: "), var_name),
+                                    ion_format!("{}{}", ion_str!("undefined variable: "), var_name),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -598,7 +602,7 @@ impl Interpreter {
                                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                                 if idx >= items.len() {
                                     return Err(IonError::runtime(
-                                        format!(
+                                        ion_format!(
                                             "{}{}{}",
                                             ion_str!("index "),
                                             i,
@@ -616,7 +620,7 @@ impl Interpreter {
                             }
                             _ => {
                                 return Err(IonError::type_err(
-                                    format!(
+                                    ion_format!(
                                         "{}{}",
                                         ion_str!("cannot set index on "),
                                         container.type_name()
@@ -648,7 +652,7 @@ impl Interpreter {
                             .get(&var_name)
                             .ok_or_else(|| {
                                 IonError::name(
-                                    format!("{}{}", ion_str!("undefined variable: "), var_name),
+                                    ion_format!("{}{}", ion_str!("undefined variable: "), var_name),
                                     stmt.span.line,
                                     stmt.span.col,
                                 )
@@ -671,7 +675,7 @@ impl Interpreter {
                                     fields.insert(fh, final_val);
                                 } else {
                                     return Err(IonError::runtime(
-                                        format!(
+                                        ion_format!(
                                             "{}{}{}",
                                             ion_str!("field '"),
                                             field,
@@ -685,7 +689,7 @@ impl Interpreter {
                             }
                             _ => {
                                 return Err(IonError::type_err(
-                                    format!(
+                                    ion_format!(
                                         "{}{}",
                                         ion_str!("cannot set field on "),
                                         container.type_name()
@@ -711,7 +715,7 @@ impl Interpreter {
                 // anything that still injects a string-keyed dict as a module.
                 let root = self.env.get(&path[0]).ok_or_else(|| {
                     SignalOrError::Error(IonError::name(
-                        format!("{}{}", ion_str!("undefined module: "), &path[0]),
+                        ion_format!("{}{}", ion_str!("undefined module: "), &path[0]),
                         stmt.span.line,
                         stmt.span.col,
                     ))
@@ -723,7 +727,7 @@ impl Interpreter {
                         Value::Dict(map) => map.get(seg).cloned(),
                         _ => {
                             return Err(IonError::type_err(
-                                format!(
+                                ion_format!(
                                     "{}{}{}",
                                     ion_str!("'"),
                                     seg,
@@ -737,7 +741,7 @@ impl Interpreter {
                     };
                     module_val = next.ok_or_else(|| {
                         SignalOrError::Error(IonError::name(
-                            format!(
+                            ion_format!(
                                 "{}{}{}{}",
                                 ion_str!("'"),
                                 seg,
@@ -779,7 +783,7 @@ impl Interpreter {
                                 let nh = crate::hash::h(&item.name);
                                 let val = table.items.get(&nh).ok_or_else(|| {
                                     SignalOrError::Error(IonError::name(
-                                        format!(
+                                        ion_format!(
                                             "{}{}{}",
                                             ion_str!("'"),
                                             &item.name,
@@ -802,7 +806,7 @@ impl Interpreter {
                             for item in items {
                                 let val = map.get(&item.name).ok_or_else(|| {
                                     SignalOrError::Error(IonError::name(
-                                        format!(
+                                        ion_format!(
                                             "{}{}{}",
                                             ion_str!("'"),
                                             &item.name,
@@ -842,7 +846,7 @@ impl Interpreter {
                         };
                         let val = val.ok_or_else(|| {
                             SignalOrError::Error(IonError::name(
-                                format!(
+                                ion_format!(
                                     "{}{}{}",
                                     ion_str!("'"),
                                     &item.name,
@@ -888,7 +892,7 @@ impl Interpreter {
 
             ExprKind::Ident(name) => self.env.get(name).cloned().ok_or_else(|| {
                 IonError::name(
-                    format!("{}{}", ion_str!("undefined variable: "), name),
+                    ion_format!("{}{}", ion_str!("undefined variable: "), name),
                     span.line,
                     span.col,
                 )
@@ -902,7 +906,7 @@ impl Interpreter {
                 // path is preserved for any host that still injects a dict.
                 let root = self.env.get(&segments[0]).ok_or_else(|| {
                     SignalOrError::Error(IonError::name(
-                        format!("{}{}", ion_str!("undefined module: "), &segments[0]),
+                        ion_format!("{}{}", ion_str!("undefined module: "), &segments[0]),
                         span.line,
                         span.col,
                     ))
@@ -914,7 +918,7 @@ impl Interpreter {
                             current = table.items.get(&crate::hash::h(seg)).cloned().ok_or_else(
                                 || {
                                     SignalOrError::Error(IonError::name(
-                                        format!(
+                                        ion_format!(
                                             "{}{}{}{}",
                                             ion_str!("'"),
                                             seg,
@@ -930,7 +934,7 @@ impl Interpreter {
                         Value::Dict(map) => {
                             current = map.get(seg).cloned().ok_or_else(|| {
                                 SignalOrError::Error(IonError::name(
-                                    format!(
+                                    ion_format!(
                                         "{}{}{}{}",
                                         ion_str!("'"),
                                         seg,
@@ -944,7 +948,7 @@ impl Interpreter {
                         }
                         _ => {
                             return Err(IonError::type_err(
-                                format!(
+                                ion_format!(
                                     "{}{}{}",
                                     ion_str!("cannot access '"),
                                     seg,
@@ -982,7 +986,7 @@ impl Interpreter {
                             Value::List(sub) => vals.extend(sub),
                             other => {
                                 return Err(IonError::type_err(
-                                    format!(
+                                    ion_format!(
                                         "{}{}",
                                         ion_str!("spread requires a list, got "),
                                         other.type_name()
@@ -1145,7 +1149,7 @@ impl Interpreter {
                         }),
                         Value::Float(n) => Ok(Value::Float(-n)),
                         _ => Err(IonError::type_err(
-                            format!("{}{}", ion_str!("cannot negate "), val.type_name()),
+                            ion_format!("{}{}", ion_str!("cannot negate "), val.type_name()),
                             span.line,
                             span.col,
                         )
@@ -1167,7 +1171,7 @@ impl Interpreter {
                         Err(IonError::propagated_none(span.line, span.col).into())
                     }
                     _ => Err(IonError::type_err(
-                        format!(
+                        ion_format!(
                             "{}{}",
                             ion_str!("? applied to non-Result/Option: "),
                             val.type_name()
@@ -1676,7 +1680,7 @@ impl Interpreter {
         span: Span,
     ) -> SignalOrError {
         IonError::type_err(
-            format!(
+            ion_format!(
                 "{}{}{}{}{}{}",
                 ion_str!("cannot apply '"),
                 op,
@@ -1719,7 +1723,7 @@ impl Interpreter {
                     Some(v) => v.clone(),
                     None => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{}{}",
                                 ion_str!("no field '"),
                                 field,
@@ -1733,7 +1737,7 @@ impl Interpreter {
                 })
             }
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot access field on "), val.type_name()),
+                ion_format!("{}{}", ion_str!("cannot access field on "), val.type_name()),
                 span.line,
                 span.col,
             )
@@ -1802,7 +1806,7 @@ impl Interpreter {
                 })
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     ion_str!("cannot index "),
                     val.type_name(),
@@ -1829,7 +1833,7 @@ impl Interpreter {
                 Some(Value::Int(n)) => Ok(*n),
                 None => Ok(default),
                 Some(other) => Err(IonError::type_err(
-                    format!(
+                    ion_format!(
                         "{}{}",
                         ion_str!("slice index must be int, got "),
                         other.type_name()
@@ -1874,7 +1878,7 @@ impl Interpreter {
                 Ok(Value::Bytes(bytes[s..e].to_vec()))
             }
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot slice "), val.type_name()),
+                ion_format!("{}{}", ion_str!("cannot slice "), val.type_name()),
                 span.line,
                 span.col,
             )
@@ -1973,7 +1977,7 @@ impl Interpreter {
             ))]
             Value::Channel(ch) => self.channel_method(ch, method, args, span),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -2406,7 +2410,7 @@ impl Interpreter {
                 Ok(acc)
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -2500,7 +2504,7 @@ impl Interpreter {
             }
             h if h == crate::h!("to_list") => Ok(Value::List(items.to_vec())),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -2554,7 +2558,7 @@ impl Interpreter {
                 Ok(new_val)
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -2582,7 +2586,7 @@ impl Interpreter {
             }
             h if h == crate::h!("to_list") => Ok(Value::List(items.to_vec())),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -2809,7 +2813,7 @@ impl Interpreter {
                 Ok(Value::Str(chars[start..end].iter().collect()))
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -2826,7 +2830,7 @@ impl Interpreter {
         match crate::stdlib::bytes_method_value(bytes, crate::hash::h(method), args) {
             Ok(Some(value)) => Ok(value),
             Ok(None) => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -2975,7 +2979,7 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -3055,7 +3059,7 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -3081,7 +3085,7 @@ impl Interpreter {
             h if h == crate::h!("unwrap") => match res {
                 Ok(v) => Ok(*v),
                 Err(e) => Err(IonError::runtime(
-                    format!("{}{}", ion_str!("called unwrap on Err: "), e),
+                    ion_format!("{}{}", ion_str!("called unwrap on Err: "), e),
                     span.line,
                     span.col,
                 )
@@ -3156,7 +3160,7 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -3203,7 +3207,7 @@ impl Interpreter {
                         Value::List(items) => positional.extend(items),
                         other => {
                             return Err(IonError::type_err(
-                                format!(
+                                ion_format!(
                                     "{}{}",
                                     ion_str!("* argument must be a list, got "),
                                     other.type_name()
@@ -3226,7 +3230,7 @@ impl Interpreter {
                         Value::Dict(map) => named.extend(keyword_args_from_dict(map)),
                         other => {
                             return Err(IonError::type_err(
-                                format!(
+                                ion_format!(
                                     "{}{}",
                                     ion_str!("** argument must be a dict, got "),
                                     other.type_name()
@@ -3256,7 +3260,7 @@ impl Interpreter {
                     Value::List(items) => positional.extend(items),
                     other => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{}",
                                 ion_str!("* argument must be a list, got "),
                                 other.type_name()
@@ -3328,7 +3332,7 @@ impl Interpreter {
                                         self.eval_expr(default)?
                                     } else {
                                         return Err(IonError::runtime(
-                                            format!(
+                                            ion_format!(
                                                 "{}{}{}",
                                                 ion_str!("missing argument '"),
                                                 param.name,
@@ -3459,7 +3463,7 @@ impl Interpreter {
                         result.map_err(|msg| IonError::runtime(msg, span.line, span.col).into())
                     }
                     None => Err(IonError::type_err(
-                        format!("{}{}", ion_str!("not callable: "), func.type_name()),
+                        ion_format!("{}{}", ion_str!("not callable: "), func.type_name()),
                         span.line,
                         span.col,
                     )
@@ -3477,7 +3481,7 @@ impl Interpreter {
             )
             .into()),
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("not callable: "), func.type_name()),
+                ion_format!("{}{}", ion_str!("not callable: "), func.type_name()),
                 span.line,
                 span.col,
             )
@@ -3569,7 +3573,7 @@ impl Interpreter {
         };
         if !matches {
             return Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     ion_str!("type mismatch: expected "),
                     Self::type_ann_name(ann),
@@ -3645,7 +3649,7 @@ impl Interpreter {
                 inclusive,
             } => Ok(Value::range_to_list(*start, *end, *inclusive)),
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot iterate over "), val.type_name()),
+                ion_format!("{}{}", ion_str!("cannot iterate over "), val.type_name()),
                 span.line,
                 span.col,
             )
@@ -3903,7 +3907,7 @@ impl Interpreter {
         match val {
             Value::Task(handle) => handle.join().map_err(SignalOrError::Error),
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot await "), val.type_name()),
+                ion_format!("{}{}", ion_str!("cannot await "), val.type_name()),
                 span.line,
                 span.col,
             )
@@ -3997,7 +4001,7 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -4030,7 +4034,7 @@ impl Interpreter {
                 }
                 tx.send(args[0].clone()).map_err(|e| {
                     IonError::runtime(
-                        format!("{}{}", ion_str!("channel send failed: "), e.message),
+                        ion_format!("{}{}", ion_str!("channel send failed: "), e.message),
                         span.line,
                         span.col,
                     )
@@ -4071,7 +4075,7 @@ impl Interpreter {
                 }
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("no method '"),
                     method,
@@ -4185,7 +4189,7 @@ pub fn register_builtins_with_handlers(
             Value::Int(n) => Ok(Value::Int(*n)),
             Value::Float(n) => Ok(Value::Int(*n as i64)),
             Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|_| {
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("cannot convert '"),
                     s,
@@ -4208,7 +4212,7 @@ pub fn register_builtins_with_handlers(
             Value::Float(n) => Ok(Value::Float(*n)),
             Value::Int(n) => Ok(Value::Float(*n as f64)),
             Value::Str(s) => s.parse::<f64>().map(Value::Float).map_err(|_| {
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("cannot convert '"),
                     s,
@@ -4282,9 +4286,15 @@ pub fn register_builtins_with_handlers(
             }
         };
         if !condition {
+            #[cfg(debug_assertions)]
             let msg = if args.len() > 1 {
                 args[1].to_string()
             } else {
+                ion_str!("assertion failed").to_string()
+            };
+            #[cfg(not(debug_assertions))]
+            let msg = {
+                let _ = args;
                 ion_str!("assertion failed").to_string()
             };
             return Err(msg);
@@ -4298,7 +4308,7 @@ pub fn register_builtins_with_handlers(
         }
         if args[0] != args[1] {
             let msg = if args.len() > 2 {
-                format!(
+                ion_format!(
                     "{}{}{}{}{}",
                     args[2],
                     ion_str!(": expected "),
@@ -4307,7 +4317,7 @@ pub fn register_builtins_with_handlers(
                     args[1]
                 )
             } else {
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     ion_str!("assertion failed: expected "),
                     args[0],

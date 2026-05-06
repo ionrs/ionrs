@@ -46,7 +46,7 @@ pub fn resolve_host_call(
                 ParamKind::VarKwargs => Value::Dict(IndexMap::new()),
                 _ => param.default.clone().ok_or_else(|| {
                     IonError::runtime(
-                        format!(
+                        ion_format!(
                             "{}{}",
                             ion_str!("missing argument "),
                             host_param_display(param.name_hash)
@@ -100,7 +100,7 @@ pub fn resolve_ion_slots(
             }
             None => {
                 return Err(IonError::runtime(
-                    format!(
+                    ion_format!(
                         "{}'{}'{}'{}'",
                         ion_str!("unknown parameter '"),
                         kw.source_name,
@@ -165,7 +165,7 @@ fn resolve_host_slots(
             }
             None => {
                 return Err(IonError::runtime(
-                    format!(
+                    ion_format!(
                         "{}'{}'",
                         ion_str!("unexpected keyword argument "),
                         kw.source_name
@@ -229,7 +229,7 @@ fn bind_positionals<P: ParamView>(
     }
     if consumed < supplied_count {
         return Err(IonError::runtime(
-            format!(
+            ion_format!(
                 "{}'{}'{}{}{}{}",
                 ion_str!("function '"),
                 function_name,
@@ -247,7 +247,7 @@ fn bind_positionals<P: ParamView>(
 
 fn duplicate_argument(name: &str, line: usize, col: usize) -> IonError {
     IonError::runtime(
-        format!("{}'{}'", ion_str!("duplicate argument "), name),
+        ion_format!("{}'{}'", ion_str!("duplicate argument "), name),
         line,
         col,
     )

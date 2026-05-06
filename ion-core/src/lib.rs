@@ -145,6 +145,30 @@ pub mod value;
 #[cfg(feature = "vm")]
 pub mod vm;
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ion_format_skips_argument_evaluation_in_release() {
+        let evaluated = std::cell::Cell::new(false);
+        let message = ion_format!("secret {}", {
+            evaluated.set(true);
+            "value"
+        });
+
+        #[cfg(debug_assertions)]
+        {
+            assert!(evaluated.get());
+            assert_eq!(message, "secret value");
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            assert!(!evaluated.get());
+            assert_eq!(message, "runtime error");
+        }
+    }
+}
+
 pub use engine::Engine;
 pub use value::Value;
 

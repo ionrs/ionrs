@@ -229,7 +229,7 @@ impl<'a> Lexer<'a> {
                     Ok(self.spanned(Token::HashBrace, line, col))
                 } else {
                     Err(IonError::lex(
-                        format!("{}{}", ion_str!("unexpected character: "), '#'),
+                        ion_format!("{}{}", ion_str!("unexpected character: "), '#'),
                         line,
                         col,
                     ))
@@ -354,7 +354,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             _ => Err(IonError::lex(
-                format!("{}{}", ion_str!("unexpected character: "), ch as char),
+                ion_format!("{}{}", ion_str!("unexpected character: "), ch as char),
                 line,
                 col,
             )),

@@ -287,7 +287,7 @@ impl Vm {
                     (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x & y)),
                     (a, b) => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{} and {}",
                                 ion_str!("'&' expects int, got "),
                                 a.type_name(),
@@ -306,7 +306,7 @@ impl Vm {
                     (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x | y)),
                     (a, b) => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{} and {}",
                                 ion_str!("'|' expects int, got "),
                                 a.type_name(),
@@ -325,7 +325,7 @@ impl Vm {
                     (Value::Int(x), Value::Int(y)) => self.stack.push(Value::Int(x ^ y)),
                     (a, b) => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{} and {}",
                                 ion_str!("'^' expects int, got "),
                                 a.type_name(),
@@ -353,7 +353,7 @@ impl Vm {
                     }
                     (a, b) => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{} and {}",
                                 ion_str!("'<<' expects int, got "),
                                 a.type_name(),
@@ -381,7 +381,7 @@ impl Vm {
                     }
                     (a, b) => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{} and {}",
                                 ion_str!("'>>' expects int, got "),
                                 a.type_name(),
@@ -468,7 +468,7 @@ impl Vm {
                 let val = self.env.get_sym(sym).cloned().ok_or_else(|| {
                     let name = self.env.resolve(sym);
                     IonError::name(
-                        format!("{}{}", ion_str!("undefined variable: "), name),
+                        ion_format!("{}{}", ion_str!("undefined variable: "), name),
                         line,
                         col,
                     )
@@ -492,7 +492,7 @@ impl Vm {
                 let val = self.env.get_sym_or_global(sym).cloned().ok_or_else(|| {
                     let name = self.env.resolve(sym);
                     IonError::name(
-                        format!("{}{}", ion_str!("undefined variable: "), name),
+                        ion_format!("{}{}", ion_str!("undefined variable: "), name),
                         line,
                         col,
                     )
@@ -800,7 +800,7 @@ impl Vm {
                     }
                     other => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{}",
                                 ion_str!("? operator requires Option or Result, got "),
                                 other.type_name()
@@ -1194,7 +1194,11 @@ impl Vm {
                     }
                     other => {
                         return Err(IonError::type_err(
-                            format!("{}{}", ion_str!("cannot iterate over "), other.type_name()),
+                            ion_format!(
+                                "{}{}",
+                                ion_str!("cannot iterate over "),
+                                other.type_name()
+                            ),
                             line,
                             col,
                         ));
@@ -1279,7 +1283,7 @@ impl Vm {
                     }
                     other => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{}",
                                 ion_str!("spread requires a list, got "),
                                 other.type_name()
@@ -1356,7 +1360,7 @@ impl Vm {
                     Value::Str(key) => key,
                     other => {
                         return Err(IonError::type_err(
-                            format!(
+                            ion_format!(
                                 "{}{}",
                                 ion_str!("keyword name must be string, got "),
                                 other.type_name()
@@ -1458,7 +1462,7 @@ impl Vm {
                 };
                 if !ok {
                     return Err(IonError::type_err(
-                        format!(
+                        ion_format!(
                             "{}{}, {}{}",
                             ion_str!("type mismatch: expected "),
                             type_name,
@@ -1580,7 +1584,7 @@ impl Vm {
     fn decode_op(&self, byte: u8, line: usize, col: usize) -> Result<Op, IonError> {
         if byte > Op::KwMerge as u8 {
             return Err(IonError::runtime(
-                format!("{}{}", ion_str!("invalid opcode: "), byte),
+                ion_format!("{}{}", ion_str!("invalid opcode: "), byte),
                 line,
                 col,
             ));
@@ -1603,7 +1607,7 @@ impl Vm {
                 Some(Value::Int(n)) => Ok(n),
                 None => Ok(default),
                 Some(other) => Err(IonError::type_err(
-                    format!(
+                    ion_format!(
                         "{}{}",
                         ion_str!("slice index must be int, got "),
                         other.type_name()
@@ -1645,7 +1649,7 @@ impl Vm {
                 Ok(Value::Bytes(bytes[s..e].to_vec()))
             }
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot slice "), obj.type_name()),
+                ion_format!("{}{}", ion_str!("cannot slice "), obj.type_name()),
                 line,
                 col,
             )),
@@ -1729,7 +1733,7 @@ impl Vm {
                 Ok(Value::Bytes(r))
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{} and {}",
                     ion_str!("cannot add "),
                     a.type_name(),
@@ -1751,7 +1755,7 @@ impl Vm {
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 - y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x - *y as f64)),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{} from {}",
                     ion_str!("cannot subtract "),
                     b.type_name(),
@@ -1783,7 +1787,7 @@ impl Vm {
                 Ok(Value::Str(s.repeat(*n as usize)))
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{} and {}",
                     ion_str!("cannot multiply "),
                     a.type_name(),
@@ -1808,7 +1812,7 @@ impl Vm {
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 / y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x / *y as f64)),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{} by {}",
                     ion_str!("cannot divide "),
                     a.type_name(),
@@ -1833,7 +1837,7 @@ impl Vm {
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 % y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x % *y as f64)),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{} by {}",
                     ion_str!("cannot modulo "),
                     a.type_name(),
@@ -1853,7 +1857,7 @@ impl Vm {
                 .ok_or_else(|| integer_overflow(line, col)),
             Value::Float(n) => Ok(Value::Float(-n)),
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot negate "), val.type_name()),
+                ion_format!("{}{}", ion_str!("cannot negate "), val.type_name()),
                 line,
                 col,
             )),
@@ -1868,7 +1872,7 @@ impl Vm {
             (Value::Float(x), Value::Int(y)) => Ok(*x < (*y as f64)),
             (Value::Str(x), Value::Str(y)) => Ok(x < y),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{} and {}",
                     ion_str!("cannot compare "),
                     a.type_name(),
@@ -1898,7 +1902,7 @@ impl Vm {
                 let fh = crate::hash::h(field);
                 table.items.get(&fh).cloned().ok_or_else(|| {
                     IonError::runtime(
-                        format!(
+                        ion_format!(
                             "{}{}{}",
                             ion_str!("'"),
                             field,
@@ -1913,7 +1917,7 @@ impl Vm {
                 let fh = crate::hash::h(field);
                 fields.get(&fh).cloned().ok_or_else(|| {
                     IonError::runtime(
-                        format!(
+                        ion_format!(
                             "{}{}{}",
                             ion_str!("field '"),
                             field,
@@ -1927,7 +1931,7 @@ impl Vm {
             Value::List(items) => match crate::hash::h(field) {
                 h if h == crate::h!("len") => Ok(Value::Int(items.len() as i64)),
                 _ => Err(IonError::runtime(
-                    format!(
+                    ion_format!(
                         "{}{}{}",
                         ion_str!("list has no field '"),
                         field,
@@ -1940,7 +1944,7 @@ impl Vm {
             Value::Str(s) => match crate::hash::h(field) {
                 h if h == crate::h!("len") => Ok(Value::Int(s.len() as i64)),
                 _ => Err(IonError::runtime(
-                    format!(
+                    ion_format!(
                         "{}{}{}",
                         ion_str!("string has no field '"),
                         field,
@@ -1953,7 +1957,7 @@ impl Vm {
             Value::Tuple(items) => match crate::hash::h(field) {
                 h if h == crate::h!("len") => Ok(Value::Int(items.len() as i64)),
                 _ => Err(IonError::runtime(
-                    format!(
+                    ion_format!(
                         "{}{}{}",
                         ion_str!("tuple has no field '"),
                         field,
@@ -1964,7 +1968,7 @@ impl Vm {
                 )),
             },
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     ion_str!("cannot access field '"),
                     field,
@@ -1989,7 +1993,7 @@ impl Vm {
                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                 items.get(idx).cloned().ok_or_else(|| {
                     IonError::runtime(
-                        format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
+                        ion_format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
                         line,
                         col,
                     )
@@ -1999,7 +2003,7 @@ impl Vm {
                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                 items.get(idx).cloned().ok_or_else(|| {
                     IonError::runtime(
-                        format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
+                        ion_format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
                         line,
                         col,
                     )
@@ -2017,7 +2021,7 @@ impl Vm {
                     .map(|c| Value::Str(c.to_string()))
                     .ok_or_else(|| {
                         IonError::runtime(
-                            format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
+                            ion_format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
                             line,
                             col,
                         )
@@ -2030,14 +2034,14 @@ impl Vm {
                     .map(|&b| Value::Int(b as i64))
                     .ok_or_else(|| {
                         IonError::runtime(
-                            format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
+                            ion_format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
                             line,
                             col,
                         )
                     })
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     ion_str!("cannot index "),
                     obj.type_name(),
@@ -2064,7 +2068,7 @@ impl Vm {
                 let idx = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                 if idx >= items.len() {
                     return Err(IonError::runtime(
-                        format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
+                        ion_format!("{}{}{}", ion_str!("index "), i, ion_str!(" out of range")),
                         line,
                         col,
                     ));
@@ -2077,7 +2081,7 @@ impl Vm {
                 Ok(Value::Dict(map))
             }
             (obj, _) => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot set index on "), obj.type_name()),
+                ion_format!("{}{}", ion_str!("cannot set index on "), obj.type_name()),
                 line,
                 col,
             )),
@@ -2108,7 +2112,7 @@ impl Vm {
                     Ok(Value::HostStruct { type_hash, fields })
                 } else {
                     Err(IonError::runtime(
-                        format!(
+                        ion_format!(
                             "{}{}{}",
                             ion_str!("field '"),
                             field,
@@ -2120,7 +2124,7 @@ impl Vm {
                 }
             }
             _ => Err(IonError::type_err(
-                format!("{}{}", ion_str!("cannot set field on "), obj.type_name()),
+                ion_format!("{}{}", ion_str!("cannot set field on "), obj.type_name()),
                 line,
                 col,
             )),
@@ -2506,7 +2510,7 @@ impl Vm {
                     }
                 }
                 _ => Err(IonError::type_err(
-                    format!(
+                    ion_format!(
                         "{}{}{}",
                         ion_str!("no method '"),
                         method,
@@ -2517,7 +2521,7 @@ impl Vm {
                 )),
             },
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}{}",
                     receiver.type_name(),
                     ion_str!(" has no method '"),
@@ -2795,7 +2799,7 @@ impl Vm {
                 Ok(Value::List(result))
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("list has no method '"),
                     method,
@@ -2885,7 +2889,7 @@ impl Vm {
             }
             h if h == crate::h!("to_list") => Ok(Value::List(items.to_vec())),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("set has no method '"),
                     method,
@@ -2912,7 +2916,7 @@ impl Vm {
             )),
             h if h == crate::h!("to_list") => Ok(Value::List(items.to_vec())),
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("tuple has no method '"),
                     method,
@@ -3077,7 +3081,7 @@ impl Vm {
                 Ok(Value::Str(chars[start..end].iter().collect()))
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("string has no method '"),
                     method,
@@ -3100,7 +3104,7 @@ impl Vm {
         match crate::stdlib::bytes_method_value(bytes, crate::hash::h(method), args) {
             Ok(Some(value)) => Ok(value),
             Ok(None) => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("bytes has no method '"),
                     method,
@@ -3220,7 +3224,7 @@ impl Vm {
                 }
             }
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("dict has no method '"),
                     method,
@@ -3274,7 +3278,7 @@ impl Vm {
                 }
             },
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("Option has no method '"),
                     method,
@@ -3304,7 +3308,7 @@ impl Vm {
             h if h == crate::h!("unwrap") => match res {
                 Ok(v) => Ok(*v.clone()),
                 Err(e) => Err(IonError::runtime(
-                    format!("{}{}", ion_str!("called unwrap on Err: "), e),
+                    ion_format!("{}{}", ion_str!("called unwrap on Err: "), e),
                     line,
                     col,
                 )),
@@ -3338,7 +3342,7 @@ impl Vm {
                 }
             },
             _ => Err(IonError::type_err(
-                format!(
+                ion_format!(
                     "{}{}{}",
                     ion_str!("Result has no method '"),
                     method,
@@ -3404,7 +3408,7 @@ impl Vm {
             Value::List(items) => items,
             other => {
                 return Err(IonError::type_err(
-                    format!(
+                    ion_format!(
                         "{}{}",
                         ion_str!("resolved positional args must be a list, got "),
                         other.type_name()
@@ -3444,7 +3448,7 @@ impl Vm {
                         Value::Str(name) => name.clone(),
                         other => {
                             return Err(IonError::type_err(
-                                format!(
+                                ion_format!(
                                     "{}{}",
                                     ion_str!("resolved keyword name must be string, got "),
                                     other.type_name()
@@ -3461,7 +3465,7 @@ impl Vm {
             Value::Dict(map) => keyword_args_from_dict(map),
             other => {
                 return Err(IonError::type_err(
-                    format!(
+                    ion_format!(
                         "{}{}",
                         ion_str!("resolved keyword args must be a list, got "),
                         other.type_name()
@@ -3485,7 +3489,7 @@ impl Vm {
         interp.types = self.types.clone();
         interp.eval_single_expr(default).map_err(|e| {
             IonError::runtime(
-                format!(
+                ion_format!(
                     "{}'{}': {}",
                     ion_str!("error evaluating default for "),
                     param_name,
@@ -3528,7 +3532,7 @@ impl Vm {
                             self.eval_default_arg(&param.name, default, line, col)?
                         } else {
                             return Err(IonError::runtime(
-                                format!(
+                                ion_format!(
                                     "{}{}{}",
                                     ion_str!("missing argument '"),
                                     param.name,
@@ -3668,7 +3672,7 @@ impl Vm {
                     }
                     let Some(result) = crate::stdlib::call_stdlib_module(table, &positional) else {
                         return Err(IonError::type_err(
-                            format!("{}{}", ion_str!("cannot call "), func.type_name()),
+                            ion_format!("{}{}", ion_str!("cannot call "), func.type_name()),
                             line,
                             col,
                         ));
@@ -3790,7 +3794,7 @@ impl Vm {
                 }
                 _ => {
                     return Err(IonError::type_err(
-                        format!("{}{}", ion_str!("cannot call "), func.type_name()),
+                        ion_format!("{}{}", ion_str!("cannot call "), func.type_name()),
                         line,
                         col,
                     ));

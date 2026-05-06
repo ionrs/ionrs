@@ -9,6 +9,23 @@ Editor extensions track their own version numbers under each entry.
 
 ## [Unreleased]
 
+## [0.9.6] — 2026-05-06
+
+### Fixed
+
+- Prevented release builds from eagerly constructing dynamic Ion error detail
+  strings before redaction by routing runtime/compiler/parser/stdlib error
+  formatting through the release-safe `ion_format!` facade.
+- Redacted rewrite malformed-binding detail with `redacted_error::detail!` so
+  release builds do not retain binding names solely for diagnostics.
+- Stripped release binary symbols by default to avoid publishing symbol-table
+  strings in normal release artifacts.
+
+### Tests
+
+- Added a release-mode guard that verifies `ion_format!` does not evaluate its
+  format arguments in release builds.
+
 ## [0.9.5] — 2026-05-06
 
 ### Added

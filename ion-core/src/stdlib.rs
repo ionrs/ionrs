@@ -267,7 +267,7 @@ pub(crate) fn bytes_from_hex_string(value: &str) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::with_capacity(raw.len() / 2);
     for chunk in raw.chunks_exact(2) {
         let hi = hex_nibble(chunk[0]).ok_or_else(|| {
-            format!(
+            ion_format!(
                 "{}{}{}",
                 ion_str!("invalid hex byte: "),
                 chunk[0] as char,
@@ -275,7 +275,7 @@ pub(crate) fn bytes_from_hex_string(value: &str) -> Result<Vec<u8>, String> {
             )
         })?;
         let lo = hex_nibble(chunk[1]).ok_or_else(|| {
-            format!(
+            ion_format!(
                 "{}{}{}",
                 ion_str!("invalid hex byte: "),
                 chunk[0] as char,
@@ -367,7 +367,7 @@ pub(crate) fn bytes_from_base64_string(value: &str) -> Result<Vec<u8>, String> {
                         return Err(ion_str!("invalid base64 padding"));
                     }
                     values[pos] = base64_value(byte).ok_or_else(|| {
-                        format!("{}{}", ion_str!("invalid base64 character: "), byte as char)
+                        ion_format!("{}{}", ion_str!("invalid base64 character: "), byte as char)
                     })?;
                 }
             }
@@ -2279,14 +2279,14 @@ fn semver_parse_arg(v: &Value) -> Result<Version, String> {
                 Prerelease::EMPTY
             } else {
                 Prerelease::new(pre_str).map_err(|e| {
-                    format!("{}'{}': {}", ion_str!("invalid pre-release "), pre_str, e)
+                    ion_format!("{}'{}': {}", ion_str!("invalid pre-release "), pre_str, e)
                 })?
             };
             let build = if build_str.is_empty() {
                 BuildMetadata::EMPTY
             } else {
                 BuildMetadata::new(build_str).map_err(|e| {
-                    format!(
+                    ion_format!(
                         "{}'{}': {}",
                         ion_str!("invalid build metadata "),
                         build_str,
@@ -2933,7 +2933,7 @@ async fn fs_pad_random_async(path: &str, target_size: u64) -> std::io::Result<u6
 #[cfg(all(feature = "fs", not(feature = "async-runtime")))]
 fn fs_arg_str<'a>(args: &'a [Value], idx: usize) -> Result<&'a str, String> {
     args[idx].as_str().ok_or_else(|| {
-        format!(
+        ion_format!(
             "{}{}{}",
             ion_str!("argument "),
             idx + 1,
@@ -3183,7 +3183,7 @@ pub fn fs_module() -> Module {
             .map(|s| s.to_string())
             .ok_or_else(|| {
                 IonError::runtime(
-                    format!(
+                    ion_format!(
                         "{}{}{}",
                         ion_str!("argument "),
                         idx + 1,
@@ -3237,7 +3237,7 @@ pub fn fs_module() -> Module {
             Value::Bytes(b) => b.clone(),
             other => {
                 return Err(IonError::runtime(
-                    format!("{}{}", ion_str!("invalid contents: "), other.type_name()),
+                    ion_format!("{}{}", ion_str!("invalid contents: "), other.type_name()),
                     0,
                     0,
                 ));
@@ -3264,7 +3264,7 @@ pub fn fs_module() -> Module {
             Value::Bytes(b) => b.clone(),
             other => {
                 return Err(IonError::runtime(
-                    format!("{}{}", ion_str!("invalid contents: "), other.type_name()),
+                    ion_format!("{}{}", ion_str!("invalid contents: "), other.type_name()),
                     0,
                     0,
                 ));
