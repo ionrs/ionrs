@@ -141,7 +141,10 @@ impl Vm {
     pub fn execute(&mut self, chunk: &Chunk) -> Result<Value, IonError> {
         self.ip = 0;
         self.stack.clear();
-        match self.run_chunk(chunk) {
+        self.exception_handlers.clear();
+        let result = self.run_chunk(chunk, 0);
+        self.exception_handlers.clear();
+        match result {
             Ok(v) => Ok(v),
             Err(e) if e.kind == crate::error::ErrorKind::PropagatedErr => {
                 Ok(Value::Result(Err(Box::new(Value::Str(e.message.clone())))))
@@ -152,7 +155,7 @@ impl Vm {
     }
 
     /// Run a chunk without resetting state (used for recursive function calls).
-    fn run_chunk(&mut self, chunk: &Chunk) -> Result<Value, IonError> {
+    fn run_chunk(&mut self, chunk: &Chunk, handler_floor: usize) -> Result<Value, IonError> {
         while self.ip < chunk.code.len() {
             let op_byte = chunk.code[self.ip];
             let line = chunk.lines[self.ip];
@@ -162,7 +165,8 @@ impl Vm {
             let op = match self.decode_op(op_byte, line, col) {
                 Ok(op) => op,
                 Err(e) => {
-                    if let Some(handler) = self.exception_handlers.pop() {
+                    if self.exception_handlers.len() > handler_floor {
+                        let handler = self.exception_handlers.pop().unwrap();
                         self.stack.truncate(handler.stack_depth);
                         self.locals.truncate(handler.locals_depth);
                         self.local_frames.truncate(handler.local_frames_depth);
@@ -206,7 +210,8 @@ impl Vm {
                     if e.kind != crate::error::ErrorKind::PropagatedErr
                         && e.kind != crate::error::ErrorKind::PropagatedNone
                     {
-                        if let Some(handler) = self.exception_handlers.pop() {
+                        if self.exception_handlers.len() > handler_floor {
+                            let handler = self.exception_handlers.pop().unwrap();
                             self.stack.truncate(handler.stack_depth);
                             self.locals.truncate(handler.locals_depth);
                             self.local_frames.truncate(handler.local_frames_depth);
@@ -1608,39 +1613,35 @@ impl Vm {
                 )),
             }
         };
+        let bounds = |len: i64,
+                      start: Option<Value>,
+                      end: Option<Value>|
+         -> Result<(usize, usize), IonError> {
+            let s = get_idx(start, 0)?.max(0).min(len);
+            let e_raw = get_idx(end, len)?;
+            let e_raw = if inclusive {
+                e_raw.saturating_add(1)
+            } else {
+                e_raw
+            };
+            let e = e_raw.max(0).min(len).max(s);
+            Ok((s as usize, e as usize))
+        };
         match &obj {
             Value::List(items) => {
                 let len = items.len() as i64;
-                let s = get_idx(start, 0)?.max(0).min(len) as usize;
-                let e_raw = get_idx(end, len)?;
-                let e = if inclusive {
-                    (e_raw + 1).max(0).min(len) as usize
-                } else {
-                    e_raw.max(0).min(len) as usize
-                };
+                let (s, e) = bounds(len, start, end)?;
                 Ok(Value::List(items[s..e].to_vec()))
             }
             Value::Str(string) => {
                 let chars: Vec<char> = string.chars().collect();
                 let len = chars.len() as i64;
-                let s = get_idx(start, 0)?.max(0).min(len) as usize;
-                let e_raw = get_idx(end, len)?;
-                let e = if inclusive {
-                    (e_raw + 1).max(0).min(len) as usize
-                } else {
-                    e_raw.max(0).min(len) as usize
-                };
+                let (s, e) = bounds(len, start, end)?;
                 Ok(Value::Str(chars[s..e].iter().collect()))
             }
             Value::Bytes(bytes) => {
                 let len = bytes.len() as i64;
-                let s = get_idx(start, 0)?.max(0).min(len) as usize;
-                let e_raw = get_idx(end, len)?;
-                let e = if inclusive {
-                    (e_raw + 1).max(0).min(len) as usize
-                } else {
-                    e_raw.max(0).min(len) as usize
-                };
+                let (s, e) = bounds(len, start, end)?;
                 Ok(Value::Bytes(bytes[s..e].to_vec()))
             }
             _ => Err(IonError::type_err(
@@ -1704,7 +1705,10 @@ impl Vm {
 
     fn op_add(&self, a: Value, b: Value, line: usize, col: usize) -> Result<Value, IonError> {
         match (&a, &b) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
+            (Value::Int(x), Value::Int(y)) => x
+                .checked_add(*y)
+                .map(Value::Int)
+                .ok_or_else(|| integer_overflow(line, col)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x + y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 + y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x + *y as f64)),
@@ -1739,7 +1743,10 @@ impl Vm {
 
     fn op_sub(&self, a: Value, b: Value, line: usize, col: usize) -> Result<Value, IonError> {
         match (&a, &b) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x - y)),
+            (Value::Int(x), Value::Int(y)) => x
+                .checked_sub(*y)
+                .map(Value::Int)
+                .ok_or_else(|| integer_overflow(line, col)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x - y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 - y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x - *y as f64)),
@@ -1758,11 +1765,21 @@ impl Vm {
 
     fn op_mul(&self, a: Value, b: Value, line: usize, col: usize) -> Result<Value, IonError> {
         match (&a, &b) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
+            (Value::Int(x), Value::Int(y)) => x
+                .checked_mul(*y)
+                .map(Value::Int)
+                .ok_or_else(|| integer_overflow(line, col)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x * y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 * y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x * *y as f64)),
             (Value::Str(s), Value::Int(n)) | (Value::Int(n), Value::Str(s)) => {
+                if *n < 0 {
+                    return Err(IonError::runtime(
+                        ion_str!("repeat count must be non-negative"),
+                        line,
+                        col,
+                    ));
+                }
                 Ok(Value::Str(s.repeat(*n as usize)))
             }
             _ => Err(IonError::type_err(
@@ -1783,7 +1800,10 @@ impl Vm {
             (Value::Int(_), Value::Int(0)) => {
                 Err(IonError::runtime(ion_str!("division by zero"), line, col))
             }
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x / y)),
+            (Value::Int(x), Value::Int(y)) => x
+                .checked_div(*y)
+                .map(Value::Int)
+                .ok_or_else(|| integer_overflow(line, col)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x / y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 / y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x / *y as f64)),
@@ -1805,7 +1825,10 @@ impl Vm {
             (Value::Int(_), Value::Int(0)) => {
                 Err(IonError::runtime(ion_str!("modulo by zero"), line, col))
             }
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x % y)),
+            (Value::Int(x), Value::Int(y)) => x
+                .checked_rem(*y)
+                .map(Value::Int)
+                .ok_or_else(|| integer_overflow(line, col)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x % y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 % y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x % *y as f64)),
@@ -1824,7 +1847,10 @@ impl Vm {
 
     fn op_neg(&self, val: Value, line: usize, col: usize) -> Result<Value, IonError> {
         match val {
-            Value::Int(n) => Ok(Value::Int(-n)),
+            Value::Int(n) => n
+                .checked_neg()
+                .map(Value::Int)
+                .ok_or_else(|| integer_overflow(line, col)),
             Value::Float(n) => Ok(Value::Float(-n)),
             _ => Err(IonError::type_err(
                 format!("{}{}", ion_str!("cannot negate "), val.type_name()),
@@ -2636,14 +2662,13 @@ impl Vm {
                 ))
             }
             h if h == crate::h!("slice") => {
-                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args
-                    .get(1)
-                    .and_then(|a| a.as_int())
-                    .map(|n| n as usize)
-                    .unwrap_or(items.len());
-                let start = start.min(items.len());
-                let end = end.min(items.len());
+                let len = items.len() as i64;
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0);
+                let end = args.get(1).and_then(|a| a.as_int()).unwrap_or(len);
+                let start = start.max(0).min(len);
+                let end = end.max(0).min(len).max(start);
+                let start = start as usize;
+                let end = end as usize;
                 Ok(Value::List(items[start..end].to_vec()))
             }
             h if h == crate::h!("dedup") => {
@@ -2962,6 +2987,13 @@ impl Vm {
                 let n = args.first().and_then(|a| a.as_int()).ok_or_else(|| {
                     IonError::type_err(ion_str!("repeat requires int argument"), line, col)
                 })?;
+                if n < 0 {
+                    return Err(IonError::runtime(
+                        ion_str!("repeat count must be non-negative"),
+                        line,
+                        col,
+                    ));
+                }
                 Ok(Value::Str(s.repeat(n as usize)))
             }
             h if h == crate::h!("find") => {
@@ -3035,15 +3067,13 @@ impl Vm {
             h if h == crate::h!("reverse") => Ok(Value::Str(s.chars().rev().collect())),
             h if h == crate::h!("slice") => {
                 let chars: Vec<char> = s.chars().collect();
-                let char_count = chars.len();
-                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args
-                    .get(1)
-                    .and_then(|a| a.as_int())
-                    .map(|n| n as usize)
-                    .unwrap_or(char_count);
-                let start = start.min(char_count);
-                let end = end.min(char_count);
+                let char_count = chars.len() as i64;
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0);
+                let end = args.get(1).and_then(|a| a.as_int()).unwrap_or(char_count);
+                let start = start.max(0).min(char_count);
+                let end = end.max(0).min(char_count).max(start);
+                let start = start as usize;
+                let end = end as usize;
                 Ok(Value::Str(chars[start..end].iter().collect()))
             }
             _ => Err(IonError::type_err(
@@ -3519,6 +3549,13 @@ impl Vm {
 
     fn call_function(&mut self, arg_count: usize, line: usize, col: usize) -> Result<(), IonError> {
         // Stack: [..., func, arg0, arg1, ..., argN-1]
+        if self.stack.len() <= arg_count {
+            return Err(IonError::runtime(
+                ion_str!("stack underflow in function call"),
+                line,
+                col,
+            ));
+        }
         let args_start = self.stack.len() - arg_count;
         let func_idx = args_start - 1;
         let func = self.stack[func_idx].clone();
@@ -3661,6 +3698,7 @@ impl Vm {
                     let saved_locals_base = self.locals_base;
                     let saved_locals_len = self.locals.len();
                     let saved_frames_len = self.local_frames.len();
+                    let saved_handler_len = self.exception_handlers.len();
                     let prepared_args = match self
                         .prepare_function_args_from_call(&ion_fn, positional, named, line, col)
                     {
@@ -3695,9 +3733,10 @@ impl Vm {
                         let saved_ip = self.ip;
                         let saved_iters = std::mem::take(&mut self.iterators);
                         self.ip = 0;
-                        let result = self.run_chunk(&chunk);
+                        let result = self.run_chunk(&chunk, saved_handler_len);
                         self.ip = saved_ip;
                         self.iterators = saved_iters;
+                        self.exception_handlers.truncate(saved_handler_len);
                         // Restore locals
                         self.locals.truncate(saved_locals_len);
                         self.local_frames.truncate(saved_frames_len);
@@ -3868,4 +3907,8 @@ impl Vm {
             }
         }
     }
+}
+
+fn integer_overflow(line: usize, col: usize) -> IonError {
+    IonError::runtime(ion_str!("integer overflow"), line, col)
 }

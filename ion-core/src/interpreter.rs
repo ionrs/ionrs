@@ -1139,7 +1139,10 @@ impl Interpreter {
                 let val = self.eval_expr(expr)?;
                 match op {
                     UnaryOp::Neg => match val {
-                        Value::Int(n) => Ok(Value::Int(-n)),
+                        Value::Int(n) => n.checked_neg().map(Value::Int).ok_or_else(|| {
+                            IonError::runtime(ion_str!("integer overflow"), span.line, span.col)
+                                .into()
+                        }),
                         Value::Float(n) => Ok(Value::Float(-n)),
                         _ => Err(IonError::type_err(
                             format!("{}{}", ion_str!("cannot negate "), val.type_name()),
@@ -1511,7 +1514,11 @@ impl Interpreter {
     fn eval_binop(&self, op: BinOp, l: &Value, r: &Value, span: Span) -> SignalResult {
         match op {
             BinOp::Add => match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+                (Value::Int(a), Value::Int(b)) => {
+                    a.checked_add(*b).map(Value::Int).ok_or_else(|| {
+                        IonError::runtime(ion_str!("integer overflow"), span.line, span.col).into()
+                    })
+                }
                 (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
                 (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
                 (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + *b as f64)),
@@ -1524,18 +1531,34 @@ impl Interpreter {
                 _ => Err(self.type_mismatch_err(ion_str!("+"), l, r, span)),
             },
             BinOp::Sub => match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+                (Value::Int(a), Value::Int(b)) => {
+                    a.checked_sub(*b).map(Value::Int).ok_or_else(|| {
+                        IonError::runtime(ion_str!("integer overflow"), span.line, span.col).into()
+                    })
+                }
                 (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
                 (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
                 (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a - *b as f64)),
                 _ => Err(self.type_mismatch_err(ion_str!("-"), l, r, span)),
             },
             BinOp::Mul => match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+                (Value::Int(a), Value::Int(b)) => {
+                    a.checked_mul(*b).map(Value::Int).ok_or_else(|| {
+                        IonError::runtime(ion_str!("integer overflow"), span.line, span.col).into()
+                    })
+                }
                 (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
                 (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
                 (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a * *b as f64)),
                 (Value::Str(s), Value::Int(n)) | (Value::Int(n), Value::Str(s)) => {
+                    if *n < 0 {
+                        return Err(IonError::runtime(
+                            ion_str!("repeat count must be non-negative"),
+                            span.line,
+                            span.col,
+                        )
+                        .into());
+                    }
                     Ok(Value::Str(s.repeat(*n as usize)))
                 }
                 _ => Err(self.type_mismatch_err(ion_str!("*"), l, r, span)),
@@ -1550,7 +1573,10 @@ impl Interpreter {
                         )
                         .into())
                     } else {
-                        Ok(Value::Int(a / b))
+                        a.checked_div(*b).map(Value::Int).ok_or_else(|| {
+                            IonError::runtime(ion_str!("integer overflow"), span.line, span.col)
+                                .into()
+                        })
                     }
                 }
                 (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
@@ -1568,7 +1594,10 @@ impl Interpreter {
                         )
                         .into())
                     } else {
-                        Ok(Value::Int(a % b))
+                        a.checked_rem(*b).map(Value::Int).ok_or_else(|| {
+                            IonError::runtime(ion_str!("integer overflow"), span.line, span.col)
+                                .into()
+                        })
                     }
                 }
                 _ => Err(self.type_mismatch_err(ion_str!("%"), l, r, span)),
@@ -1812,42 +1841,36 @@ impl Interpreter {
             }
         };
 
+        let bounds = |len: i64,
+                      start: Option<&Value>,
+                      end: Option<&Value>|
+         -> Result<(usize, usize), SignalOrError> {
+            let start = get_idx(start, 0)?.max(0).min(len);
+            let end = get_idx(end, len)?;
+            let end = if inclusive {
+                end.saturating_add(1)
+            } else {
+                end
+            };
+            let end = end.max(0).min(len).max(start);
+            Ok((start as usize, end as usize))
+        };
+
         match val {
             Value::List(items) => {
                 let len = items.len() as i64;
-                let s = get_idx(start, 0)?;
-                let e = get_idx(end, len)?;
-                let s = s.max(0).min(len) as usize;
-                let e = if inclusive {
-                    (e + 1).max(0).min(len) as usize
-                } else {
-                    e.max(0).min(len) as usize
-                };
+                let (s, e) = bounds(len, start, end)?;
                 Ok(Value::List(items[s..e].to_vec()))
             }
             Value::Str(string) => {
                 let chars: Vec<char> = string.chars().collect();
                 let len = chars.len() as i64;
-                let s = get_idx(start, 0)?;
-                let e = get_idx(end, len)?;
-                let s = s.max(0).min(len) as usize;
-                let e = if inclusive {
-                    (e + 1).max(0).min(len) as usize
-                } else {
-                    e.max(0).min(len) as usize
-                };
+                let (s, e) = bounds(len, start, end)?;
                 Ok(Value::Str(chars[s..e].iter().collect()))
             }
             Value::Bytes(bytes) => {
                 let len = bytes.len() as i64;
-                let s = get_idx(start, 0)?;
-                let e = get_idx(end, len)?;
-                let s = s.max(0).min(len) as usize;
-                let e = if inclusive {
-                    (e + 1).max(0).min(len) as usize
-                } else {
-                    e.max(0).min(len) as usize
-                };
+                let (s, e) = bounds(len, start, end)?;
                 Ok(Value::Bytes(bytes[s..e].to_vec()))
             }
             _ => Err(IonError::type_err(
@@ -2201,14 +2224,13 @@ impl Interpreter {
                 ))
             }
             h if h == crate::h!("slice") => {
-                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args
-                    .get(1)
-                    .and_then(|a| a.as_int())
-                    .map(|n| n as usize)
-                    .unwrap_or(items.len());
-                let start = start.min(items.len());
-                let end = end.min(items.len());
+                let len = items.len() as i64;
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0);
+                let end = args.get(1).and_then(|a| a.as_int()).unwrap_or(len);
+                let start = start.max(0).min(len);
+                let end = end.max(0).min(len).max(start);
+                let start = start as usize;
+                let end = end as usize;
                 Ok(Value::List(items[start..end].to_vec()))
             }
             h if h == crate::h!("dedup") => {
@@ -2670,6 +2692,14 @@ impl Interpreter {
                         span.col,
                     )
                 })?;
+                if n < 0 {
+                    return Err(IonError::runtime(
+                        ion_str!("repeat count must be non-negative"),
+                        span.line,
+                        span.col,
+                    )
+                    .into());
+                }
                 Ok(Value::Str(s.repeat(n as usize)))
             }
             h if h == crate::h!("find") => {
@@ -2769,15 +2799,13 @@ impl Interpreter {
             h if h == crate::h!("reverse") => Ok(Value::Str(s.chars().rev().collect())),
             h if h == crate::h!("slice") => {
                 let chars: Vec<char> = s.chars().collect();
-                let char_count = chars.len();
-                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0) as usize;
-                let end = args
-                    .get(1)
-                    .and_then(|a| a.as_int())
-                    .map(|n| n as usize)
-                    .unwrap_or(char_count);
-                let start = start.min(char_count);
-                let end = end.min(char_count);
+                let char_count = chars.len() as i64;
+                let start = args.first().and_then(|a| a.as_int()).unwrap_or(0);
+                let end = args.get(1).and_then(|a| a.as_int()).unwrap_or(char_count);
+                let start = start.max(0).min(char_count);
+                let end = end.max(0).min(char_count).max(start);
+                let start = start as usize;
+                let end = end as usize;
                 Ok(Value::Str(chars[start..end].iter().collect()))
             }
             _ => Err(IonError::type_err(

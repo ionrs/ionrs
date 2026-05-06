@@ -1842,6 +1842,79 @@ fn test_vm_call_spreads() {
 }
 
 #[test]
+fn test_vm_large_call_uses_resolved_path() {
+    let args = (0..256)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let src = format!("fn f(*args) {{ args.len() }} f({args})");
+    assert_eq!(vm_eval(&src), Value::Int(256));
+}
+
+#[test]
+fn test_vm_exception_handlers_do_not_leak_from_returning_callee() {
+    let err = vm_eval_err(
+        "
+        fn f() {
+            try {
+                return 1;
+            } catch e {
+                2
+            }
+        }
+        f();
+        1 / 0
+        ",
+    );
+    assert!(err.contains("division by zero"), "got: {err}");
+}
+
+#[test]
+fn test_vm_reverse_slices_are_empty() {
+    assert_eq!(vm_eval(r#""abc"[2..1]"#), Value::Str(String::new()));
+    assert_eq!(vm_eval("[1, 2, 3][2..1]"), Value::List(vec![]));
+    assert_eq!(vm_eval(r#"b"abc"[2..1]"#), Value::Bytes(vec![]));
+    assert_eq!(vm_eval(r#""abc".slice(2, 1)"#), Value::Str(String::new()));
+    assert_eq!(vm_eval("[1, 2, 3].slice(2, 1)"), Value::List(vec![]));
+    assert_eq!(vm_eval(r#"b"abc".slice(2, 1)"#), Value::Bytes(vec![]));
+}
+
+#[test]
+fn test_vm_inclusive_slice_end_saturates() {
+    assert_eq!(
+        vm_eval(r#"let e = 9223372036854775807; "abc"[..=e]"#),
+        Value::Str("abc".to_string())
+    );
+    assert_eq!(
+        vm_eval("let e = 9223372036854775807; [1, 2, 3][..=e]"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        vm_eval(r#"let e = 9223372036854775807; b"abc"[..=e]"#),
+        Value::Bytes(b"abc".to_vec())
+    );
+}
+
+#[test]
+fn test_vm_integer_overflow_errors() {
+    assert!(vm_eval_err("9223372036854775807 + 1").contains("integer overflow"));
+    assert!(vm_eval_err("let x = 9223372036854775807; x + 1").contains("integer overflow"));
+    assert!(
+        vm_eval_err("let x = -9223372036854775807; let y = x - 1; y / -1")
+            .contains("integer overflow")
+    );
+    assert!(
+        vm_eval_err("let x = -9223372036854775807; let y = x - 1; -y").contains("integer overflow")
+    );
+}
+
+#[test]
+fn test_vm_negative_string_repeat_errors() {
+    assert!(vm_eval_err(r#""a" * -1"#).contains("non-negative"));
+    assert!(vm_eval_err(r#""a".repeat(-1)"#).contains("non-negative"));
+}
+
+#[test]
 fn test_vm_host_signature_keywords() {
     fn mix(args: &[Value]) -> Result<Value, String> {
         Ok(Value::Int(

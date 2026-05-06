@@ -4883,15 +4883,12 @@ fn scaffold_list_method(
             ))
         }
         h if h == crate::h!("slice") => {
-            let start = args.first().and_then(Value::as_int).unwrap_or(0) as usize;
-            let end = args
-                .get(1)
-                .and_then(Value::as_int)
-                .map(|value| value as usize)
-                .unwrap_or(items.len());
-            Ok(Value::List(
-                items[start.min(items.len())..end.min(items.len())].to_vec(),
-            ))
+            let len = items.len() as i64;
+            let start = args.first().and_then(Value::as_int).unwrap_or(0);
+            let end = args.get(1).and_then(Value::as_int).unwrap_or(len);
+            let start = start.max(0).min(len);
+            let end = end.max(0).min(len).max(start);
+            Ok(Value::List(items[start as usize..end as usize].to_vec()))
         }
         h if h == crate::h!("dedup") => {
             let mut result = Vec::new();
@@ -5039,6 +5036,13 @@ fn scaffold_str_method(
             let count = args.first().and_then(Value::as_int).ok_or_else(|| {
                 IonError::type_err(ion_str!("repeat requires int argument"), line, col)
             })?;
+            if count < 0 {
+                return Err(IonError::runtime(
+                    ion_str!("repeat count must be non-negative"),
+                    line,
+                    col,
+                ));
+            }
             Ok(Value::Str(value.repeat(count as usize)))
         }
         h if h == crate::h!("find") => {
@@ -5079,16 +5083,13 @@ fn scaffold_str_method(
         h if h == crate::h!("reverse") => Ok(Value::Str(value.chars().rev().collect())),
         h if h == crate::h!("slice") => {
             let chars: Vec<char> = value.chars().collect();
-            let start = args.first().and_then(Value::as_int).unwrap_or(0) as usize;
-            let end = args
-                .get(1)
-                .and_then(Value::as_int)
-                .map(|value| value as usize)
-                .unwrap_or(chars.len());
+            let len = chars.len() as i64;
+            let start = args.first().and_then(Value::as_int).unwrap_or(0);
+            let end = args.get(1).and_then(Value::as_int).unwrap_or(len);
+            let start = start.max(0).min(len);
+            let end = end.max(0).min(len).max(start);
             Ok(Value::Str(
-                chars[start.min(chars.len())..end.min(chars.len())]
-                    .iter()
-                    .collect(),
+                chars[start as usize..end as usize].iter().collect(),
             ))
         }
         _ => Err(IonError::type_err(
@@ -5562,27 +5563,34 @@ fn scaffold_slice_access(
         }
     };
 
+    let bounds =
+        |len: i64, start: Option<Value>, end: Option<Value>| -> Result<(usize, usize), IonError> {
+            let start = get_index(start, 0)?.max(0).min(len);
+            let end = get_index(end, len)?;
+            let end = if inclusive {
+                end.saturating_add(1)
+            } else {
+                end
+            };
+            let end = end.max(0).min(len).max(start);
+            Ok((start as usize, end as usize))
+        };
+
     match &object {
         Value::List(items) => {
             let len = items.len() as i64;
-            let start = get_index(start, 0)?.max(0).min(len) as usize;
-            let end = get_index(end, len)?;
-            let end = if inclusive { end + 1 } else { end }.max(0).min(len) as usize;
+            let (start, end) = bounds(len, start, end)?;
             Ok(Value::List(items[start..end].to_vec()))
         }
         Value::Str(value) => {
             let chars: Vec<char> = value.chars().collect();
             let len = chars.len() as i64;
-            let start = get_index(start, 0)?.max(0).min(len) as usize;
-            let end = get_index(end, len)?;
-            let end = if inclusive { end + 1 } else { end }.max(0).min(len) as usize;
+            let (start, end) = bounds(len, start, end)?;
             Ok(Value::Str(chars[start..end].iter().collect()))
         }
         Value::Bytes(bytes) => {
             let len = bytes.len() as i64;
-            let start = get_index(start, 0)?.max(0).min(len) as usize;
-            let end = get_index(end, len)?;
-            let end = if inclusive { end + 1 } else { end }.max(0).min(len) as usize;
+            let (start, end) = bounds(len, start, end)?;
             Ok(Value::Bytes(bytes[start..end].to_vec()))
         }
         _ => Err(IonError::type_err(
@@ -6023,7 +6031,10 @@ fn scaffold_value_iterator(
 
 fn scaffold_add(left: Value, right: Value, line: usize, col: usize) -> Result<Value, IonError> {
     match (&left, &right) {
-        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
+        (Value::Int(x), Value::Int(y)) => x
+            .checked_add(*y)
+            .map(Value::Int)
+            .ok_or_else(|| async_integer_overflow(line, col)),
         (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x + y)),
         (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 + y)),
         (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x + *y as f64)),
@@ -6048,7 +6059,10 @@ fn scaffold_add(left: Value, right: Value, line: usize, col: usize) -> Result<Va
 
 fn scaffold_sub(left: Value, right: Value, line: usize, col: usize) -> Result<Value, IonError> {
     match (&left, &right) {
-        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x - y)),
+        (Value::Int(x), Value::Int(y)) => x
+            .checked_sub(*y)
+            .map(Value::Int)
+            .ok_or_else(|| async_integer_overflow(line, col)),
         (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x - y)),
         (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 - y)),
         (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x - *y as f64)),
@@ -6066,11 +6080,21 @@ fn scaffold_sub(left: Value, right: Value, line: usize, col: usize) -> Result<Va
 
 fn scaffold_mul(left: Value, right: Value, line: usize, col: usize) -> Result<Value, IonError> {
     match (&left, &right) {
-        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
+        (Value::Int(x), Value::Int(y)) => x
+            .checked_mul(*y)
+            .map(Value::Int)
+            .ok_or_else(|| async_integer_overflow(line, col)),
         (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x * y)),
         (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 * y)),
         (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x * *y as f64)),
         (Value::Str(s), Value::Int(n)) | (Value::Int(n), Value::Str(s)) => {
+            if *n < 0 {
+                return Err(IonError::runtime(
+                    ion_str!("repeat count must be non-negative"),
+                    line,
+                    col,
+                ));
+            }
             Ok(Value::Str(s.repeat(*n as usize)))
         }
         _ => Err(IonError::type_err(
@@ -6090,7 +6114,10 @@ fn scaffold_div(left: Value, right: Value, line: usize, col: usize) -> Result<Va
         (Value::Int(_), Value::Int(0)) => {
             Err(IonError::runtime(ion_str!("division by zero"), line, col))
         }
-        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x / y)),
+        (Value::Int(x), Value::Int(y)) => x
+            .checked_div(*y)
+            .map(Value::Int)
+            .ok_or_else(|| async_integer_overflow(line, col)),
         (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x / y)),
         (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 / y)),
         (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x / *y as f64)),
@@ -6111,7 +6138,10 @@ fn scaffold_mod(left: Value, right: Value, line: usize, col: usize) -> Result<Va
         (Value::Int(_), Value::Int(0)) => {
             Err(IonError::runtime(ion_str!("modulo by zero"), line, col))
         }
-        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x % y)),
+        (Value::Int(x), Value::Int(y)) => x
+            .checked_rem(*y)
+            .map(Value::Int)
+            .ok_or_else(|| async_integer_overflow(line, col)),
         (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x % y)),
         (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 % y)),
         (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x % *y as f64)),
@@ -6129,7 +6159,10 @@ fn scaffold_mod(left: Value, right: Value, line: usize, col: usize) -> Result<Va
 
 fn scaffold_neg(value: Value, line: usize, col: usize) -> Result<Value, IonError> {
     match value {
-        Value::Int(value) => Ok(Value::Int(-value)),
+        Value::Int(value) => value
+            .checked_neg()
+            .map(Value::Int)
+            .ok_or_else(|| async_integer_overflow(line, col)),
         Value::Float(value) => Ok(Value::Float(-value)),
         other => Err(IonError::type_err(
             ion_format!("cannot negate {}", other.type_name()),
@@ -6137,6 +6170,10 @@ fn scaffold_neg(value: Value, line: usize, col: usize) -> Result<Value, IonError
             col,
         )),
     }
+}
+
+fn async_integer_overflow(line: usize, col: usize) -> IonError {
+    IonError::runtime(ion_str!("integer overflow"), line, col)
 }
 
 fn scaffold_bitwise(

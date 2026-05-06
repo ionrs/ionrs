@@ -1263,6 +1263,21 @@ fn test_string_trim_variants() {
 fn test_string_repeat() {
     assert_eq!(eval(r#""ab".repeat(3)"#), Value::Str("ababab".into()));
     assert_eq!(eval(r#""x".repeat(0)"#), Value::Str("".into()));
+    assert!(eval_err(r#""a".repeat(-1)"#).contains("non-negative"));
+    assert!(eval_err(r#""a" * -1"#).contains("non-negative"));
+}
+
+#[test]
+fn test_integer_overflow_errors() {
+    assert!(eval_err("9223372036854775807 + 1").contains("integer overflow"));
+    assert!(eval_err("let x = 9223372036854775807; x + 1").contains("integer overflow"));
+    assert!(
+        eval_err("let x = -9223372036854775807; let y = x - 1; y / -1")
+            .contains("integer overflow")
+    );
+    assert!(
+        eval_err("let x = -9223372036854775807; let y = x - 1; -y").contains("integer overflow")
+    );
 }
 
 #[test]
@@ -3007,6 +3022,32 @@ fn test_slice_out_of_bounds_clamps() {
         Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
     );
     assert_eq!(eval("[1, 2, 3][5..10]"), Value::List(vec![]));
+}
+
+#[test]
+fn test_reverse_slices_are_empty() {
+    assert_eq!(eval(r#""abc"[2..1]"#), Value::Str(String::new()));
+    assert_eq!(eval("[1, 2, 3][2..1]"), Value::List(vec![]));
+    assert_eq!(eval(r#"b"abc"[2..1]"#), Value::Bytes(vec![]));
+    assert_eq!(eval(r#""abc".slice(2, 1)"#), Value::Str(String::new()));
+    assert_eq!(eval("[1, 2, 3].slice(2, 1)"), Value::List(vec![]));
+    assert_eq!(eval(r#"b"abc".slice(2, 1)"#), Value::Bytes(vec![]));
+}
+
+#[test]
+fn test_inclusive_slice_end_saturates() {
+    assert_eq!(
+        eval(r#"let e = 9223372036854775807; "abc"[..=e]"#),
+        Value::Str("abc".to_string())
+    );
+    assert_eq!(
+        eval("let e = 9223372036854775807; [1, 2, 3][..=e]"),
+        Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])
+    );
+    assert_eq!(
+        eval(r#"let e = 9223372036854775807; b"abc"[..=e]"#),
+        Value::Bytes(b"abc".to_vec())
+    );
 }
 
 #[test]

@@ -90,6 +90,22 @@ impl Compiler {
         }
     }
 
+    fn checked_u8_operand(
+        value: usize,
+        context: &str,
+        line: usize,
+        col: usize,
+    ) -> Result<u8, IonError> {
+        if value > u8::MAX as usize {
+            return Err(IonError::runtime(
+                ion_format!("{} exceeds bytecode limit of 255", context),
+                line,
+                col,
+            ));
+        }
+        Ok(value as u8)
+    }
+
     /// Find the index of the loop frame in `loop_stack` that a labeled (or
     /// unlabeled) break/continue should target. Returns `None` if no enclosing
     /// loop matches.
@@ -320,17 +336,15 @@ impl Compiler {
     fn try_fold_binop(left: &Expr, op: &BinOp, right: &Expr) -> Option<Value> {
         match (&left.kind, op, &right.kind) {
             // Int op Int
-            (ExprKind::Int(a), BinOp::Add, ExprKind::Int(b)) => {
-                Some(Value::Int(a.wrapping_add(*b)))
+            (ExprKind::Int(a), BinOp::Add, ExprKind::Int(b)) => a.checked_add(*b).map(Value::Int),
+            (ExprKind::Int(a), BinOp::Sub, ExprKind::Int(b)) => a.checked_sub(*b).map(Value::Int),
+            (ExprKind::Int(a), BinOp::Mul, ExprKind::Int(b)) => a.checked_mul(*b).map(Value::Int),
+            (ExprKind::Int(a), BinOp::Div, ExprKind::Int(b)) if *b != 0 => {
+                a.checked_div(*b).map(Value::Int)
             }
-            (ExprKind::Int(a), BinOp::Sub, ExprKind::Int(b)) => {
-                Some(Value::Int(a.wrapping_sub(*b)))
+            (ExprKind::Int(a), BinOp::Mod, ExprKind::Int(b)) if *b != 0 => {
+                a.checked_rem(*b).map(Value::Int)
             }
-            (ExprKind::Int(a), BinOp::Mul, ExprKind::Int(b)) => {
-                Some(Value::Int(a.wrapping_mul(*b)))
-            }
-            (ExprKind::Int(a), BinOp::Div, ExprKind::Int(b)) if *b != 0 => Some(Value::Int(a / b)),
-            (ExprKind::Int(a), BinOp::Mod, ExprKind::Int(b)) if *b != 0 => Some(Value::Int(a % b)),
             (ExprKind::Int(a), BinOp::Eq, ExprKind::Int(b)) => Some(Value::Bool(a == b)),
             (ExprKind::Int(a), BinOp::Ne, ExprKind::Int(b)) => Some(Value::Bool(a != b)),
             (ExprKind::Int(a), BinOp::Lt, ExprKind::Int(b)) => Some(Value::Bool(a < b)),
@@ -379,7 +393,7 @@ impl Compiler {
     /// Try to constant-fold a unary operation on a literal operand.
     fn try_fold_unary(op: &UnaryOp, inner: &Expr) -> Option<Value> {
         match (op, &inner.kind) {
-            (UnaryOp::Neg, ExprKind::Int(v)) => Some(Value::Int(-v)),
+            (UnaryOp::Neg, ExprKind::Int(v)) => v.checked_neg().map(Value::Int),
             (UnaryOp::Neg, ExprKind::Float(v)) => Some(Value::Float(-v)),
             (UnaryOp::Not, ExprKind::Bool(v)) => Some(Value::Bool(!v)),
             _ => None,
@@ -534,7 +548,7 @@ impl Compiler {
                 self.compile_while(label.clone(), cond, body, line)?;
             }
             StmtKind::Loop { label, body } => {
-                self.compile_loop(label.clone(), body, line)?;
+                self.compile_loop(label.clone(), body, line, false)?;
             }
             StmtKind::Break { label, value } => {
                 let target_idx = match self.resolve_loop_target(label.as_deref()) {
@@ -658,8 +672,13 @@ impl Compiler {
                 self.chunk.emit_op(Op::Pop, line); // pop the duped value
 
                 let frame = self.pop_loop_frame();
-                for jump in &frame.break_jumps {
-                    self.chunk.patch_jump(*jump);
+                if !frame.break_jumps.is_empty() {
+                    let skip_break_cleanup = self.chunk.emit_jump(Op::Jump, line);
+                    for jump in &frame.break_jumps {
+                        self.chunk.patch_jump(*jump);
+                    }
+                    self.chunk.emit_op(Op::Pop, line); // discard break value for statement loop
+                    self.chunk.patch_jump(skip_break_cleanup);
                 }
             }
         }
@@ -835,10 +854,11 @@ impl Compiler {
                     }
                 }
                 let has_named = args.iter().any(|a| a.name().is_some());
-                let has_spread = args.iter().any(CallArg::is_spread);
+                let use_resolved =
+                    args.iter().any(CallArg::is_spread) || args.len() > u8::MAX as usize;
                 // Sub-expressions are not in tail position (already cleared above)
                 self.compile_expr(func)?;
-                if has_spread {
+                if use_resolved {
                     self.compile_resolved_call_args(args, None, line)?;
                     let op = if was_tail {
                         Op::TailCallResolved
@@ -854,10 +874,17 @@ impl Compiler {
                     let named: Vec<(u8, u16)> = args
                         .iter()
                         .enumerate()
+                        .map(|(i, a)| {
+                            Ok((
+                                Self::checked_u8_operand(i, "named argument position", line, col)?,
+                                a,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, IonError>>()?
+                        .into_iter()
                         .filter_map(|(i, a)| {
-                            a.name().map(|n| {
-                                (i as u8, self.chunk.add_constant(Value::Str(n.to_string())))
-                            })
+                            a.name()
+                                .map(|n| (i, self.chunk.add_constant(Value::Str(n.to_string()))))
                         })
                         .collect();
                     let op = if was_tail {
@@ -865,9 +892,13 @@ impl Compiler {
                     } else {
                         Op::CallNamed
                     };
+                    let arg_count =
+                        Self::checked_u8_operand(args.len(), "call argument count", line, col)?;
+                    let named_count =
+                        Self::checked_u8_operand(named.len(), "named argument count", line, col)?;
                     self.chunk.emit_op(op, line);
-                    self.chunk.emit(args.len() as u8, line);
-                    self.chunk.emit(named.len() as u8, line);
+                    self.chunk.emit(arg_count, line);
+                    self.chunk.emit(named_count, line);
                     for (pos, name_idx) in named {
                         self.chunk.emit(pos, line);
                         self.chunk.emit((name_idx >> 8) as u8, line);
@@ -878,7 +909,9 @@ impl Compiler {
                     for arg in args {
                         self.compile_expr(&arg.value)?;
                     }
-                    self.chunk.emit_op_u8_span(op, args.len() as u8, line, col);
+                    let arg_count =
+                        Self::checked_u8_operand(args.len(), "call argument count", line, col)?;
+                    self.chunk.emit_op_u8_span(op, arg_count, line, col);
                 }
             }
 
@@ -992,9 +1025,10 @@ impl Compiler {
                 let has_named_or_spread = args
                     .iter()
                     .any(|arg| arg.name().is_some() || arg.is_spread());
+                let use_resolved = has_named_or_spread || args.len() > u8::MAX as usize;
                 self.compile_expr(inner)?;
                 let idx = self.chunk.add_constant(Value::Str(method.clone()));
-                if has_named_or_spread {
+                if use_resolved {
                     self.compile_resolved_call_args(args, None, line)?;
                     self.chunk
                         .emit_op_u16_span(Op::MethodCallResolved, idx, line, col);
@@ -1002,8 +1036,10 @@ impl Compiler {
                     for arg in args {
                         self.compile_expr(&arg.value)?;
                     }
+                    let arg_count =
+                        Self::checked_u8_operand(args.len(), "method argument count", line, col)?;
                     self.chunk.emit_op_u16_span(Op::MethodCall, idx, line, col);
-                    self.chunk.emit_span(args.len() as u8, line, col);
+                    self.chunk.emit_span(arg_count, line, col);
                 }
             }
 
@@ -1086,7 +1122,8 @@ impl Compiler {
                             .iter()
                             .any(|arg| arg.name().is_some() || arg.is_spread());
                         self.compile_expr(func)?;
-                        if has_named_or_spread {
+                        let total_args = args.len() + 1;
+                        if has_named_or_spread || total_args > u8::MAX as usize {
                             self.compile_resolved_call_args(args, Some(left), line)?;
                             self.chunk.emit_op(Op::CallResolved, line);
                         } else {
@@ -1094,8 +1131,13 @@ impl Compiler {
                             for arg in args {
                                 self.compile_expr(&arg.value)?;
                             }
-                            self.chunk
-                                .emit_op_u8(Op::Call, (args.len() + 1) as u8, line);
+                            let arg_count = Self::checked_u8_operand(
+                                total_args,
+                                "pipe call argument count",
+                                line,
+                                0,
+                            )?;
+                            self.chunk.emit_op_u8(Op::Call, arg_count, line);
                         }
                     }
                     _ => {
@@ -1124,7 +1166,7 @@ impl Compiler {
             }
 
             ExprKind::LoopExpr(body) => {
-                self.compile_loop(None, body, line)?;
+                self.compile_loop(None, body, line, true)?;
             }
 
             ExprKind::Match {
@@ -1244,6 +1286,8 @@ impl Compiler {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
+                let arg_count =
+                    Self::checked_u8_operand(args.len(), "enum argument count", line, 0)?;
                 let enum_idx = self.chunk.add_constant(Value::Str(enum_name.clone()));
                 let variant_idx = self.chunk.add_constant(Value::Str(variant.clone()));
                 self.chunk.emit_op(Op::ConstructEnum, line);
@@ -1251,7 +1295,7 @@ impl Compiler {
                 self.chunk.emit((enum_idx & 0xff) as u8, line);
                 self.chunk.emit((variant_idx >> 8) as u8, line);
                 self.chunk.emit((variant_idx & 0xff) as u8, line);
-                self.chunk.emit(args.len() as u8, line);
+                self.chunk.emit(arg_count, line);
             }
 
             #[cfg(feature = "async-runtime")]
@@ -1431,7 +1475,7 @@ impl Compiler {
         let has_named = args.iter().any(|arg| arg.name().is_some());
         let has_spread = args.iter().any(CallArg::is_spread);
         self.compile_expr(func)?;
-        if has_spread {
+        if has_spread || args.len() > u8::MAX as usize {
             self.compile_resolved_call_args(args, None, line)?;
             self.chunk.emit_op_span(Op::SpawnCallResolved, line, col);
         } else if has_named {
@@ -1441,18 +1485,26 @@ impl Compiler {
             let named: Vec<(u8, u16)> = args
                 .iter()
                 .enumerate()
+                .map(|(i, arg)| {
+                    Ok((
+                        Self::checked_u8_operand(i, "spawn named argument position", line, col)?,
+                        arg,
+                    ))
+                })
+                .collect::<Result<Vec<_>, IonError>>()?
+                .into_iter()
                 .filter_map(|(i, arg)| {
-                    arg.name().map(|name| {
-                        (
-                            i as u8,
-                            self.chunk.add_constant(Value::Str(name.to_string())),
-                        )
-                    })
+                    arg.name()
+                        .map(|name| (i, self.chunk.add_constant(Value::Str(name.to_string()))))
                 })
                 .collect();
+            let arg_count =
+                Self::checked_u8_operand(args.len(), "spawn argument count", line, col)?;
+            let named_count =
+                Self::checked_u8_operand(named.len(), "spawn named argument count", line, col)?;
             self.chunk.emit_op_span(Op::SpawnCallNamed, line, col);
-            self.chunk.emit(args.len() as u8, line);
-            self.chunk.emit(named.len() as u8, line);
+            self.chunk.emit(arg_count, line);
+            self.chunk.emit(named_count, line);
             for (position, name_idx) in named {
                 self.chunk.emit(position, line);
                 self.chunk.emit((name_idx >> 8) as u8, line);
@@ -1462,8 +1514,10 @@ impl Compiler {
             for arg in args {
                 self.compile_expr(&arg.value)?;
             }
+            let arg_count =
+                Self::checked_u8_operand(args.len(), "spawn argument count", line, col)?;
             self.chunk
-                .emit_op_u8_span(Op::SpawnCall, args.len() as u8, line, col);
+                .emit_op_u8_span(Op::SpawnCall, arg_count, line, col);
         }
         Ok(())
     }
@@ -1548,8 +1602,10 @@ impl Compiler {
         for branch in branches {
             self.compile_spawn_expr(&branch.future_expr, line, col)?;
         }
+        let branch_count =
+            Self::checked_u8_operand(branches.len(), "select branch count", line, col)?;
         self.chunk
-            .emit_op_u8_span(Op::SelectTasks, branches.len() as u8, line, col);
+            .emit_op_u8_span(Op::SelectTasks, branch_count, line, col);
 
         let mut end_jumps = Vec::with_capacity(branches.len());
         for (idx, branch) in branches.iter().enumerate() {
@@ -1696,9 +1752,12 @@ impl Compiler {
                     self.chunk.emit_op(Op::Pop, line);
                 }
                 EnumPatternFields::Positional(pats) => {
+                    Self::checked_u8_operand(pats.len(), "enum pattern field count", line, 0)?;
                     for (i, pat) in pats.iter().enumerate() {
                         self.chunk.emit_op_u8(Op::MatchArm, 7, line);
-                        self.chunk.emit(i as u8, line);
+                        let index =
+                            Self::checked_u8_operand(i, "enum pattern field index", line, 0)?;
+                        self.chunk.emit(index, line);
                         self.compile_let_pattern(pat, mutable, line)?;
                     }
                     self.chunk.emit_op(Op::Pop, line);
@@ -1863,8 +1922,13 @@ impl Compiler {
         self.chunk.emit_op(Op::Pop, line);
 
         let frame = self.pop_loop_frame();
-        for jump in &frame.break_jumps {
-            self.chunk.patch_jump(*jump);
+        if !frame.break_jumps.is_empty() {
+            let skip_break_cleanup = self.chunk.emit_jump(Op::Jump, line);
+            for jump in &frame.break_jumps {
+                self.chunk.patch_jump(*jump);
+            }
+            self.chunk.emit_op(Op::Pop, line); // discard break value for statement loop
+            self.chunk.patch_jump(skip_break_cleanup);
         }
         Ok(())
     }
@@ -1905,8 +1969,13 @@ impl Compiler {
         self.chunk.emit_op(Op::Pop, line); // pop condition
 
         let frame = self.pop_loop_frame();
-        for jump in &frame.break_jumps {
-            self.chunk.patch_jump(*jump);
+        if !frame.break_jumps.is_empty() {
+            let skip_break_cleanup = self.chunk.emit_jump(Op::Jump, line);
+            for jump in &frame.break_jumps {
+                self.chunk.patch_jump(*jump);
+            }
+            self.chunk.emit_op(Op::Pop, line); // discard break value for statement loop
+            self.chunk.patch_jump(skip_break_cleanup);
         }
         Ok(())
     }
@@ -1916,6 +1985,7 @@ impl Compiler {
         label: Option<String>,
         body: &[Stmt],
         line: usize,
+        keep_break_value: bool,
     ) -> Result<(), IonError> {
         let loop_start = self.chunk.len();
         self.loop_stack.push(LoopFrame {
@@ -1941,6 +2011,9 @@ impl Compiler {
         let frame = self.pop_loop_frame();
         for jump in &frame.break_jumps {
             self.chunk.patch_jump(*jump);
+        }
+        if !keep_break_value && !frame.break_jumps.is_empty() {
+            self.chunk.emit_op(Op::Pop, line);
         }
         Ok(())
     }
@@ -2281,15 +2354,18 @@ impl Compiler {
             }
             Pattern::Tuple(pats) => {
                 // Check: is it a tuple of the right length, and do all sub-patterns match?
+                let expected_len =
+                    Self::checked_u8_operand(pats.len(), "tuple pattern length", line, 0)?;
                 self.chunk.emit_op_u8(Op::MatchBegin, 4, line); // 4 = test Tuple
-                self.chunk.emit(pats.len() as u8, line); // expected length
+                self.chunk.emit(expected_len, line); // expected length
                 let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
                 self.chunk.emit_op(Op::Pop, line); // pop true
                                                    // Test each element
                 for (i, pat) in pats.iter().enumerate() {
                     // Load the subject again and index into it
                     self.chunk.emit_op_u8(Op::MatchArm, 4, line); // 4 = get tuple element
-                    self.chunk.emit(i as u8, line);
+                    let index = Self::checked_u8_operand(i, "tuple pattern index", line, 0)?;
+                    self.chunk.emit(index, line);
                     self.compile_pattern_test(pat, line)?;
                     let sub_fail = self.chunk.emit_jump(Op::JumpIfFalse, line);
                     self.chunk.emit_op(Op::Pop, line); // pop true, continue
@@ -2314,15 +2390,18 @@ impl Compiler {
             Pattern::List(pats, rest) => {
                 // Check: is it a list with at least pats.len() elements (or exact if no rest)?
                 let has_rest = rest.is_some();
+                let expected_len =
+                    Self::checked_u8_operand(pats.len(), "list pattern length", line, 0)?;
                 self.chunk.emit_op_u8(Op::MatchBegin, 5, line); // 5 = test List
-                self.chunk.emit(pats.len() as u8, line); // min/exact length
+                self.chunk.emit(expected_len, line); // min/exact length
                 self.chunk.emit(if has_rest { 1 } else { 0 }, line); // has_rest flag
                 let fail_jump = self.chunk.emit_jump(Op::JumpIfFalse, line);
                 self.chunk.emit_op(Op::Pop, line); // pop true
                                                    // Test each element pattern
                 for (i, pat) in pats.iter().enumerate() {
                     self.chunk.emit_op_u8(Op::MatchArm, 5, line); // 5 = get list element
-                    self.chunk.emit(i as u8, line);
+                    let index = Self::checked_u8_operand(i, "list pattern index", line, 0)?;
+                    self.chunk.emit(index, line);
                     self.compile_pattern_test(pat, line)?;
                     let sub_fail = self.chunk.emit_jump(Op::JumpIfFalse, line);
                     self.chunk.emit_op(Op::Pop, line); // pop true
@@ -2376,7 +2455,9 @@ impl Compiler {
                     let mut field_fail_jumps = Vec::new();
                     for (i, pat) in pats.iter().enumerate() {
                         self.chunk.emit_op_u8(Op::MatchArm, 7, line);
-                        self.chunk.emit(i as u8, line);
+                        let index =
+                            Self::checked_u8_operand(i, "enum pattern field index", line, 0)?;
+                        self.chunk.emit(index, line);
                         self.compile_pattern_test(pat, line)?;
                         field_fail_jumps.push(self.chunk.emit_jump(Op::JumpIfFalse, line));
                         self.chunk.emit_op(Op::Pop, line); // pop true
@@ -2479,9 +2560,12 @@ impl Compiler {
                     self.chunk.emit_op(Op::Pop, line);
                 }
                 EnumPatternFields::Positional(pats) => {
+                    Self::checked_u8_operand(pats.len(), "enum pattern field count", line, 0)?;
                     for (i, pat) in pats.iter().enumerate() {
                         self.chunk.emit_op_u8(Op::MatchArm, 7, line);
-                        self.chunk.emit(i as u8, line);
+                        let index =
+                            Self::checked_u8_operand(i, "enum pattern field index", line, 0)?;
+                        self.chunk.emit(index, line);
                         self.compile_pattern_bind(pat, line)?;
                     }
                     self.chunk.emit_op(Op::Pop, line);
